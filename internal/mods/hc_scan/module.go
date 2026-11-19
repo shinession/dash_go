@@ -1,0 +1,108 @@
+// Package hcscan is the "HC scan badge to auto assign machine/activity" module.
+//
+// A shift leader opens the page from the Dash menu (MQPD > Head Count), picks a process and scans the employee
+// badges. Every scan assigns the person to a machine by the MTR proficiency records (at least Lv1, Lv3 before Lv2
+// before Lv1, machines worked in the last days first within a level). The result is only a draft: the shift
+// leader checks and changes it and presses Confirm, which writes t_daily_attn_data like the Area Assign page.
+package hcscan
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"dash_go/internal/core/dashapi"
+	"dash_go/internal/core/module"
+)
+
+// Name is the module name used in the URL, the build script and the configuration.
+const Name = "hc_scan"
+
+// ModuleVersion is the version of this module.
+const ModuleVersion = "0.1.0"
+
+func init() {
+	module.Register(Name, func() module.Module { return &Module{} })
+}
+
+// Module implements module.Module.
+type Module struct {
+	svc *Service
+}
+
+// Info describes the module.
+func (m *Module) Info() module.Info {
+	return module.Info{
+		Name:        Name,
+		Title:       "HC Scan Assign",
+		Version:     ModuleVersion,
+		Description: "Scan employee badges to assign machines and activities by MTR level",
+	}
+}
+
+// Mount builds the service from the configuration and registers the routes.
+func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
+	set := DefaultSettings()
+	if err := env.Cfg.Module(Name, &set); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := env.PG(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: %w", Name, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		env.Log.Warn("hc_scan: the Auth database does not answer yet", "error", err)
+	}
+
+	var drafts DraftStore
+	switch set.DraftStore {
+	case "memory":
+		env.Log.Warn("hc_scan: drafts are kept in the process memory and are lost at a restart (draft_store=memory)")
+		drafts = NewMemoryDrafts()
+	case "redis", "":
+		rdb, err := env.Redis()
+		if err != nil {
+			return fmt.Errorf("%s: %w", Name, err)
+		}
+		drafts = NewRedisDrafts(rdb, time.Duration(set.DraftTTLHours)*time.Hour)
+	default:
+		return fmt.Errorf("%s: draft_store must be redis or memory, not %q", Name, set.DraftStore)
+	}
+
+	apiURL := set.DashAPIURL
+	if apiURL == "" {
+		if env.Cfg.Dash.APIServer == "" {
+			return fmt.Errorf("%s: set modules.hc_scan.dash_api_url or api_server in the Dash config", Name)
+		}
+		apiURL = "http://" + env.Cfg.Dash.APIServer + "/api"
+	}
+	perms := NewDashPermissions(dashapi.New(apiURL, env.Cfg.Dash.APISalt, 5*time.Second), time.Minute)
+
+	svc, err := NewService(Deps{
+		Repo:      NewPGRepository(pool),
+		Drafts:    drafts,
+		ChangeLog: NewFileChangeLog(set.DashDataDir, env.Cfg.Dash.CDNDataFolder),
+		Perms:     perms,
+		Settings:  set,
+		Processes: env.Cfg.Dash.HCProcessList,
+		LeaveList: env.Cfg.Dash.LeaveList,
+		Log:       env.Log,
+	})
+	if err != nil {
+		return err
+	}
+	if len(env.Cfg.Dash.HCProcessList) == 0 {
+		return fmt.Errorf("%s: HC_PROCESS_LIST is empty in the Dash config", Name)
+	}
+	if set.DashDataDir == "" && env.Cfg.Dash.CDNDataFolder == "" {
+		env.Log.Warn("hc_scan: neither modules.hc_scan.dash_data_dir nor cdn_data_folder is set; the Python pages will not be told about saved data")
+	}
+	m.svc = svc
+	return svc.Routes(mux, env.Base+"/"+Name, env.Auth.Require)
+}
+
+// Close releases the module.
+func (m *Module) Close() error { return nil }

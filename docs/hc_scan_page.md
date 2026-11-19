@@ -1,0 +1,413 @@
+# English
+
+**Updated:** 2026-11-19 (module version 0.1.0). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Section 12 says what was verified and what was not.
+
+## 1. Overview
+
+HC Scan Assign lets a shift leader scan the badges of the employees at the start of a shift. Every scan assigns the person to a machine or activity of the selected process, automatically, from the person's MTR (training record) levels. The result is only a draft. The shift leader checks it, changes what is wrong and presses **Confirm**, which is the only moment anything is written to the database.
+
+It is the badge driven relative of the HC Allocation > Area Assign page of the Python application: the same tables, the same budget head counts and the same write rules, but one person at a time instead of one batch for a whole area.
+
+Entry point: IE dashboard > MQPD > Head Count > **Scan Assign** (button `mqpd-hc-scan-assign-button` in `IE.py`). The page is served by the Go service at `/dash_go/hc_scan/` on server s2.
+
+Scope:
+
+- In scope: scanning, the automatic assignment, the draft and its editing, Confirm, the login hand-over from Dash.
+- Out of scope in 0.1.0: the HC Allocation matrix (areas and OP positions are not shown, the machines of the process are listed flat), clock attendance (`t_mqpd_hc_attend`), budget editing, any other HC page.
+
+## 2. How it works
+
+1. The leader opens **Scan Assign** in Dash. `mqpd_hc_scan_assign_onclick` checks the login and that the user has at least one HeadCount permission, builds a signed one-time link (`build_dash_go_sso_url`) and navigates the browser to it.
+2. The Go service verifies the signature, consumes the one-time nonce, sets its own session cookie and redirects to the page.
+3. The page asks `api/me` for the processes the user may work on (answered by the Python backend, section 8). The leader **chooses the process first**; scanning is not possible before that. The production date (now minus 7 hours, like `get_shift_today`) and the shift (AM from 07:00 to 19:00, otherwise PM) are preset and can be changed.
+4. The scan box always has the focus. A barcode scanner types the employee ID; the page does not depend on the scanner pressing Enter. It looks for an employee ID in what was typed (pattern `employee_id_pattern`) after a 90 ms pause, so prefix or suffix characters of the barcode and lower case are tolerated. A manual entry works with Enter.
+5. Every scan is sent to `api/scan`. The answer is shown at once in a large card (name, machine, MTR level, reason, warnings) with a sound: one beep for a clean assignment, two for a yellow one, a low tone for an error.
+6. The page shows the draft (the "Scanned" list), the machines with assigned / budget head count, and who is expected on the shift but has not scanned yet. It refreshes every 3 seconds, so several terminals of the same process, date and shift see the same draft.
+7. The leader can change the machine of a line with its list, remove a line (the person counts as not scanned again) or clear the draft.
+8. **Confirm** writes the lines that have a machine. Lines with a yellow warning are listed first and are only written after the leader acknowledges them ("Submit anyway").
+
+## 3. Assignment rules
+
+For one scanned person on the selected process, date and shift:
+
+1. **Who is it.** The employee ID is looked up like the HC Input grid does: the membership range of `t_daily_attn_member` valid on the date overrides the MES snapshot `t_mes_ee` (process from the cost center, direct type, shift code). An ID that is in neither is rejected ("not found"), because no record can be built without a shift code.
+2. **Already assigned.** If the person already has a record on that date with a machine, nothing is assigned. The line is shown as "existing" and counts on its machine. The leader can still change it by hand.
+3. **HC to place.** 1 minus the HC of leave options in the record. A part-day leave leaves the rest (for example 0.5). A full-day leave is treated as 1 and flagged (section 4).
+4. **Leaders.** A leader is placed on the "Group Leader" row of the process (the non-routine row named in `leader_activity_names`), not by MTR level. A person is a leader when the direct type of the date is `Shift Leader` (maintained with HC Input > Tools > Member; this is the target) or, until that is maintained for everybody (`leader_by_history`, on by default), when the most recent record of the person in the last 7 days that has a machine is on that row ("same as last time": a leave day is skipped, and somebody who covered the row once and went back to a machine is not a leader). The budget of the row applies: when it is full the line stays without machine and the shift leader decides. A process without a Group Leader row ranks everybody by MTR. Switch `leader_by_history` off when the direct types are maintained.
+5. **Eligible machines.** A machine is eligible only when all of these are true:
+   - it is a routine machine (`type` is not `Non-routine`) of the process (CSV and NWC share their machines);
+   - it has an MTR mapping: a machine with the same name (trimmed) exists in the LMS records of that process in `t_mtr_checkpoint`;
+   - the person holds **MTR level 1 or higher** on it. Without a record the person is never assigned automatically, because the MTR data is used by other systems and an automatic assignment must not hide a missing record;
+   - the budget head count left on it (`budget_head_count` minus the HC already on it, in the database and in the draft) is at least the HC to place, so an automatic assignment never creates an over-budget line.
+6. **Order.** The machines are ranked by:
+   1. MTR level, 3 before 2 before 1;
+   2. the number of the last 7 days (`recent_days`) on which the person worked on that machine (records of `t_daily_attn_data`, any writer); more days first;
+   3. the larger remaining budget;
+   4. the display order (`display_seq`) and the machine id.
+
+   The first machine is assigned. This is **not** the order of the Python Auto Assign button, which puts the last 7 days before the level and also fills people who have no record.
+7. **Nothing eligible.** The line stays without machine ("No machine assigned") with the reason: no MTR record on any machine of the process, no machine has an MTR mapping, or all machines the person is qualified for are full. The shift leader assigns by hand. Activities (non-routine rows such as `Winder_9014`) and machines without MTR mapping are never assigned automatically, but can be chosen by hand; the only automatic use of an activity is the Group Leader row for leaders (item 4).
+
+A person who scans while a seat is free is placed at once, so the result depends on the scan order (the first Lv1 person can take the seat a later Lv3 person would have got). 0.1.0 has no "rebalance" function; the leader corrects by hand.
+
+## 4. Warnings
+
+Anybody can scan, also people who are not on the roster, are on another shift or are on leave. They are assigned like everybody else and marked yellow with the reason, so the shift leader decides:
+
+| Code | Shown when |
+|---|---|
+| `NOT_IN_ROSTER` | The person is not a Direct or Shift Leader member of the process on the date (other process, other direct type, or resigned before the date). |
+| `SHIFT_MISMATCH` | The day type of the calendar (or the recorded actual shift) is not the selected AM/PM shift: scheduled in the other shift, a day off, or no calendar entry for the shift code. |
+| `FULL_DAY_LEAVE` | The record of the date is a full-day leave. Saving replaces the leave with the machine. |
+| `PART_DAY_LEAVE` (info) | Part of the day is leave; the rest goes to the machine. Not yellow. |
+| `HAS_RECORD` | The person already has a record with a machine (yellow only when it is recorded for the other shift). |
+| `NO_MACHINE` | No machine could be assigned (section 3, item 7). |
+| `NO_MTR` | A machine chosen by hand has no MTR record of the person, or no MTR mapping. |
+| `OVER_BUDGET` | A machine chosen by hand goes over its budget head count. When no budget is maintained the message is only informational. |
+
+A line with a yellow flag that has a machine is written only after the acknowledgement. A line without machine is never written; the page says how many were skipped.
+
+## 5. Data
+
+Tables of the `Auth` database (names and columns are the ones the Python code uses; this module never changes a schema):
+
+| Table | Use |
+|---|---|
+| `t_mqpd_hc_table` | Machines and activities of the process: `id`, `process`, `machine`, `type`, `budget_head_count`, `display_seq`, `hidden`. Read. |
+| `t_mtr_checkpoint` | MTR proficiency: latest version of every checkpoint row (`row_id`, `updated_at`), hidden rows removed, newest row per employee, checkpoint and machine, highest level per employee and machine (same reduction as `_sync_mtr_checkpoint` in `LocalListV3.py`). Read. The table is filled by the Python application from LMS. |
+| `t_mes_ee` | MES employee snapshot of the month (group `SP9200`). Read. |
+| `t_daily_attn_member` | Membership ranges. Read. |
+| `t_daily_attn_calendar` | Day type of every shift column for the date. Read. |
+| `t_daily_attn_data` | Attendance and machine records. Read for the day and for the previous 7 days; **written** by Confirm. |
+
+Redis (JSON, written and read only by this module): the draft of a session `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries` (pending lines) and `...:scans` (who scanned, also after saving), 48 hour TTL; the one-time login nonces `dash_go:sso:nonce:<nonce>`.
+
+In memory (60 seconds, 5 minutes for the calendar): machines, MTR matrix, calendar and the employee directory. When the database does not answer, the last cached values are used.
+
+## 6. Confirm: what is written
+
+Confirm writes `t_daily_attn_data` with one upsert per line on `uid = <ee_code>_<yyyymmdd>`, in one transaction, after locking the current rows (`SELECT ... FOR UPDATE`):
+
+- `actual_shift` is the scanned session, `AM` or `PM`, like the HC Input page stores it. (The Python Area Assign page stores the schedule code when the person has no actual shift yet; this module does not copy that behaviour.)
+- `machine_hc_json` keeps the leave entries of the current record, followed by `{process, machine, hc}` for the machine with the rest of the day. A confirmed full-day leave exception drops the leave entry. `process` is the process of the page, `machine` the name in `t_mqpd_hc_table`.
+- `shift` and `schedule_shift` come from the membership and the calendar of that date; `build_in_ot` is recalculated with the same function as the Python code (`cal_build_in_ot`, checked against its output in a test table), `addt_ot` and `remark` are kept, `total_ot` is their sum.
+- `update_user` is the display name of the shift leader (the Python code stores names, not employee codes), `update_time` the server time, `hidden` false.
+- A line is skipped, with a reason on the page, when the data changed since the scan: an automatic line whose person now has a machine record, a person who is now on full-day leave without having been flagged, an unknown machine or a missing shift code. Manual lines may replace a newer record because the leader chose them knowingly.
+- After the commit a line is appended to `DailyAttnData.log` in `dash_data_dir` and in `cdn_data_folder`. The Python readers compare the modification time of that file with their Redis cache, so this is what makes the Python pages show the saved data. If a folder cannot be written the data is saved anyway and the page shows a warning.
+- The previous-month lock of the Python pages applies: from the 8th of a month the previous month cannot be saved (`MonthLocked`, port of `check_mqpd_hc_daily_attn_last_month_locked`).
+- The permission of the user is checked again, without the cache, before writing.
+
+After saving, the lines leave the draft and the people count as scanned. A person who scans again is told "already scanned and saved" and keeps the saved record; change it on the HC Input or Area Assign page.
+
+## 7. HTTP API
+
+All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: no-store`. Errors are `{"error": "<message>", "code": "<code>"}`; technical details are only written to the log.
+
+| Request | Purpose |
+|---|---|
+| `GET api/me` | User, permitted processes, client settings. |
+| `GET api/board?process=&date=&shift=` | The whole session: machines, draft lines, expected people not scanned yet, counters, month lock, MTR freshness. |
+| `POST api/scan` `{process, date, shift, input}` | One scan. Statuses `assigned`, `unassigned`, `existing`, `duplicate`, `saved`. |
+| `POST api/assign` `{process, date, shift, ee, machine_id}` | Change the machine of a pending line (empty `machine_id` removes it). |
+| `POST api/remove` `{process, date, shift, ee}` | Remove a pending line. |
+| `POST api/reset` `{process, date, shift}` | Clear all pending lines. |
+| `POST api/confirm` `{process, date, shift, ack}` | Save. Answer 409 with `code` `needs_ack` and the lines with warnings when `ack` is false; 409 `month_locked`; 409 `nothing_to_save`. |
+
+POST requests need the header `X-Requested-With: dash_go` and are refused when the browser marks them cross-site. The date must be between the first day of the previous month and tomorrow's production date.
+
+## 8. Login and permissions
+
+- Dash cannot give the Go service its browser login, so the link carries a token signed with `api.salt_3` (HMAC-SHA256, key derived with the label `dash_go/sso/v1`, valid 5 minutes, one use). The Python builder is `build_dash_go_sso_url` in `LocalListV3.py`; the Go verifier is `internal/core/auth`. A test vector fixes the format on both sides.
+- The service answers with a session cookie `dash_go_session` (HttpOnly, SameSite Lax, `Secure` behind https, `session_hours`, default 12). The link is only accepted for a local `next` path below `/dash_go/`.
+- Permissions are not copied to Go. The service asks the Python backend: `POST /api/user/hc_scan` with `{"func": "hc_user_processes", "user": "<ee_code>"}` and the header `Authorization` = md5 of `<salt_3>_<yymmddHH>` (the rule of the existing `/api/user` endpoint). The backend (`api_user_mgmt` in `appV2.py`) answers the display name and the processes returned by `check_daily_attn_permission` (HeadCount groups, `HeadCount-All`, `MQPD_AUTH_LIST`). The answer is cached for 60 seconds, except before saving.
+- Without a valid session every API call answers 401 and the page tells the user to open it again from Dash.
+
+## 9. Configuration
+
+Two layers of JSON files are read, with the patch convention of the Python application (`patch_<hostname>.json` replaces whole top-level keys of the base file):
+
+1. The config folder of the Python application (`config.json` + `patch_<hostname>.json`), given by `DASH_GO_DASH_CONFIG_DIR` or `dash_config_dir`. Used keys: `postgresql`, `redis`, `api.salt_3`, `api_server`, `cdn_data_folder`, `HC_PROCESS_LIST`, `SHIFT_LEAVE_PATTERN` (the leave options are its keys from the third on, in file order).
+2. `dash_go.json` + `dash_go_patch_<hostname>.json` in `DASH_GO_CONFIG_DIR` (default `./config`). It may override any key of layer 1. Example: `config/dash_go.example.json`.
+
+Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`.
+
+Module keys (`modules.hc_scan`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `employee_id_pattern` | `[A-Z]{2,3}\d{2}[A-Z0-9]\d{2}` | What an employee ID looks like inside the scanner input (the format the Python code validates for new members). |
+| `draft_store` | `redis` | `redis`, or `memory` (lost at a restart, only for development). |
+| `draft_ttl_hours` | 48 | Lifetime of a draft in Redis. |
+| `recent_days` | 7 | Days of history that rank machines and that are searched for the last record of a leader. |
+| `leader_activity_names` | `["Group Leader"]` | Names of the non-routine rows leaders are placed on (case and spaces are ignored). |
+| `leader_by_history` | `true` | Recognise leaders by their most recent record until their direct type is `Shift Leader`. Set `false` once the direct types are maintained. |
+| `photo_url_template` | `/api/static/hr/{ee_code}.webp` | Photo of the employee; initials are shown when it is missing. |
+| `dash_api_url` | `http://<api_server>/api` | Root of the Python API. |
+| `dash_data_dir` | none | Data folder of the Python application that holds `DailyAttnData.log`. Set it on every host where Python pages cache the data. |
+| `production_day_offset_hours` | 7 | The production day starts at 07:00. |
+| `am_from_hour`, `pm_from_hour` | 7, 19 | Default shift by the clock. |
+| `poll_ms` | 3000 | Refresh rate of the page. |
+
+Environment variables: `DASH_GO_CONFIG_DIR`, `DASH_GO_DASH_CONFIG_DIR`, `DASH_GO_LISTEN`, and for secrets `DASH_GO_PG_PASSWORD`, `DASH_GO_REDIS_PASSWORD`, `DASH_GO_API_SALT`, which win over the files. Secrets are never logged.
+
+Python side: the optional key `dash_go_url` of `config.json` (default `/dash_go/`; an absolute URL when the service runs on another host than the Dash application).
+
+## 10. Deployment (server s2)
+
+1. Build the package: `scripts\build.ps1 -Modules hc_scan` (or without `-Modules` for every module) and unpack it on s2.
+2. Create `config\dash_go.json` from the example. Point `dash_config_dir` to the config folder of the Python application on s2 and `modules.hc_scan.dash_data_dir` to its `data` folder. Check the connection settings with `dash_go.exe -check`.
+3. Add the location of `deploy\nginx_dash_go.conf.example` to the nginx site of s2 and reload nginx. The service serves everything below `/dash_go/` itself.
+4. Start `dash_go.exe` (a console process; wrap it with a service manager if it has to survive log-offs). The log is `logs\dash_go-<date>.log`.
+5. Deploy the Python changes (`IE.py`, `LocalListV3.py`, `appV2.py`). The new menu button works as soon as the Dash application is restarted; the permission function must be deployed to the server that answers `/api`.
+
+Local debugging on a development machine: the Dash repository has the same location in the local debug server block of `config/nginx_asrock.conf` (`http://localhost/dash_go/` to `127.0.0.1:8750`). Copy it to the nginx that is running, reload nginx and start `dash_go.exe` with `DASH_GO_DASH_CONFIG_DIR` pointing at the config folder of the Dash repository.
+
+Run one instance only: the lock that keeps two terminals from taking the last seat twice is in the process.
+
+## 11. Operations and troubleshooting
+
+- **A machine never gets anybody automatically.** Open the page: a machine card with "no MTR mapping" has no machine of the same name in the LMS records of that process. Fix the name in `t_mqpd_hc_table` or in LMS; the match is exact (trimmed).
+- **MTR changes are not seen.** `MTR data:` on the page is the newest `updated_at` of `t_mtr_checkpoint`. The Python application refreshes the table from LMS when its pages read the MTR data, so it can be stale when nobody opened them. Cached for 60 seconds.
+- **Saved data is not shown on the Python pages.** The save answered "The data is saved, but the Python pages may show it late": the change log folder cannot be written (`dash_data_dir`, `cdn_data_folder`). Fix the permission; touching `DailyAttnData.log` refreshes the pages.
+- **"Your permission could not be verified".** The Python API does not answer or rejects the signature: check `api_server` or `dash_api_url`, that `api.salt_3` is the same on both sides, and that the clocks and time zones of both hosts agree (the signature contains the hour).
+- **"The login link has expired / was already used".** Open **Scan Assign** from Dash again.
+- **A person is flagged yellow although everything looks right.** The reason is written on the line. Roster and shift follow `t_daily_attn_member`, `t_mes_ee` and `t_daily_attn_calendar`, exactly like the HC Input page.
+- **Where to look.** `logs\dash_go-<date>.log` (requests without query strings, failures with the step that failed). The log lines in `DailyAttnData.log` are marked `dash_go hc_scan`.
+- **Resetting a session.** Delete the Redis keys `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`, or press "Clear draft". Get approval before touching a production Redis.
+
+## 12. Verification status
+
+Done (2026-11-19):
+
+- Go unit tests: assignment order and gates, every warning, leave handling, Confirm rules, month lock, HTTP flow with login guard, Redis draft store (miniredis), tokens (including the value produced by the Python code), configuration layers.
+- The SQL of the repository and of the write ran against a throw-away PostgreSQL 18 with the real column types of the six tables (`internal/mods/hc_scan/testdata/schema.sql`, read from a development copy), in `repo_pg_test.go`. The write path ran only there, never on the real tables.
+- The read side and the scan logic ran on a copy of the real database (`TestDevCopyReadOnly`, read-only session, drafts in memory, Confirm never called): all 10 processes, 150 scans, no SQL error with the real column types, no automatic line without MTR level 1 or a machine, no automatic line over a budget. Leaders were placed on the Group Leader row in 8 of the 10 processes (none among the first 15 people of CDC and QA). The first board takes about 70 to 180 ms and one scan about 150 ms. What it found about the data: QA has no MTR records at all (every QA scan ends as "No machine assigned") and many routine machines have no MTR mapping (for example 4 of 14 Slitter, 19 of 28 LSL, 9 of 15 Packing machines), so they are never assigned automatically.
+- The real binary was run with a Python configuration folder, a fake `/api/user` endpoint and the scratch database: login with a link made by the real `build_dash_go_sso_url`, the process list, scans, Confirm, rows in `t_daily_attn_data`, change log lines in both folders, a replayed link refused, the page without login.
+- The page was driven in headless Chrome against that database (scan with and without Enter, barcode wrapper, duplicate, unknown ID, every warning, manual change, removal, acknowledgement dialog, saving, scan after saving). No JavaScript error was reported.
+- The Python additions have unit tests (`tests/test_dash_go_link.py`); `tests/test_callback_registration.py` still passes.
+
+**Not verified:**
+
+- Writing to the real tables (only a scratch database with the real column types was written), and the production database.
+- Real photos, a real barcode scanner (whether it presses Enter, which characters it adds), and a real Redis server (the Redis store was tested with an in-process Redis).
+- The call `hc_user_processes` against a running Python backend, and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
+- The nginx location and the port on s2.
+
+## 13. Decisions and known limits
+
+- The assignment order (level first, the last 7 days second) follows the shift leader's decision that missing MTR records must never be hidden by the automatic assignment. It is isolated in `RankMachines` (`assign.go`).
+- Automatic assignment never exceeds the budget; manual choices may, with a warning.
+- A full-day leave that the leader confirms is replaced by the machine, and the replaced leave is not kept anywhere except the database history of the Python side. Remove the line if the leave is right.
+- Leaders (direct type `Shift Leader`, or for now the last record on the Group Leader row) only go to the Group Leader row, also when they have MTR records, and stay without machine when the row is full. The history rule is a stop-gap: switch it off with `leader_by_history` when the direct types are maintained.
+- One machine per person. A person with a part-day leave gets the remaining HC on one machine.
+- Clock attendance is not used, and the HC Allocation areas are not shown.
+- The order of the scans influences who gets which seat (greedy, no rebalance).
+- One service instance, one shared draft per process, date and shift.
+
+---
+
+# 中文
+
+**更新日期：** 2026-11-19（模块版本 0.1.0）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。第 12 节说明哪些内容已验证、哪些没有验证。
+
+## 1. 概述
+
+HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都会根据此人的 MTR（培训记录）等级，自动把他分派到所选 process 的某个 machine 或 activity。结果只是草稿，领班检查并修改后按 **Confirm**，这是唯一会写数据库的时刻。
+
+它是 Python 应用中 HC Allocation > Area Assign 页面的“工牌驱动版”：使用相同的表、相同的 budget head count 和相同的写入规则，但一次处理一个人，而不是对整个 area 批量处理。
+
+入口：IE 看板 > MQPD > Head Count > **Scan Assign**（`IE.py` 中的按钮 `mqpd-hc-scan-assign-button`）。页面由 s2 服务器上的 Go 服务提供，地址为 `/dash_go/hc_scan/`。
+
+范围：
+
+- 包含：扫描、自动分派、草稿及其编辑、Confirm、从 Dash 跳转时的登录交接。
+- 0.1.0 不包含：HC Allocation 矩阵（不显示 area 和 OP 位置，process 的 machine 平铺列出）、打卡考勤（`t_mqpd_hc_attend`）、预算编辑以及其他 HC 页面。
+
+## 2. 工作流程
+
+1. 领班在 Dash 中点击 **Scan Assign**。`mqpd_hc_scan_assign_onclick` 检查登录状态和用户至少拥有一个 HeadCount 权限，生成带签名的一次性链接（`build_dash_go_sso_url`），并让浏览器跳转过去。
+2. Go 服务验证签名，消耗一次性 nonce，设置自己的 session cookie，并重定向到页面。
+3. 页面通过 `api/me` 获取用户可操作的 process（由 Python 后端回答，见第 8 节）。领班**必须先选择 process**，之前无法扫描。生产日期（当前时间减 7 小时，与 `get_shift_today` 相同）和班次（07:00 到 19:00 为 AM，其余为 PM）有默认值，可以修改。
+4. 扫描框始终保持焦点。扫码枪输入员工 ID；页面不依赖扫码枪是否发送 Enter。输入停顿 90 毫秒后，页面在输入内容中查找员工 ID（规则 `employee_id_pattern`），所以条码的前后缀字符和小写都可以容忍。手动输入按 Enter。
+5. 每次扫描都发送到 `api/scan`。结果立即以大卡片显示（姓名、machine、MTR 等级、原因、警告）并伴有声音：正常分派一声，黄色警告两声，错误一个低音。
+6. 页面显示草稿（“Scanned”列表）、各 machine 的已分/预算 head count，以及本班应到但尚未扫描的人员。每 3 秒刷新一次，所以同一 process、日期、班次的多个终端看到同一份草稿。
+7. 领班可以用下拉列表修改某一行的 machine，删除某一行（此人重新算作未扫描），或清空草稿。
+8. **Confirm** 写入有 machine 的行。带黄色警告的行会先列出来，领班确认后（“Submit anyway”）才会写入。
+
+## 3. 分派规则
+
+对所选 process、日期和班次下扫描的一个人：
+
+1. **他是谁。** 员工 ID 的查找方式与 HC Input 网格相同：日期当天有效的 `t_daily_attn_member` 归属时间段覆盖 MES 快照 `t_mes_ee`（process 由 cost center 得出，还有 direct type 和班次代码）。两处都没有的 ID 会被拒绝（“not found”），因为没有班次代码就无法生成记录。
+2. **已经分派。** 如果此人当天已经有带 machine 的记录，就不再分派。该行显示为 “existing”，并计入其 machine 的占用。领班仍可手动修改。
+3. **要安排的 HC。** 1 减去记录中请假选项的 HC。半天假会留下剩余部分（例如 0.5）。全天假按 1 处理并标记警告（第 4 节）。
+4. **Leader。** leader 被安排到该 process 的 “Group Leader” 行（`leader_activity_names` 中指定名称的非 routine 行），不按 MTR 等级。满足以下任一条件的人是 leader：当天的 direct type 是 `Shift Leader`（用 HC Input > Tools > Member 维护，这是目标做法）；或者在所有人的 direct type 都维护好之前（`leader_by_history`，默认开启），此人最近 7 天内最近一条带 machine 的记录就在该行上（“和上次一样”：请假日会被跳过，只顶替过一次该行又回到 machine 的人不算 leader）。该行的预算同样适用：满了的话该行保持无 machine，由领班决定。没有 Group Leader 行的 process，所有人都按 MTR 排序。direct type 维护好之后请把 `leader_by_history` 关掉。
+5. **可选 machine。** 只有同时满足以下条件的 machine 才可选：
+   - 它是该 process 的 routine machine（`type` 不是 `Non-routine`）（CSV 和 NWC 共用 machine）；
+   - 它有 MTR 对应关系：该 process 在 `t_mtr_checkpoint` 的 LMS 记录中有同名（去掉首尾空格）的 machine；
+   - 此人在该 machine 上持有 **MTR 1 级或以上**。没有记录的人永远不会被自动分派，因为 MTR 数据被其他系统使用，自动分派不能掩盖缺失的记录；
+   - 该 machine 剩余的 budget head count（`budget_head_count` 减去数据库和草稿中已占用的 HC）不少于要安排的 HC，因此自动分派不会产生超编的行。
+6. **排序。** 按以下顺序对 machine 排序：
+   1. MTR 等级，3 级优先于 2 级优先于 1 级；
+   2. 最近 7 天中此人在该 machine 工作的天数（`recent_days`，来自 `t_daily_attn_data`，不论由谁写入）；天数多的优先；
+   3. 剩余预算较大的优先；
+   4. 显示顺序（`display_seq`）和 machine id。
+
+   取排在第一位的 machine。这**不是** Python Auto Assign 按钮的顺序：它把最近 7 天放在等级之前，并且也会补入没有记录的人。
+7. **没有可选的。** 该行保持无 machine（“No machine assigned”）并给出原因：该 process 的任何 machine 上都没有 MTR 记录、没有任何 machine 有 MTR 对应关系，或者此人有资格的 machine 都已满。由领班手动分派。activity（非 routine 的行，例如 `Winder_9014`）和没有 MTR 对应关系的 machine 永远不会自动分派，但可以手动选择；唯一自动使用 activity 的情况是 leader 的 Group Leader 行（第 4 条）。
+
+有空位时扫描的人会立即被安排，所以结果取决于扫描顺序（第一个 Lv1 的人可能占掉后来的 Lv3 本该得到的位置）。0.1.0 没有“重新平衡”功能，由领班手动纠正。
+
+## 4. 警告
+
+任何人都可以扫描，包括不在名单中、在其他班次或在请假的人。他们和其他人一样被分派，并用黄色标出原因，由领班决定：
+
+| 代码 | 出现条件 |
+|---|---|
+| `NOT_IN_ROSTER` | 此人当天不是该 process 的 Direct 或 Shift Leader 成员（其他 process、其他 direct type，或在该日期之前已离职）。 |
+| `SHIFT_MISMATCH` | 日历的 day type（或已记录的 actual shift）不是所选的 AM/PM 班次：排在另一个班次、休息日，或日历中没有该班次代码的条目。 |
+| `FULL_DAY_LEAVE` | 当天记录是全天请假。保存时会用 machine 替换请假。 |
+| `PART_DAY_LEAVE`（提示） | 一天中有一部分是请假，其余分给 machine。不是黄色。 |
+| `HAS_RECORD` | 此人已经有带 machine 的记录（仅当记录在另一个班次时才是黄色）。 |
+| `NO_MACHINE` | 没有 machine 可分派（第 3 节第 7 条）。 |
+| `NO_MTR` | 手动选择的 machine 上此人没有 MTR 记录，或该 machine 没有 MTR 对应关系。 |
+| `OVER_BUDGET` | 手动选择的 machine 超出其 budget head count。没有维护预算时只是提示信息。 |
+
+带黄色标记且有 machine 的行，只有在确认后才会写入。没有 machine 的行永远不会写入，页面会说明跳过了多少行。
+
+## 5. 数据
+
+`Auth` 数据库中的表（名称和列与 Python 代码使用的一致；本模块不会修改任何表结构）：
+
+| 表 | 用途 |
+|---|---|
+| `t_mqpd_hc_table` | process 的 machine 和 activity：`id`、`process`、`machine`、`type`、`budget_head_count`、`display_seq`、`hidden`。读取。 |
+| `t_mtr_checkpoint` | MTR 熟练度：每个 checkpoint 行的最新版本（`row_id`、`updated_at`），去掉隐藏行，每个员工、checkpoint 和 machine 取最新一行，每个员工和 machine 取最高等级（与 `LocalListV3.py` 中 `_sync_mtr_checkpoint` 的归并方式相同）。读取。该表由 Python 应用从 LMS 填充。 |
+| `t_mes_ee` | 当月 MES 员工快照（group `SP9200`）。读取。 |
+| `t_daily_attn_member` | 归属时间段。读取。 |
+| `t_daily_attn_calendar` | 当天各班次列的 day type。读取。 |
+| `t_daily_attn_data` | 考勤和 machine 记录。读取当天和前 7 天；由 Confirm **写入**。 |
+
+Redis（JSON，仅由本模块写入和读取）：会话草稿 `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries`（待保存的行）和 `...:scans`（谁扫描过，保存之后也保留），TTL 48 小时；一次性登录 nonce `dash_go:sso:nonce:<nonce>`。
+
+内存缓存（60 秒，日历为 5 分钟）：machine、MTR 矩阵、日历和员工目录。数据库不响应时使用最近一次的缓存值。
+
+## 6. Confirm：写入什么
+
+Confirm 对每一行按 `uid = <ee_code>_<yyyymmdd>` 做一次 upsert 写入 `t_daily_attn_data`，在同一个事务中，并先锁定当前行（`SELECT ... FOR UPDATE`）：
+
+- `actual_shift` 是扫描的班次 `AM` 或 `PM`，与 HC Input 页面的存储方式一致。（Python 的 Area Assign 页面在此人还没有 actual shift 时会存入班次计划代码；本模块不沿用这种行为。）
+- `machine_hc_json` 保留当前记录的请假项，后面是 `{process, machine, hc}`，即 machine 和当天剩余的 HC。已确认的全天请假例外会去掉请假项。`process` 是页面的 process，`machine` 是 `t_mqpd_hc_table` 中的名称。
+- `shift` 和 `schedule_shift` 来自当天的归属和日历；`build_in_ot` 用与 Python 代码相同的函数重新计算（`cal_build_in_ot`，用测试表与其输出比对过），`addt_ot` 和 `remark` 保持不变，`total_ot` 为两者之和。
+- `update_user` 是领班的显示姓名（Python 代码存的是姓名而不是员工编号），`update_time` 是服务器时间，`hidden` 为 false。
+- 如果扫描之后数据发生变化，该行会被跳过，并在页面上给出原因：自动分派的行而此人现在已有 machine 记录、此人现在是全天请假而之前没有被标记、machine 未知或缺少班次代码。手动行可以替换更新的记录，因为这是领班明知而选择的。
+- 提交之后，在 `dash_data_dir` 和 `cdn_data_folder` 中的 `DailyAttnData.log` 各追加一行。Python 的读取函数把该文件的修改时间与自己的 Redis 缓存比较，所以这就是让 Python 页面显示已保存数据的方式。如果某个文件夹无法写入，数据仍会保存，页面会显示警告。
+- Python 页面的上月锁定同样适用：从每月 8 号起不能再保存上个月（`MonthLocked`，是 `check_mqpd_hc_daily_attn_last_month_locked` 的移植）。
+- 写入前会再次检查用户权限，不使用缓存。
+
+保存之后，这些行离开草稿，这些人算作已扫描。此人再次扫描时会提示“already scanned and saved”，并保留已保存的记录；要修改请到 HC Input 或 Area Assign 页面。
+
+## 7. HTTP 接口
+
+所有路径都在 `/dash_go/hc_scan/` 之下。响应为 JSON，带 `Cache-Control: no-store`。错误格式为 `{"error": "<message>", "code": "<code>"}`；技术细节只写入日志。
+
+| 请求 | 用途 |
+|---|---|
+| `GET api/me` | 用户、允许的 process、客户端设置。 |
+| `GET api/board?process=&date=&shift=` | 整个会话：machine、草稿行、尚未扫描的应到人员、计数、月份锁定、MTR 新鲜度。 |
+| `POST api/scan` `{process, date, shift, input}` | 一次扫描。状态有 `assigned`、`unassigned`、`existing`、`duplicate`、`saved`。 |
+| `POST api/assign` `{process, date, shift, ee, machine_id}` | 修改待保存行的 machine（`machine_id` 为空表示取消分派）。 |
+| `POST api/remove` `{process, date, shift, ee}` | 删除一条待保存的行。 |
+| `POST api/reset` `{process, date, shift}` | 清空所有待保存的行。 |
+| `POST api/confirm` `{process, date, shift, ack}` | 保存。`ack` 为 false 且有警告行时返回 409，`code` 为 `needs_ack` 并附带这些行；还有 409 `month_locked` 和 409 `nothing_to_save`。 |
+
+POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨站的请求会被拒绝。日期必须在上个月第一天到明天的生产日期之间。
+
+## 8. 登录与权限
+
+- Dash 无法把浏览器的登录状态交给 Go 服务，所以链接中带有用 `api.salt_3` 签名的 token（HMAC-SHA256，密钥由标签 `dash_go/sso/v1` 派生，有效期 5 分钟，只能使用一次）。Python 端的生成函数是 `LocalListV3.py` 中的 `build_dash_go_sso_url`；Go 端的验证在 `internal/core/auth`。一个测试向量在两端固定了格式。
+- 服务返回 session cookie `dash_go_session`（HttpOnly、SameSite Lax、https 下带 `Secure`、有效期 `session_hours`，默认 12 小时）。链接只接受 `/dash_go/` 之下的本地 `next` 路径。
+- 权限不复制到 Go。服务向 Python 后端查询：`POST /api/user/hc_scan`，内容为 `{"func": "hc_user_processes", "user": "<ee_code>"}`，请求头 `Authorization` 为 `<salt_3>_<yymmddHH>` 的 md5（沿用现有 `/api/user` 接口的规则）。后端（`appV2.py` 中的 `api_user_mgmt`）返回显示姓名以及 `check_daily_attn_permission` 得出的 process 列表（HeadCount 组、`HeadCount-All`、`MQPD_AUTH_LIST`）。结果缓存 60 秒，保存之前除外。
+- 没有有效 session 时，所有 API 调用返回 401，页面提示用户重新从 Dash 打开。
+
+## 9. 配置
+
+读取两层 JSON 文件，沿用 Python 应用的补丁约定（`patch_<hostname>.json` 整体替换基础文件的顶层 key）：
+
+1. Python 应用的配置文件夹（`config.json` + `patch_<hostname>.json`），由 `DASH_GO_DASH_CONFIG_DIR` 或 `dash_config_dir` 指定。使用的 key：`postgresql`、`redis`、`api.salt_3`、`api_server`、`cdn_data_folder`、`HC_PROCESS_LIST`、`SHIFT_LEAVE_PATTERN`（请假选项是它从第三个 key 起的各个 key，按文件中的顺序）。
+2. `DASH_GO_CONFIG_DIR`（默认 `./config`）中的 `dash_go.json` + `dash_go_patch_<hostname>.json`。它可以覆盖第 1 层的任何 key。示例见 `config/dash_go.example.json`。
+
+服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`。
+
+模块 key（`modules.hc_scan`）：
+
+| Key | 默认值 | 含义 |
+|---|---|---|
+| `employee_id_pattern` | `[A-Z]{2,3}\d{2}[A-Z0-9]\d{2}` | 员工 ID 在扫码输入中的样子（Python 代码校验新成员时使用的格式）。 |
+| `draft_store` | `redis` | `redis`，或 `memory`（重启即丢失，仅用于开发）。 |
+| `draft_ttl_hours` | 48 | 草稿在 Redis 中的存活时间。 |
+| `recent_days` | 7 | 用于 machine 排序的历史天数，也是查找 leader 最近一条记录的范围。 |
+| `leader_activity_names` | `["Group Leader"]` | leader 被安排到的非 routine 行的名称（忽略大小写和空格）。 |
+| `leader_by_history` | `true` | 在 direct type 变成 `Shift Leader` 之前，用最近一条记录来识别 leader。direct type 维护好之后设为 `false`。 |
+| `photo_url_template` | `/api/static/hr/{ee_code}.webp` | 员工照片；缺失时显示姓名首字母。 |
+| `dash_api_url` | `http://<api_server>/api` | Python API 的根地址。 |
+| `dash_data_dir` | 无 | 存放 `DailyAttnData.log` 的 Python 应用 data 文件夹。在每台由 Python 页面缓存数据的主机上都要设置。 |
+| `production_day_offset_hours` | 7 | 生产日从 07:00 开始。 |
+| `am_from_hour`、`pm_from_hour` | 7、19 | 按时钟决定的默认班次。 |
+| `poll_ms` | 3000 | 页面刷新间隔。 |
+
+环境变量：`DASH_GO_CONFIG_DIR`、`DASH_GO_DASH_CONFIG_DIR`、`DASH_GO_LISTEN`，以及用于机密信息的 `DASH_GO_PG_PASSWORD`、`DASH_GO_REDIS_PASSWORD`、`DASH_GO_API_SALT`，它们优先于文件。机密信息不会写入日志。
+
+Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`；当服务运行在与 Dash 应用不同的主机上时填写绝对 URL）。
+
+## 10. 部署（服务器 s2）
+
+1. 构建包：`scripts\build.ps1 -Modules hc_scan`（不带 `-Modules` 则包含所有模块），并在 s2 上解压。
+2. 用示例创建 `config\dash_go.json`。把 `dash_config_dir` 指向 s2 上 Python 应用的配置文件夹，把 `modules.hc_scan.dash_data_dir` 指向它的 `data` 文件夹。用 `dash_go.exe -check` 检查连接设置。
+3. 把 `deploy\nginx_dash_go.conf.example` 中的 location 加入 s2 的 nginx 站点并 reload。服务自己处理 `/dash_go/` 之下的所有路径。
+4. 启动 `dash_go.exe`（控制台进程；如果需要在注销后继续运行，请用服务管理工具包装）。日志为 `logs\dash_go-<date>.log`。
+5. 部署 Python 的改动（`IE.py`、`LocalListV3.py`、`appV2.py`）。Dash 应用重启后新菜单按钮即可使用；权限函数必须部署到回答 `/api` 的服务器上。
+
+在开发机上本地调试：Dash 仓库的 `config/nginx_asrock.conf` 的本地调试 server 块里有同样的 location（`http://localhost/dash_go/` 转发到 `127.0.0.1:8750`）。把它复制到正在运行的 nginx，reload nginx，并在启动 `dash_go.exe` 时让 `DASH_GO_DASH_CONFIG_DIR` 指向 Dash 仓库的配置文件夹。
+
+只运行一个实例：防止两个终端重复占用最后一个位置的锁在进程内。
+
+## 11. 运维与故障排查
+
+- **某台 machine 一直没有人被自动分派。** 打开页面：machine 卡片上有 “no MTR mapping” 说明该 process 的 LMS 记录中没有同名 machine。请修正 `t_mqpd_hc_table` 或 LMS 中的名称；匹配是精确的（去掉首尾空格）。
+- **看不到 MTR 的变更。** 页面上的 `MTR data:` 是 `t_mtr_checkpoint` 最新的 `updated_at`。Python 应用在它的页面读取 MTR 数据时才从 LMS 刷新该表，所以没人打开那些页面时可能是旧的。缓存 60 秒。
+- **Python 页面看不到已保存的数据。** 保存时提示 “The data is saved, but the Python pages may show it late”：变更日志文件夹无法写入（`dash_data_dir`、`cdn_data_folder`）。修复权限；对 `DailyAttnData.log` 做一次追加或 touch 即可刷新页面。
+- **“Your permission could not be verified”。** Python API 没有响应或拒绝了签名：检查 `api_server` 或 `dash_api_url`，两边的 `api.salt_3` 是否相同，以及两台主机的时钟和时区是否一致（签名包含小时）。
+- **“The login link has expired / was already used”。** 请重新从 Dash 打开 **Scan Assign**。
+- **某人明明正常却被标黄。** 原因写在该行上。名单和班次与 HC Input 页面一样，来自 `t_daily_attn_member`、`t_mes_ee` 和 `t_daily_attn_calendar`。
+- **去哪里看。** `logs\dash_go-<date>.log`（请求不含查询字符串，失败记录包含失败的步骤）。`DailyAttnData.log` 中的日志行带有 `dash_go hc_scan` 标记。
+- **重置会话。** 删除 Redis key `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`，或者按 “Clear draft”。操作生产环境 Redis 之前先取得批准。
+
+## 12. 验证状态
+
+已完成（2026-11-19）：
+
+- Go 单元测试：分派顺序和门槛、每一种警告、请假处理、Confirm 规则、月份锁定、带登录保护的 HTTP 流程、Redis 草稿存储（miniredis）、token（包括 Python 代码生成的值）、配置分层。
+- 仓库读取和写入的 SQL 在一个临时的 PostgreSQL 18 上运行过，使用六张表的真实列类型（`internal/mods/hc_scan/testdata/schema.sql`，读取自开发库副本），测试在 `repo_pg_test.go`。写入路径只在那里运行过，从未在真实表上运行。
+- 读取部分和扫描逻辑在真实数据库的副本上运行过（`TestDevCopyReadOnly`，只读会话，草稿在内存中，从不调用 Confirm）：全部 10 个 process、150 次扫描，在真实列类型下没有 SQL 错误，没有 MTR 不到 1 级或没有 machine 的自动行，没有超出预算的自动行。在 10 个 process 中有 8 个把 leader 安排到了 Group Leader 行（CDC 和 QA 的前 15 个人中没有）。第一次加载看板约 70 到 180 毫秒，一次扫描约 150 毫秒。它对数据的发现：QA 完全没有 MTR 记录（每次 QA 扫描都是 “No machine assigned”），而且很多 routine machine 没有 MTR 对应关系（例如 Slitter 14 台中有 4 台，LSL 28 台中有 19 台，Packing 15 台中有 9 台），所以它们永远不会被自动分派。
+- 真实的可执行文件用 Python 配置文件夹、模拟的 `/api/user` 接口和临时数据库运行过：用真实的 `build_dash_go_sso_url` 生成的链接登录、process 列表、扫描、Confirm、`t_daily_attn_data` 中的行、两个文件夹中的变更日志行、重复使用的链接被拒绝、未登录的页面。
+- 页面在无头 Chrome 中对该数据库做了操作（带和不带 Enter 的扫描、条码前后缀、重复扫描、未知 ID、每一种警告、手动修改、删除、确认对话框、保存、保存后再次扫描）。没有 JavaScript 报错。
+- Python 新增部分有单元测试（`tests/test_dash_go_link.py`）；`tests/test_callback_registration.py` 仍然通过。
+
+**没有验证：**
+
+- 对真实表的写入（只对带真实列类型的临时数据库写过），以及生产数据库。
+- 真实的照片、真实的扫码枪（是否发送 Enter、会加哪些字符）以及真实的 Redis 服务器（Redis 存储只用进程内的 Redis 测试过）。
+- 针对运行中的 Python 后端调用 `hc_user_processes`，以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
+- s2 上的 nginx location 和端口。
+
+## 13. 决定与已知限制
+
+- 分派顺序（先等级，后最近 7 天）遵循领班的决定：自动分派不能掩盖缺失的 MTR 记录。它被隔离在 `RankMachines`（`assign.go`）中。
+- 自动分派永远不超出预算；手动选择可以，但会有警告。
+- 领班确认的全天请假会被 machine 替换，被替换的请假除了 Python 一侧数据库的历史之外不会在别处保留。如果请假是对的，请删除该行。
+- leader（direct type 为 `Shift Leader`，目前也包括最近一条记录在 Group Leader 行上的人）只会去 Group Leader 行，即使他们有 MTR 记录也一样，该行满了就保持无 machine。历史规则只是过渡办法：direct type 维护好之后用 `leader_by_history` 关掉它。
+- 每人一台 machine。半天假的人在一台 machine 上获得剩余的 HC。
+- 不使用打卡考勤，也不显示 HC Allocation 的 area。
+- 扫描顺序会影响谁得到哪个位置（贪心，没有重新平衡）。
+- 只有一个服务实例；每个 process、日期、班次共用一份草稿。

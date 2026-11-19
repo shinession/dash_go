@@ -1,0 +1,16 @@
+{
+  "listen": ":8750",
+  "base_path": "/dash_go",
+  "log_dir": "logs",
+  "dash_home": "/ie/",
+  "dash_config_dir": "C:\\path\\to\\dash\\config",
+  "modules": {
+    "hc_scan": {
+      "employee_id_pattern": "[A-Z]{2,3}\\d{2}[A-Z0-9]\\d{2}",
+      "draft_store": "redis",
+      "recent_days": 7,
+      "dash_data_dir": "C:\\path\\to\\dash\\data",
+      "leader_by_history": true
+    }
+  }
+}
