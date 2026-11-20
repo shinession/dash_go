@@ -108,7 +108,8 @@ a { color: var(--accent); }
 .dg-logo { display: block; height: 2.25rem; width: auto; }
 .dg-logo .dg-navy { fill: var(--logo-navy); }
 .dg-logo .dg-teal { fill: var(--logo-teal); }
-.dg-app { color: var(--muted); font-size: 1.05rem; padding-left: .9rem; border-left: 1px solid var(--line); line-height: 1.6; }
+.dg-app { color: var(--accent); font-size: 1.3rem; font-weight: 600; padding-left: .9rem; border-left: 1px solid var(--line); line-height: 1.5; }
+.dg-back { flex: none; }
 
 .dg-tools { display: flex; align-items: center; gap: .5rem; min-width: 0; margin-left: auto; }
 

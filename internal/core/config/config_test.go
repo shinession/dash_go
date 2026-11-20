@@ -4,7 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, dir, name, content string) {
@@ -204,6 +207,70 @@ func TestLoginSettingsErrors(t *testing.T) {
 		write(t, dir, "dash_go.json", bad)
 		if _, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv}); err == nil {
 			t.Errorf("%s must be refused", bad)
+		}
+	}
+}
+
+func TestUpdateIsOffByDefaultAndTakesItsSettingsFromTheFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Update.URL != "" || cfg.Update.Interval != 10*time.Minute || cfg.Update.Restart != "supervise" {
+		t.Errorf("a service does not update itself unless it is told where the release is: %+v", cfg.Update)
+	}
+
+	folder := filepath.Join(t.TempDir(), "release")
+	for _, address := range []string{"http://localhost/api/static/cd/dash_go.json", "https://host/rel/", folder} {
+		write(t, dir, "dash_go.json", `{"update_url": `+strconv.Quote(" "+address+" ")+`, "update_interval_minutes": 30, "update_restart": " EXIT "}`)
+		cfg, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
+		if err != nil {
+			t.Fatalf("%s: %v", address, err)
+		}
+		if cfg.Update.URL != address || cfg.Update.Interval != 30*time.Minute || cfg.Update.Restart != "exit" {
+			t.Errorf("%s: %+v", address, cfg.Update)
+		}
+	}
+
+	// a patch file of a host turns it on for that host only
+	write(t, dir, "dash_go.json", `{"update_interval_minutes": 5}`)
+	write(t, dir, "dash_go_patch_s2.json", `{"update_url": "http://localhost/api/static/cd/dash_go.json"}`)
+	cfg, err = Load(Options{ConfigDir: dir, Host: "s2", Getenv: noEnv})
+	if err != nil || cfg.Update.URL == "" || cfg.Update.Interval != 5*time.Minute {
+		t.Errorf("the host that has the patch: %+v %v", cfg.Update, err)
+	}
+	cfg, err = Load(Options{ConfigDir: dir, Host: "dev", Getenv: noEnv})
+	if err != nil || cfg.Update.URL != "" {
+		t.Errorf("another host: %+v %v", cfg.Update, err)
+	}
+}
+
+func TestUpdateSettingsErrors(t *testing.T) {
+	dir := t.TempDir()
+	for _, bad := range []string{
+		`{"update_url": 5}`,
+		`{"update_url": "relative/path.json"}`,
+		`{"update_url": "ftp://host/dash_go.json"}`,
+		`{"update_url": "http://user:secret@host/rel/"}`,
+		`{"update_url": "http://host/rel/?key=1"}`,
+		`{"update_url": "http://host/rel/#top"}`,
+		`{"update_url": "http:///rel/"}`,
+		`{"update_interval_minutes": 0}`,
+		`{"update_interval_minutes": 1441}`,
+		`{"update_interval_minutes": 1.5}`,
+		`{"update_interval_minutes": "ten"}`,
+		`{"update_restart": "reboot"}`,
+		`{"update_restart": 1}`,
+	} {
+		write(t, dir, "dash_go.json", bad)
+		_, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
+		if err == nil {
+			t.Errorf("%s must be refused", bad)
+			continue
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("the error shows the password: %v", err)
 		}
 	}
 }

@@ -1,20 +1,58 @@
-# dash_go behind nginx.
+# dash_go behind nginx: the front server (s1, prod_eng) only forwards to s2, which runs dash_go.
 #
-# Add this location inside the server { } block that already serves /ie and /api (server s2). The service
-# serves everything below /dash_go/ itself, so the prefix is passed through and must not be stripped:
-# proxy_pass has no URI part on purpose. The port is the "listen" setting of dash_go.json.
+# 1. On the server that runs dash_go (s2). Add the location below inside the server { } block that already serves
+#    /ie and /api. The service serves everything below /dash_go/ itself, so the prefix is passed through and must
+#    not be stripped: proxy_pass has no URI part on purpose. The port is the "listen" setting of dash_go.json.
 #
-# When another nginx sits in front of this one (a front server such as prod_eng in front of s2), this nginx sees the
-# address of the front server, not the browser, and every Windows sign-in is refused (address_mismatch). Let this nginx
-# believe the address the front server forwards, and only from that address (http { } or server { } block):
+#    X-Forwarded-For must be $proxy_add_x_forwarded_for. Do not pass the header through ($http_x_forwarded_for):
+#    dash_go believes only the right-most address that nginx itself added, and a request that reaches this nginx
+#    without the front server would bring its own address list, so a forged address would pass the address check
+#    of the Windows sign-in (tested: docs/hc_scan_page.md, section 12).
 #
-#     set_real_ip_from <address of the front server>;
-#     real_ip_header X-Forwarded-For;
-#     real_ip_recursive on;
+#    This nginx must believe the address the front server forwards, and only from that address, in the http { }
+#    block (or list the front server in "trusted_proxies" of dash_go.json instead; docs/shell_and_login.md,
+#    section 9). Without it every Windows sign-in is refused (address_mismatch):
 #
-# (or list the front server in "trusted_proxies" of dash_go.json instead; docs/shell_and_login.md, section 9)
+#        set_real_ip_from <address of the front server>;
+#        real_ip_header X-Forwarded-For;
+#        real_ip_recursive on;
 #
-# Reload nginx after the change: nginx -s reload
+#    Behind a front server X-Forwarded-Proto may be $http_x_forwarded_proto, so that https at the front is kept.
+#
+# 2. On the front server (s1). dash_go runs on s2 only, so there is no local backup. In the http { } block:
+#
+#        upstream dash_go_backend {
+#            server <address of s2>:80;
+#            keepalive 32;
+#        }
+#
+#    and in the server { } block:
+#
+#        location = /dash_go {
+#            return 301 /dash_go/;
+#        }
+#
+#        location /dash_go/ {
+#            proxy_pass http://dash_go_backend;
+#            proxy_http_version 1.1;
+#            proxy_set_header Connection "";
+#            proxy_set_header Host $host;
+#            proxy_set_header X-Real-IP $remote_addr;
+#            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#            proxy_set_header X-Forwarded-Proto $scheme;
+#            proxy_connect_timeout 3s;
+#            proxy_send_timeout 60s;
+#            proxy_read_timeout 60s;
+#        }
+#
+# Deploy in this order: dash_go on s2, the nginx of s2, then the nginx of s1 (a route without a running backend
+# answers 502). Test http://<s2>/dash_go/ before the front server is used.
+#
+# Reload nginx after each change: nginx -s reload
+
+location = /dash_go {
+    return 301 /dash_go/;
+}
 
 location /dash_go/ {
     proxy_pass http://127.0.0.1:8750;

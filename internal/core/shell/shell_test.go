@@ -367,6 +367,43 @@ func TestModulePagesBringTheirOwnContentStylesAndScripts(t *testing.T) {
 	}
 }
 
+// The pages of a module can go back to the root of the server they are on (the page of Dash, whatever the address of
+// the server is), so the link has no host. The landing page and the login page have nothing to go back from.
+func TestModulePagesHaveABackButtonToTheRootOfTheServer(t *testing.T) {
+	f := newFixture(t, true, true)
+	page, err := f.sh.NewPage(PageSpec{TitleKey: "ui.landing_title", AppKey: "ui.landing_modules"}, fstest.MapFS{"p.html": {Data: []byte(`{{define "content"}}x{{end}}`)}}, "p.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	f.sh.Mount(mux)
+	mux.Handle("GET /dash_go/demo/{$}", page.Handler(func(*http.Request) any { return nil }))
+	f.mux = i18n.Middleware(mux)
+
+	body := f.get("/dash_go/demo/").Body.String()
+	for _, want := range []string{
+		`<span class="dg-app">Modules</span>`,
+		`<a class="dg-btn dg-btn-small dg-back" href="/" title="Back to the home page of this server">`,
+		`/dash_go/_shell/icons.svg#back`, `Back</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the module page lacks %q:\n%s", want, body)
+		}
+	}
+	if i, j := strings.Index(body, `class="dg-app"`), strings.Index(body, `dg-back`); i < 0 || j < i {
+		t.Error("the button comes after the name of the module")
+	}
+	zh := f.get("/dash_go/demo/", &http.Cookie{Name: i18n.CookieName, Value: "zh"}).Body.String()
+	if !strings.Contains(zh, `title="返回本服务器的首页"`) || !strings.Contains(zh, "返回</a>") {
+		t.Errorf("the button is in the language of the page:\n%s", zh)
+	}
+	for _, path := range []string{"/dash_go/", "/dash_go/login"} {
+		if strings.Contains(f.get(path).Body.String(), "dg-back") {
+			t.Errorf("%s has a back button", path)
+		}
+	}
+}
+
 func TestNewPageNeedsAContentTemplate(t *testing.T) {
 	f := newFixture(t, true, true)
 	if _, err := f.sh.NewPage(PageSpec{}, fstest.MapFS{"x.html": {Data: []byte(`nothing`)}}, "x.html"); err == nil || !strings.Contains(err.Error(), "content") {

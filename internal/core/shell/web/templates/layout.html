@@ -24,11 +24,12 @@
 
 {{define "icon"}}<svg class="dg-icon" aria-hidden="true" focusable="false"><use href="{{.Base}}/_shell/icons.svg#{{.Name}}"></use></svg>{{end}}
 
-{{/* The bar of every page: the logo, the name of the module, the theme button, the language switch and the user. */}}
+{{/* The bar of every page: the logo, the name of the module with the way back to the root of the server, the theme button, the language switch and the user. */}}
 {{define "header"}}<header class="dg-header" id="dg-header">
   <div class="dg-header-inner">
     <a class="dg-brand" href="{{.Base}}/" title="{{.T "ui.home"}}">{{template "logo"}}</a>
-    {{if .App}}<span class="dg-app">{{.App}}</span>{{end}}
+    {{if .App}}<span class="dg-app">{{.App}}</span>
+    <a class="dg-btn dg-btn-small dg-back" href="/" title="{{.T "ui.back_title"}}">{{template "icon" (.Icon "back")}} {{.T "ui.back"}}</a>{{end}}
     <div class="dg-tools">
       <button type="button" class="dg-iconbtn" data-theme-toggle title="{{.T "ui.theme_toggle"}}" aria-label="{{.T "ui.theme_toggle"}}">
         <span class="dg-theme-sun">{{template "icon" (.Icon "sun")}}</span><span class="dg-theme-moon">{{template "icon" (.Icon "moon")}}</span>

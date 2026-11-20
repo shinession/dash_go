@@ -1,12 +1,12 @@
 # English
 
-**Updated:** 2026-11-20 (dash_go version 0.1.2). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (dash_go version 0.1.3). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
 Version 0.1.1 gave every page of dash_go one frame, the **shell**:
 
-- a header with the logo, the name of the module, a light / dark theme button, an EN | 中文 language switch, the signed-in user (picture or initials, name) and a sign-out button, or a sign-in button;
+- a header with the logo, the name of the module with a Back button, a light / dark theme button, an EN | 中文 language switch, the signed-in user (picture or initials, name) and a sign-out button, or a sign-in button;
 - a light and a dark theme (the dark one is the look of version 0.1.0), chosen by the person and remembered by the browser;
 - English and Chinese for every text, also the warnings and errors that the server writes;
 - a login page of its own (account and password, or the Windows sign-in), next to the one-time link that Dash builds.
@@ -23,16 +23,17 @@ The shell lives in `internal/core`, so every module (and the landing page `/dash
 ## 2. The header
 
 ```text
-[logo CIM EDGE]  | HC Scan Assign                    (sun/moon)  [EN|中文]  (picture) Name  [sign out]     <- shell, every page
+[logo CIM EDGE]  | HC Scan Assign  [<- Back]          (sun/moon)  [EN|中文]  (picture) Name  [sign out]     <- shell, every page
  Winder  [date] [AM|PM] [Change process]                            Scanned 3/20  Pending 2 ...          <- page bar of the module
 ```
 
-- The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page).
+- The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page). Since 0.1.3 it is in the accent colour of the theme (`--accent`: `#0b63c5` in the light theme, `#4da3ff` in the dark one), 1.3 rem and weight 600; before it was the muted grey, which was too dim on the dark header. The contrast of the accent on the header is covered by `palette_test.go`.
+- The **Back** button (since 0.1.3, only on the pages of a module: the landing page and the login page have no module name and no button) is the link `/`, the root of the server the page was opened on, not `dash_home`. The link has no host, so it follows the address the person typed: `http://127.0.0.1/` on the development machine, `http://<s2>/` on s2, and the host of s1 when the page was opened through s1. Its texts are `ui.back` and `ui.back_title`.
 - The theme button shows the icon of the theme that is on now: the sun in the light theme, the moon in the dark one.
 - The language switch is a link: it sets the cookie and comes back to the same page (query string included).
 - The user box shows the picture of the person (section 6) or the initials, the name (cut with an ellipsis after 11 rem; the tooltip is "Name (employee code)") and the sign-out button. A visitor without a session sees a **Sign in** button instead (not on the login page itself).
 - When the session ends while a page is open, the script of the page turns the user box into the Sign in button and shows "Session expired" with a button to the login page.
-- Below 760 px the module name is hidden and the logo shrinks to its mark; below 480 px the name of the user is hidden too. The header wraps instead of scrolling.
+- Below 760 px the module name is hidden (the Back button stays) and the logo shrinks to its mark; below 480 px the name of the user is hidden too. The header wraps instead of scrolling.
 
 ## 3. The logo
 
@@ -137,12 +138,12 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 | `api.salt_3` | Python `config.json` | none | Secret of the `/api/user` endpoint and of the hand-over link (unchanged). |
 | `dash_home` | `dash_go.json` | `/ie/` | The login page links to the Dash application. |
 
-`dash_go.exe -check` prints whether the password and the Windows sign-in are on. Since 0.1.2 the log (and so `-check`) also says which Python API the sign-in and the modules ask and which key it came from: `the Dash API of the sign-in url=http://localhost/api from=dash_api_url`.
+`dash_go.exe -check` prints whether the password and the Windows sign-in are on. Since 0.1.2 the log (and so `-check`) also says which Python API the sign-in and the modules ask and which key it came from: `the Dash API of the sign-in url=http://localhost/api from=dash_api_url`. Since 0.1.3 `-check` also says whether the automatic update is on. Its keys (`update_url`, `update_interval_minutes`, `update_restart`) are in [auto_update.md](auto_update.md), section 6.
 
 ## 9. Deployment
 
 - No new location is needed: `/dash_go/` already covers `_shell`, `login`, `lang` and `auth`. The nginx example sets `X-Forwarded-For $proxy_add_x_forwarded_for`, which the sign-in uses; the default `trusted_proxies` trusts nginx on the same computer.
-- **Two proxies in a row** (a server in front of the server that runs dash_go): the nginx next to dash_go sees the address of the front server, not the browser. Either list the front server in `trusted_proxies` (the right-most address that is not trusted wins), or let that nginx use `set_real_ip_from <front server>; real_ip_header X-Forwarded-For; real_ip_recursive on;`. Without one of them every Windows sign-in is refused as `address_mismatch`; the log line says which addresses were compared. `sso_require_same_ip: false` makes it work but removes the protection against the forced sign-in. Example: the development machine `sgmeslt595` behind the front server `prod_eng`. `config/nginx_sgmeslt595.conf` of the Dash repository has the three directives in its `http` block with the address of `prod_eng`, like `nginx_sgmescimai.conf` of s2, which trusts `prod_eng` the same way. nginx believes the header only from that address, so a browser cannot choose its own address; `/tv/` keeps its own `set_real_ip_from` for s2. The nginx that is running reads its own copy of the file: copy it, run `nginx -t`, then reload nginx.
+- **Two proxies in a row** (a server in front of the server that runs dash_go): the nginx next to dash_go sees the address of the front server, not the browser. Either list the front server in `trusted_proxies` (the right-most address that is not trusted wins), or let that nginx use `set_real_ip_from <front server>; real_ip_header X-Forwarded-For; real_ip_recursive on;`. Without one of them every Windows sign-in is refused as `address_mismatch`; the log line says which addresses were compared. `sso_require_same_ip: false` makes it work but removes the protection against the forced sign-in. Example: the development machine `sgmeslt595` behind the front server `prod_eng`. `config/nginx_sgmeslt595.conf` of the Dash repository has the three directives in its `http` block with the address of `prod_eng`, like `nginx_sgmescimai.conf` of s2, which trusts `prod_eng` the same way. nginx believes the header only from that address, so a browser cannot choose its own address; `/tv/` keeps its own `set_real_ip_from` for s2. The nginx that is running reads its own copy of the file: copy it, run `nginx -t`, then reload nginx. **In production** the chain is browser → s1 (`prod_eng`, the front door) → the nginx of s2 → dash_go. The nginx of s2 trusts `X-Forwarded-For` from s1 (`set_real_ip_from`), s1 and s2 forward `/dash_go/` with `X-Forwarded-For $proxy_add_x_forwarded_for`, and nothing has to be set in dash_go (`trusted_proxies` keeps its default). The `/dash_go/` location of s2 must not pass the header through (`$http_x_forwarded_for`, the idiom of the other locations of s2): a request that reaches s2 without s1 would bring its own address, and dash_go would believe it (tested, section 12). s1 has no local backup for `/dash_go/`, because dash_go runs on s2 only. The files are `config/nginx_prod_eng.conf` (s1) and `config/nginx_sgmescimai.conf` (s2) of the Dash repository; the example is `deploy/nginx_dash_go.conf.example`.
 - **A browser on the computer that runs dash_go** (a development machine, `http://localhost/...`): the Windows sign-in matches the address of the computer, section 7.2. Nothing has to be configured.
 - **The Python API of a development machine.** dash_go asks `dash_api_url`, by default `http://<api_server>/api`, and the patch file of a development machine often sets `api_server` to the production server for the calls of the Python application itself. Set `dash_api_url` in `dash_go.json` there (for example `http://localhost/api`); otherwise the sign-in and the permission check ask a backend that may not have the functions `verify_user` and `hc_user_processes` yet (section 10).
 - The sign-on service is opened by the **browser** (the popup), and read by **s2** through its backend: s2 must reach `http://<sso_server>/api/sso_result/anything`.
@@ -171,6 +172,7 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 - The Windows sign-in needs the browser to reach the sign-on service and s2 to reach its backend.
 - The light palette and the Chinese wording are the developer's proposal.
 - A browser on the computer that runs dash_go matches the addresses of that computer (0.1.2). One browser on one computer must not be refused because the two services name the computer differently (loopback for dash_go, the LAN address for the sign-on service); the rule of the check, the same computer for both steps, is unchanged. Only a sign-in that started from a loopback address is affected.
+- While the automatic update is installed (a moment, when nobody is clicking or submitting) a request that changes something gets 503 with the code `updating` and the message `err.updating`; requests that only read are never refused ([auto_update.md](auto_update.md), section 3).
 
 ## 12. Verification status
 
@@ -184,26 +186,33 @@ Done (2026-11-20, version 0.1.2):
 - New unit tests: a Windows sign-in that started from a loopback address matches an address of this computer (direct, and through nginx on the same computer as in the log of the development machine) and is refused for the address of another computer or no address, and a browser on another computer gets no relaxation (`ssoflow_test.go`; the first test fails when the rule is switched off); the header of a trusted and of a not trusted front server (`clientip_test.go`); the errors of the Python API (status 204, the address in the message, no credentials in it: `client_test.go`); where the API address comes from (`config_test.go`).
 - The real 0.1.2 binary on the development machine, with scratch configuration on port 18750, the real local Python API, the local Redis and a stand-in for the sign-on service that answers with the real `pickle` and `zlib`. With the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. A Windows sign-in started from `localhost` ended `ok` when the sign-on service reported the LAN address of the computer, and `mismatch` when it reported another computer.
 - The nginx configuration of the development machine with a front server in front: an isolated nginx 1.24 instance made from `config/nginx_sgmeslt595.conf` in front of the real binary. Only the listen port, the port of dash_go and the trusted address were changed, because requests cannot be sent from the real `prod_eng` address; a loopback address played the front server. With the three directives the Windows sign-in through the front server ended `ok` and the log showed the address of the browser. Without them it was refused with `started_from` = the front server and `forwarded="<browser>, <front server>"`. In a second run of the same kind with a stub backend that echoes the headers, a forged left part of `X-Forwarded-For` was ignored, and a request from an address that is not trusted kept its own address.
+- The production chain, s1 → s2 → dash_go (the `/dash_go/` routes of `config/nginx_prod_eng.conf` and `config/nginx_sgmescimai.conf`): `nginx -t` on both complete files, and two isolated nginx instances made from them (only the listen ports, the port of dash_go and the address that s2 trusts as s1 were changed) in front of the real 0.1.2 binary, the real local Python API and a stand-in for the sign-on service. Through the chain: the redirect of `/dash_go`, the login page, static files, the Windows sign-in and the permission check (`api/me`: 200, 10 processes) worked; a forged `X-Forwarded-For` sent through s1 was ignored; a browser that goes to s2 without s1 worked. A request sent to s2 without s1 that claimed the address of another person was refused (`mismatch`); with the location changed to `$http_x_forwarded_for` (the idiom of the other locations of s2) the same request was accepted and signed in as the other person. So the `/dash_go/` location of s2 uses `$proxy_add_x_forwarded_for`.
+
+Done (2026-11-20, version 0.1.3):
+
+- New unit tests: the Back button is on the pages of a module, goes to `/`, is in both languages and is not on the landing page or the login page (`shell_test.go`); the catalogs have `ui.back`, `ui.back_title` and `err.updating` in both languages (`catalog_test.go`, which also finds every key the code uses); the 503 of the gate in the language of the request (`internal/core/server/gate_test.go`). The contrast of the accent on the header was already covered by `palette_test.go`.
+- The real 0.1.3 binary (scratch configuration on port 18754, the real Python configuration and API) in the integrated browser of the editor, signed in with a hand-over link made with a test secret: the header of the module page in the light and the dark theme, in English and in Chinese, and in a window 390 px wide. The name of the module is in the blue of the theme (computed `rgb(11, 99, 197)` in the light theme), 20.8 px, weight 600; the Back button is next to it with the arrow icon; at 390 px the name is hidden and the button stays next to the logo, and the page does not scroll sideways. A click on Back went to `/` of the same host and port.
 
 **Not verified:**
 
 - The real Python backend (`verify_user`, `sso_result` as deployed; `hc_user_processes` was tried against the Python backend of the development machine in 0.1.2, not against s2), the real Windows sign-on service and a real Windows user.
-- nginx on s2: `X-Forwarded-For` handling, `trusted_proxies` behind two proxies, https. The real `prod_eng` in front of the development machine (its address was simulated), and the nginx that is running on the development machine after the new file is copied and reloaded.
+- The real nginx of s1 and s2 (their files were tested with isolated instances, see above, but are not deployed), https, and the real `prod_eng` in front of the development machine (its address was simulated; the nginx that is running on the development machine after the new file is copied and reloaded).
 - The 480 x 320 placeholder of the real static endpoint (taken from the TimeVault records) and real photos.
 - Browsers other than Chrome (Edge is expected to behave the same), a real scanner.
 - A review of the Chinese wording by the users.
+- The Back button behind the nginx of s1 and s2 (0.1.3): the link is `/` and was clicked against the scratch service only, which answers 404 there because it serves `/dash_go/` only.
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-20（dash_go 版本 0.1.2）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（dash_go 版本 0.1.3）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
 0.1.1 版给 dash_go 的每个页面加上了统一的外框，即 **shell**：
 
-- 顶栏：logo、模块名称、浅色 / 深色主题按钮、EN | 中文 语言切换、当前登录用户（头像或首字母、姓名）和退出登录按钮；未登录时显示登录按钮；
+- 顶栏：logo、模块名称及返回按钮、浅色 / 深色主题按钮、EN | 中文 语言切换、当前登录用户（头像或首字母、姓名）和退出登录按钮；未登录时显示登录按钮；
 - 浅色和深色两套主题（深色就是 0.1.0 版的样子），由使用者选择，浏览器记住；
 - 所有文字都有中英文，包括服务器生成的警告和错误；
 - dash_go 自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的一次性链接并存。
@@ -220,16 +229,17 @@ shell 放在 `internal/core` 中，所以每个模块（以及首页 `/dash_go/`
 ## 2. 顶栏
 
 ```text
-[logo CIM EDGE]  | HC 扫码分派                         (太阳/月亮)  [EN|中文]  (头像) 姓名  [退出]     <- shell，每个页面都有
+[logo CIM EDGE]  | HC 扫码分派  [<- 返回]               (太阳/月亮)  [EN|中文]  (头像) 姓名  [退出]     <- shell，每个页面都有
  Winder  [日期] [AM|PM] [切换工序]                                  已扫描 3/20  待确认 2 ...          <- 模块自己的页面栏
 ```
 
-- logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`）。
+- logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`）。自 0.1.3 起它使用主题的强调色（`--accent`：浅色主题 `#0b63c5`，深色主题 `#4da3ff`），1.3 rem，字重 600；之前它是暗淡的灰色，在深色顶栏上太不显眼。强调色在顶栏上的对比度由 `palette_test.go` 覆盖。
+- **返回**按钮（自 0.1.3 起，只出现在模块的页面上：首页和登录页没有模块名称，也没有这个按钮）是链接 `/`，即打开页面时所在服务器的根路径，而不是 `dash_home`。链接里没有主机，所以它跟随使用者输入的地址：开发机上是 `http://127.0.0.1/`，s2 上是 `http://<s2>/`，经由 s1 打开页面时则是 s1 的主机。它的文字是 `ui.back` 和 `ui.back_title`。
 - 主题按钮显示当前主题的图标：浅色主题是太阳，深色主题是月亮。
 - 语言切换是一个链接：设置 cookie 后回到同一页面（包括查询字符串）。
 - 用户框显示头像（第 6 节）或首字母、姓名（超过 11 rem 用省略号截断，悬停提示是“姓名（工号）”）和退出按钮。没有会话的访问者看到的是 **登录** 按钮（登录页本身不显示）。
 - 页面打开期间会话结束时，页面脚本把用户框换成登录按钮，并显示“登录已过期”和一个去登录页的按钮。
-- 窄于 760 px 时隐藏模块名称，logo 缩成只剩图标；窄于 480 px 时也隐藏用户名。顶栏会换行而不是出现滚动条。
+- 窄于 760 px 时隐藏模块名称（返回按钮保留），logo 缩成只剩图标；窄于 480 px 时也隐藏用户名。顶栏会换行而不是出现滚动条。
 
 ## 3. Logo
 
@@ -334,12 +344,12 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 | `api.salt_3` | Python `config.json` | 无 | `/api/user` 接口和交接链接的密钥（没有改变）。 |
 | `dash_home` | `dash_go.json` | `/ie/` | 登录页链接到 Dash 应用。 |
 
-`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。自 0.1.2 起，日志（所以 `-check` 也是）还会说明登录和各模块询问的是哪个 Python API，以及它来自哪个键：`the Dash API of the sign-in url=http://localhost/api from=dash_api_url`。
+`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。自 0.1.2 起，日志（所以 `-check` 也是）还会说明登录和各模块询问的是哪个 Python API，以及它来自哪个键：`the Dash API of the sign-in url=http://localhost/api from=dash_api_url`。自 0.1.3 起，`-check` 还会说明自动更新是否开启。它的键（`update_url`、`update_interval_minutes`、`update_restart`）见 [auto_update.md](auto_update.md) 第 6 节。
 
 ## 9. 部署
 
 - 不需要新的 location：`/dash_go/` 已经覆盖 `_shell`、`login`、`lang` 和 `auth`。nginx 示例设置了 `X-Forwarded-For $proxy_add_x_forwarded_for`，登录会用到它；默认的 `trusted_proxies` 信任同一台电脑上的 nginx。
-- **两层代理**（运行 dash_go 的服务器前面还有一台服务器）：紧挨着 dash_go 的 nginx 看到的是前面那台服务器的地址，而不是浏览器的。要么把前面的服务器列入 `trusted_proxies`（最右边的、不受信任的地址优先），要么让那个 nginx 使用 `set_real_ip_from <前面的服务器>; real_ip_header X-Forwarded-For; real_ip_recursive on;`。两者都没有时，每次 Windows 登录都会因 `address_mismatch` 被拒绝；日志行会说明比较了哪些地址。`sso_require_same_ip: false` 可以让它工作，但会失去对强加登录的保护。示例：开发机 `sgmeslt595` 位于前置服务器 `prod_eng` 之后。Dash 仓库的 `config/nginx_sgmeslt595.conf` 在 `http` 块中用 `prod_eng` 的地址设置了这三条指令，与 s2 的 `nginx_sgmescimai.conf` 相同（s2 以同样的方式信任 `prod_eng`）。nginx 只相信来自该地址的请求头，所以浏览器不能自己选择地址；`/tv/` 仍保留它自己针对 s2 的 `set_real_ip_from`。正在运行的 nginx 读取的是该文件自己的副本：复制过去，运行 `nginx -t`，再 reload nginx。
+- **两层代理**（运行 dash_go 的服务器前面还有一台服务器）：紧挨着 dash_go 的 nginx 看到的是前面那台服务器的地址，而不是浏览器的。要么把前面的服务器列入 `trusted_proxies`（最右边的、不受信任的地址优先），要么让那个 nginx 使用 `set_real_ip_from <前面的服务器>; real_ip_header X-Forwarded-For; real_ip_recursive on;`。两者都没有时，每次 Windows 登录都会因 `address_mismatch` 被拒绝；日志行会说明比较了哪些地址。`sso_require_same_ip: false` 可以让它工作，但会失去对强加登录的保护。示例：开发机 `sgmeslt595` 位于前置服务器 `prod_eng` 之后。Dash 仓库的 `config/nginx_sgmeslt595.conf` 在 `http` 块中用 `prod_eng` 的地址设置了这三条指令，与 s2 的 `nginx_sgmescimai.conf` 相同（s2 以同样的方式信任 `prod_eng`）。nginx 只相信来自该地址的请求头，所以浏览器不能自己选择地址；`/tv/` 仍保留它自己针对 s2 的 `set_real_ip_from`。正在运行的 nginx 读取的是该文件自己的副本：复制过去，运行 `nginx -t`，再 reload nginx。**在生产环境**，链路是 浏览器 → s1（`prod_eng`，前置入口）→ s2 的 nginx → dash_go。s2 的 nginx 信任来自 s1 的 `X-Forwarded-For`（`set_real_ip_from`），s1 和 s2 都用 `X-Forwarded-For $proxy_add_x_forwarded_for` 转发 `/dash_go/`，dash_go 中不需要设置任何东西（`trusted_proxies` 保持默认）。s2 的 `/dash_go/` location 不能把请求头原样传递（`$http_x_forwarded_for`，即 s2 其他 location 的写法）：不经过 s1 直接到达 s2 的请求会带着它自己声称的地址，dash_go 会相信它（已测试，第 12 节）。s1 没有为 `/dash_go/` 设置本机 backup，因为 dash_go 只运行在 s2 上。文件是 Dash 仓库的 `config/nginx_prod_eng.conf`（s1）和 `config/nginx_sgmescimai.conf`（s2）；示例是 `deploy/nginx_dash_go.conf.example`。
 - **运行 dash_go 的那台电脑上的浏览器**（开发机，`http://localhost/...`）：Windows 登录会匹配这台电脑的地址，见第 7.2 节。不需要任何配置。
 - **开发机的 Python API。** dash_go 询问 `dash_api_url`，默认是 `http://<api_server>/api`，而开发机的 patch 文件常常为了 Python 应用自己的调用，把 `api_server` 设成生产服务器。在那里请在 `dash_go.json` 中设置 `dash_api_url`（例如 `http://localhost/api`）；否则登录和权限检查会询问一个可能还没有 `verify_user` 和 `hc_user_processes` 函数的后端（第 10 节）。
 - 登录服务由**浏览器**打开（弹出窗口），由 **s2** 通过它的后端读取：s2 必须能访问 `http://<sso_server>/api/sso_result/anything`。
@@ -368,6 +378,7 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - Windows 登录要求浏览器能访问登录服务，并且 s2 能访问它的后端。
 - 浅色配色和中文措辞是开发者的提案。
 - 运行 dash_go 的那台电脑上的浏览器匹配这台电脑的地址（0.1.2）。同一台电脑上的同一个浏览器，不应该因为两个服务对这台电脑的称呼不同（dash_go 看到回环地址，登录服务看到局域网地址）而被拒绝；检查的规则，即两个步骤在同一台电脑上，没有改变。只有从回环地址启动的登录受影响。
+- 自动更新在安装的那一刻（没有人在点击或提交时），改变数据的请求会得到 503，代码为 `updating`，消息为 `err.updating`；只读取数据的请求永远不会被拒绝（[auto_update.md](auto_update.md) 第 3 节）。
 
 ## 12. 验证状态
 
@@ -381,11 +392,18 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - 新的单元测试：从回环地址启动的 Windows 登录，会匹配这台电脑的地址（直接连接，以及通过同一台电脑上的 nginx，就像开发机的日志那样），而另一台电脑的地址或没有地址则被拒绝；另一台电脑上的浏览器没有得到任何放宽（`ssoflow_test.go`；关掉这条规则时第一个测试会失败）；受信任和不受信任的前置服务器的请求头（`clientip_test.go`）；Python API 的错误（状态 204、消息中带有地址、其中没有凭据：`client_test.go`）；API 地址来自哪里（`config_test.go`）。
 - 真实的 0.1.2 可执行文件在开发机上运行：使用端口 18750 的临时配置、真实的本地 Python API、本地 Redis，以及一个用真实 `pickle` 和 `zlib` 作答的登录服务替身。API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。从 `localhost` 发起的 Windows 登录，在登录服务报告这台电脑的局域网地址时以 `ok` 结束，在它报告另一台电脑时以 `mismatch` 结束。
 - 前面有前置服务器时的开发机 nginx 配置：用 `config/nginx_sgmeslt595.conf` 做出的一个隔离的 nginx 1.24 实例，放在真实的可执行文件前面。只改了监听端口、dash_go 的端口和受信任的地址，因为无法从真实的 `prod_eng` 地址发送请求；用一个回环地址扮演前置服务器。有这三条指令时，经前置服务器的 Windows 登录以 `ok` 结束，日志里是浏览器的地址；没有它们时被拒绝，`started_from` 是前置服务器，`forwarded="<浏览器>, <前置服务器>"`。在用一个回显请求头的桩后端所做的第二次同类运行中，被伪造的 `X-Forwarded-For` 左侧部分被忽略，来自不受信任地址的请求保持了它自己的地址。
+- 生产链路 s1 → s2 → dash_go（`config/nginx_prod_eng.conf` 和 `config/nginx_sgmescimai.conf` 的 `/dash_go/` 路由）：对两个完整文件运行 `nginx -t`，并用它们做出两个隔离的 nginx 实例（只改了监听端口、dash_go 的端口和 s2 当作 s1 来信任的地址），放在真实的 0.1.2 可执行文件、真实的本地 Python API 和登录服务的替身前面。经过整条链路：`/dash_go` 的重定向、登录页、静态文件、Windows 登录和权限检查（`api/me`：200，10 个 process）都正常；经 s1 发送的伪造 `X-Forwarded-For` 被忽略；不经 s1 直接访问 s2 的浏览器也正常。不经 s1 直接发给 s2、并声称是另一个人的地址的请求被拒绝（`mismatch`）；把 location 改成 `$http_x_forwarded_for`（s2 其他 location 的写法）之后，同一个请求被接受，并以另一个人的身份登录。所以 s2 的 `/dash_go/` location 使用 `$proxy_add_x_forwarded_for`。
+
+已完成（2026-11-20，版本 0.1.3）：
+
+- 新的单元测试：返回按钮出现在模块的页面上，指向 `/`，有两种语言，并且不出现在首页和登录页上（`shell_test.go`）；词条文件中 `ui.back`、`ui.back_title` 和 `err.updating` 两种语言都有（`catalog_test.go`，它也会找出代码用到的每个键）；闸门的 503 使用请求的语言（`internal/core/server/gate_test.go`）。强调色在顶栏上的对比度，`palette_test.go` 本来就已覆盖。
+- 真实的 0.1.3 可执行文件（端口 18754 的临时配置、真实的 Python 配置和 API）在编辑器的内置浏览器中运行，用测试密钥生成的交接链接登录：模块页面的顶栏在浅色和深色主题、英文和中文、以及 390 px 宽的窗口中的样子。模块名称使用主题的蓝色（浅色主题下计算值为 `rgb(11, 99, 197)`），20.8 px，字重 600；返回按钮在它旁边，带箭头图标；在 390 px 宽度下名称被隐藏，按钮留在 logo 旁边，页面不会横向滚动。点击返回后去往了同一主机和端口的 `/`。
 
 **没有验证：**
 
 - 真实的 Python 后端（部署后的 `verify_user`、`sso_result`；0.1.2 中 `hc_user_processes` 是对开发机的 Python 后端试过的，不是对 s2），真实的 Windows 登录服务和真实的 Windows 用户。
-- s2 上的 nginx：`X-Forwarded-For` 的处理、两层代理之后的 `trusted_proxies`、https。真实的 `prod_eng` 位于开发机之前的情况（它的地址是模拟的），以及新文件复制过去并 reload 之后，开发机上正在运行的 nginx。
+- s1 和 s2 上真实的 nginx（它们的文件用隔离实例测试过，见上文，但没有部署）、https，以及真实的 `prod_eng` 位于开发机之前的情况（它的地址是模拟的；新文件复制过去并 reload 之后，开发机上正在运行的 nginx）。
 - 真实静态接口的 480 x 320 占位图（取自 TimeVault 的记录）和真实头像。
 - Chrome 之外的浏览器（预计 Edge 表现相同）、真实的扫码枪。
 - 使用者对中文措辞的审阅。
+- s1 和 s2 的 nginx 之后的返回按钮（0.1.3）：链接是 `/`，只对临时服务点击过，而临时服务只提供 `/dash_go/`，所以那里回答 404。

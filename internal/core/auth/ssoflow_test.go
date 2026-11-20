@@ -392,3 +392,30 @@ func TestSSOFlowsAreBoundedInAll(t *testing.T) {
 		t.Errorf("the memory a visitor can make the server hold is bounded: %v", err)
 	}
 }
+
+// The automatic update restarts the service, which loses the sign-ins that wait for the sign-on window.
+func TestPendingSignInsAreThoseThatWaitAndHaveNotRunOut(t *testing.T) {
+	r := newRig(t, nil)
+	if n := r.svc.PendingSignIns(); n != 0 {
+		t.Fatalf("pending = %d before any sign-in", n)
+	}
+	token, _ := r.startSSO("198.51.100.7", "")
+	r.startSSO("198.51.100.8", "")
+	if n := r.svc.PendingSignIns(); n != 2 {
+		t.Fatalf("pending = %d, want 2", n)
+	}
+
+	r.now = r.now.Add(2 * time.Second)
+	r.sso.set(token, okResult("198.51.100.7"))
+	if status, _, _ := r.pollSSO(token, "198.51.100.7"); status != "ok" {
+		t.Fatalf("the sign-in did not finish: %s", status)
+	}
+	if n := r.svc.PendingSignIns(); n != 1 {
+		t.Errorf("pending = %d after one sign-in is done, want 1", n)
+	}
+
+	r.now = r.now.Add(ssoFlowTTL)
+	if n := r.svc.PendingSignIns(); n != 0 {
+		t.Errorf("pending = %d after the time ran out, want 0", n)
+	}
+}

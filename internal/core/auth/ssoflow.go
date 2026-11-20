@@ -99,6 +99,24 @@ func (f *ssoFlows) drop(token string) {
 	f.mu.Unlock()
 }
 
+// live is the number of sign-ins that still wait for the sign-on service and have not run out of time.
+func (f *ssoFlows) live(now time.Time) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, fl := range f.flows {
+		if now.Sub(fl.created) < ssoFlowTTL {
+			n++
+		}
+	}
+	return n
+}
+
+// PendingSignIns is the number of Windows sign-ins that were started and are not done: somebody is waiting for the
+// sign-on window. They are only in the memory of this process, so a restart would lose them; the automatic update
+// waits for them.
+func (s *Service) PendingSignIns() int { return s.flows.live(s.set.Now()) }
+
 // handleSSOStart issues the token of a new Windows sign-in.
 func (s *Service) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	if !s.SSOEnabled() {

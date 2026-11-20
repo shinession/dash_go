@@ -21,7 +21,7 @@ import (
 const Name = "hc_scan"
 
 // ModuleVersion is the version of this module.
-const ModuleVersion = "0.1.2"
+const ModuleVersion = "0.1.3"
 
 func init() {
 	i18n.Register(webFS, "i18n") // the texts of the page, the warnings and the messages, in English and Chinese

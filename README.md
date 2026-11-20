@@ -4,13 +4,15 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.2** (see `VERSION`).
+Current version: **0.1.3** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
 | `hc_scan` | A shift leader scans employee badges; every scan assigns a machine or activity by the MTR record of the person. The result is a draft that the leader checks and confirms. | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
 
-Every page has the same frame, the **shell**: the header with the CIM EDGE logo, a light / dark theme button, an English / Chinese switch, the signed-in user and sign-in / sign-out; plus a login page of its own (account and password, or the Windows sign-in) next to the link that Dash builds. It is described in [docs/shell_and_login.md](docs/shell_and_login.md).
+Every page has the same frame, the **shell**: the header with the CIM EDGE logo, a light / dark theme button, an English / Chinese switch, the signed-in user and sign-in / sign-out; plus a login page of its own (account and password, or the Windows sign-in) next to the link that Dash builds. The pages of a module also show the name of the module and a **Back** button to the root of the server. It is described in [docs/shell_and_login.md](docs/shell_and_login.md).
+
+A server that is told where the releases are (`update_url`) **updates itself**: it reads a manifest from the static folder of the Dash API, downloads and checks the new program, waits until nobody is clicking or submitting, and restarts. See [docs/auto_update.md](docs/auto_update.md).
 
 The documents of the core and of all modules are indexed in [docs/README.md](docs/README.md). Engineering rules for this repository are in [AGENTS.md](AGENTS.md).
 
@@ -24,6 +26,7 @@ internal/core/             shared infrastructure: config, auth (login, session),
 internal/mods/<name>/      one folder per module: code, tests, web files (embedded), manifest.json
 internal/version/          version of the binary (set by the build script)
 scripts/build.ps1          test, build and package the selected modules
+scripts/release.ps1        build a release (program + manifest) for the automatic update
 config/*.example.json      configuration templates (real configuration files are not committed)
 deploy/                    nginx location for the service
 docs/                      documentation, one file per module
@@ -42,9 +45,17 @@ Go 1.27 or later. If `go` is not on `PATH`, `scripts\build.ps1` finds `C:\Progra
 .\scripts\build.ps1 -List                   # list the modules
 ```
 
-The script runs the tests, builds with a `nomod_<name>` tag for every module that was not selected, checks with `dash_go.exe -version` that exactly the selected modules are inside, and writes `dist\dash_go-<version>-<modules>-windows-amd64\` and a zip next to it: the executable, `config\dash_go.example.json` reduced to the selected modules, the nginx example, the documents of the selected modules and of the shell, `MODULES.txt`.
+The script runs the tests, builds with a `nomod_<name>` tag for every module that was not selected, checks with `dash_go.exe -version` that exactly the selected modules are inside, and writes `dist\dash_go-<version>-<modules>-windows-amd64\` and a zip next to it: the executable, `config\dash_go.example.json` reduced to the selected modules, the nginx example, the documents of the selected modules and of the core (shell, automatic update), `MODULES.txt`.
 
 A plain `go build ./cmd/dash_go` includes every module.
+
+To publish a version for the servers that update themselves, raise the version (`VERSION`, `internal/version/version.go`, the `version` of `manifest.json` and `ModuleVersion` of the module, the two lines "Current version" below, the "Updated" line of the documents) and run `release.ps1`. It runs the tests, builds like `build.ps1` and writes `dash_go.exe` and the manifest `dash_go.json` into the release folder, the manifest last:
+
+```powershell
+.\scripts\release.ps1 -OutDir D:\Programs\Python\static\cd     # the folder the Dash API serves as /api/static/cd/
+```
+
+Details, the settings of the servers and what to do when something goes wrong: [docs/auto_update.md](docs/auto_update.md).
 
 ## Configuration
 
@@ -54,7 +65,7 @@ Settings come from two layers of JSON files: the config folder of the Python app
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<config folder of the Python application>'
-.\dash_go.exe -check        # load the configuration and the modules, say which Python API is used and whether the password and Windows sign-in are on, then exit
+.\dash_go.exe -check        # load the configuration and the modules, say which Python API is used, whether the password and Windows sign-in are on and whether the automatic update is on, then exit
 .\dash_go.exe               # serve on the address of "listen", below /dash_go/
 .\dash_go.exe -version      # version and compiled-in modules
 ```
@@ -76,13 +87,15 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.2**（见 `VERSION`）。
+当前版本：**0.1.3**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
 | `hc_scan` | 领班扫描员工工牌；每次扫描根据此人的 MTR 记录分派 machine 或 activity。结果是草稿，由领班检查并确认。 | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
 
-每个页面都有同样的外框，即 **shell**：带 CIM EDGE logo 的顶栏、浅色 / 深色主题按钮、中英文切换、当前登录用户以及登录 / 退出登录；另外还有自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的链接并存。详见 [docs/shell_and_login.md](docs/shell_and_login.md)。
+每个页面都有同样的外框，即 **shell**：带 CIM EDGE logo 的顶栏、浅色 / 深色主题按钮、中英文切换、当前登录用户以及登录 / 退出登录；另外还有自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的链接并存。模块的页面还会显示模块名称，以及一个通向服务器根路径的**返回**按钮。详见 [docs/shell_and_login.md](docs/shell_and_login.md)。
+
+知道发布位置的服务器（`update_url`）会**自己更新**：它从 Dash API 的静态文件夹读取清单，下载并检查新程序，等到没有人在点击或提交，然后重启。见 [docs/auto_update.md](docs/auto_update.md)。
 
 核心和所有模块的文档索引在 [docs/README.md](docs/README.md)。本仓库的工程规则见 [AGENTS.md](AGENTS.md)。
 
@@ -96,6 +109,7 @@ internal/core/             共享基础设施：配置、auth（登录、会话�
 internal/mods/<name>/      每个模块一个文件夹：代码、测试、web 文件（嵌入）、manifest.json
 internal/version/          可执行文件的版本（由构建脚本设置）
 scripts/build.ps1          测试、构建并打包所选模块
+scripts/release.ps1        为自动更新构建一个发布（程序 + 清单）
 config/*.example.json      配置模板（真实配置文件不提交）
 deploy/                    服务的 nginx location
 docs/                      文档，每个模块一个文件
@@ -114,9 +128,17 @@ docs/                      文档，每个模块一个文件
 .\scripts\build.ps1 -List                   # 列出模块
 ```
 
-脚本会运行测试，对每个未选中的模块加上 `nomod_<name>` 标签进行构建，用 `dash_go.exe -version` 检查里面恰好是所选的模块，并生成 `dist\dash_go-<version>-<modules>-windows-amd64\` 以及旁边的 zip：可执行文件、只保留所选模块的 `config\dash_go.example.json`、nginx 示例、所选模块的文档和 shell 的文档，以及 `MODULES.txt`。
+脚本会运行测试，对每个未选中的模块加上 `nomod_<name>` 标签进行构建，用 `dash_go.exe -version` 检查里面恰好是所选的模块，并生成 `dist\dash_go-<version>-<modules>-windows-amd64\` 以及旁边的 zip：可执行文件、只保留所选模块的 `config\dash_go.example.json`、nginx 示例、所选模块的文档和核心（shell、自动更新）的文档，以及 `MODULES.txt`。
 
 直接 `go build ./cmd/dash_go` 会包含所有模块。
+
+要为会自己更新的服务器发布一个版本，先提高版本号（`VERSION`、`internal/version/version.go`、模块 `manifest.json` 的 `version` 和 `ModuleVersion`、下面两行“当前版本”、各文档的“更新日期”行），再运行 `release.ps1`。它会运行测试，像 `build.ps1` 一样构建，并把 `dash_go.exe` 和清单 `dash_go.json` 写进发布文件夹，清单最后写：
+
+```powershell
+.\scripts\release.ps1 -OutDir D:\Programs\Python\static\cd     # Dash API 作为 /api/static/cd/ 提供的文件夹
+```
+
+详细说明、服务器的设置以及出问题时怎么办：[docs/auto_update.md](docs/auto_update.md)。
 
 ## 配置
 
@@ -126,7 +148,7 @@ docs/                      文档，每个模块一个文件
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<Python 应用的配置文件夹>'
-.\dash_go.exe -check        # 加载配置和模块，说明使用哪个 Python API 以及密码登录和 Windows 登录是否开启，然后退出
+.\dash_go.exe -check        # 加载配置和模块，说明使用哪个 Python API、密码登录和 Windows 登录是否开启、自动更新是否开启，然后退出
 .\dash_go.exe               # 在 "listen" 指定的地址上，于 /dash_go/ 之下提供服务
 .\dash_go.exe -version      # 版本和已编入的模块
 ```

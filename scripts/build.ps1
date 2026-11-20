@@ -126,8 +126,9 @@ New-Item -ItemType Directory -Path $docsDir | Out-Null
 foreach ($m in $selected) {
     foreach ($doc in $available[$m].docs) { Copy-Item (Join-Path $root $doc) $docsDir }
 }
-# the frame every module uses (header, theme, language, sign-in) is in every package
+# the frame every module uses (header, theme, language, sign-in) and the automatic update are in every package
 Copy-Item (Join-Path $root 'docs\shell_and_login.md') $docsDir
+Copy-Item (Join-Path $root 'docs\auto_update.md') $docsDir
 if (Test-Path (Join-Path $root 'README.md')) { Copy-Item (Join-Path $root 'README.md') $pkgDir }
 Set-Content (Join-Path $pkgDir 'VERSION') $Version -Encoding ASCII
 $lines = @("dash_go $Version", "target: $GOOS/$GOARCH", 'modules:') + @($selected | ForEach-Object { "  - $_ v$($available[$_].version): $($available[$_].title)" })

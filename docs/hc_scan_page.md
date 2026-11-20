@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (module version 0.1.2). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (module version 0.1.3). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -129,7 +129,7 @@ Two layers of JSON files are read, with the patch convention of the Python appli
 1. The config folder of the Python application (`config.json` + `patch_<hostname>.json`), given by `DASH_GO_DASH_CONFIG_DIR` or `dash_config_dir`. Used keys: `postgresql`, `redis`, `api.salt_3`, `api_server`, `cdn_data_folder`, `HC_PROCESS_LIST`, `SHIFT_LEAVE_PATTERN` (the leave options are its keys from the third on, in file order).
 2. `dash_go.json` + `dash_go_patch_<hostname>.json` in `DASH_GO_CONFIG_DIR` (default `./config`). It may override any key of layer 1. Example: `config/dash_go.example.json`.
 
-Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`, and since 0.1.1 `photo_url_template`, `dash_api_url`, `login_password`, `sso_require_same_ip`, `trusted_proxies` (see [shell_and_login.md](shell_and_login.md), section 8; the Windows sign-in also needs `sso_server` and `api.salt_2` in the Python configuration).
+Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`, and since 0.1.1 `photo_url_template`, `dash_api_url`, `login_password`, `sso_require_same_ip`, `trusted_proxies` (see [shell_and_login.md](shell_and_login.md), section 8; the Windows sign-in also needs `sso_server` and `api.salt_2` in the Python configuration). Since 0.1.3 also `update_url`, `update_interval_minutes` and `update_restart` (the automatic update is off unless `update_url` is set, see [auto_update.md](auto_update.md), section 6).
 
 Which Python API is asked: `dash_api_url` if it is set (here as `modules.hc_scan.dash_api_url`, or at the top level), otherwise `http://<api_server>/api`. `api_server` comes from the Python configuration **including the patch file of the host**, and the patch file of a development machine often sets it to the production server for the calls of the Python application itself. dash_go would then ask a backend that does not have `hc_user_processes` until the Python changes are deployed there (section 11). Since 0.1.2 the log, and so `dash_go.exe -check`, says which API is used and which key it came from: `hc_scan: the Dash API of the permission check url=http://localhost/api from=dash_api_url`. On a development machine set `dash_api_url` in `dash_go.json`, for example to `http://localhost/api`.
 
@@ -158,9 +158,11 @@ Python side: the optional key `dash_go_url` of `config.json` (default `/dash_go/
 
 1. Build the package: `scripts\build.ps1 -Modules hc_scan` (or without `-Modules` for every module) and unpack it on s2.
 2. Create `config\dash_go.json` from the example. Point `dash_config_dir` to the config folder of the Python application on s2 and `modules.hc_scan.dash_data_dir` to its `data` folder. Check the connection settings with `dash_go.exe -check`, which also says which Python API is used.
-3. Add the location of `deploy\nginx_dash_go.conf.example` to the nginx site of s2 and reload nginx. The service serves everything below `/dash_go/` itself.
+3. nginx. Add the location of `deploy\nginx_dash_go.conf.example` to the nginx site of s2 and reload nginx; the service serves everything below `/dash_go/` itself. s1 (`prod_eng`, the front door) only forwards `/dash_go/` to s2: it needs the upstream and the location of the second part of the example, with s2 as its only server (no local backup, because dash_go runs on s2 only). The nginx of s2 must trust `X-Forwarded-For` from s1, and its `/dash_go/` location must send `X-Forwarded-For $proxy_add_x_forwarded_for`, not `$http_x_forwarded_for` ([shell_and_login.md](shell_and_login.md), section 9). Both files are in the Dash repository: `config/nginx_sgmescimai.conf` (s2) and `config/nginx_prod_eng.conf` (s1).
 4. Start `dash_go.exe` (a console process; wrap it with a service manager if it has to survive log-offs). The log is `logs\dash_go-<date>.log`.
 5. Deploy the Python changes (`IE.py`, `LocalListV3.py`, `appV2.py`). The new menu button works as soon as the Dash application is restarted; the permission function must be deployed to the server that answers `/api`.
+
+Order: dash_go and the Python function on s2 first, then the nginx of s2, the nginx of s1 last. A route whose backend is not running answers 502. Test `http://<s2>/dash_go/` before the front server is used. The copy `config/nginx_prod_eng.conf` also carries the prepared, not deployed step 1 of the API migration (`/api` to s2, `migration_step1_api_to_s2.md` in the Dash repository): compare it with the live file before replacing it, or add only the `dash_go_backend` upstream and the two `/dash_go` locations.
 
 Local debugging on a development machine: the Dash repository has the same location in the local debug server block of `config/nginx_asrock.conf` (`http://localhost/dash_go/` to `127.0.0.1:8750`). Copy it to the nginx that is running, reload nginx and start `dash_go.exe` with `DASH_GO_DASH_CONFIG_DIR` pointing at the config folder of the Dash repository. Set `dash_api_url` to the local API (`http://localhost/api`) when the patch file of the machine points `api_server` at another server (section 9).
 
@@ -195,14 +197,15 @@ Done (2026-11-19):
 - The page was driven in headless Chrome against that database (scan with and without Enter, barcode wrapper, duplicate, unknown ID, every warning, manual change, removal, acknowledgement dialog, saving, scan after saving). No JavaScript error was reported.
 - The Python additions have unit tests (`tests/test_dash_go_link.py`); `tests/test_callback_registration.py` still passes.
 - 0.1.1 (2026-11-20): the module was moved into the shell and every text into the catalogs. The old tests still pass; new tests cover the catalogs (`catalog_test.go`: both languages complete, every key and value the code uses, no unused text) and the languages (`language_test.go`: page, API errors, a draft read in both languages, drafts of 0.1.0). The real binary was run again with the scratch database and a stand-in for the Python backend, and the page was driven in headless Chrome in both themes and both languages: details in [shell_and_login.md](shell_and_login.md), section 12.
-- 0.1.2 (2026-11-20): the cause of the failure in section 11 was found with the real binary on the development machine (scratch configuration, the real local Python API and Redis): with the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. New unit tests: the status 204 and the address in the error messages (`internal/core/dashapi/client_test.go`), where the API address comes from (`internal/core/config/config_test.go`). The Windows sign-in checks of 0.1.2 are in [shell_and_login.md](shell_and_login.md), section 12. The page itself was not driven in a browser again.
+- 0.1.2 (2026-11-20): the cause of the failure in section 11 was found with the real binary on the development machine (scratch configuration, the real local Python API and Redis): with the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. New unit tests: the status 204 and the address in the error messages (`internal/core/dashapi/client_test.go`), where the API address comes from (`internal/core/config/config_test.go`). The Windows sign-in checks of 0.1.2, and the test of the nginx chain s1 → s2 → dash_go, are in [shell_and_login.md](shell_and_login.md), section 12. The page itself was not driven in a browser again.
+- 0.1.3 (2026-11-20): the page itself is unchanged; the module version follows the version of the program. The change of the header (a more visible module name and the Back button) is in [shell_and_login.md](shell_and_login.md), sections 2 and 12; the automatic update is in [auto_update.md](auto_update.md). An update restarts the service: the drafts are in Redis (the default of `draft_store`) and survive, with `draft_store` `memory` they are lost. An update is only installed when nobody is clicking or submitting, so a scan that is going on is not cut off. The page was not driven again with real data under the new header (only the header of the module page and the "Cannot start" notice were looked at).
 
 **Not verified:**
 
 - Writing to the real tables (only a scratch database with the real column types was written), and the production database.
 - Real photos, a real barcode scanner (whether it presses Enter, which characters it adds), and a real Redis server (the Redis store was tested with an in-process Redis).
 - The call `hc_user_processes` against the Python backend on s2 itself (in 0.1.2 it was tried against the backend of the development machine, and through `prod_eng`, which answered 204: the function is not deployed behind it), and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
-- The nginx location and the port on s2.
+- The nginx of s1 and s2 as deployed (their files were tested with isolated instances, [shell_and_login.md](shell_and_login.md), section 12) and the port on s2.
 - The Chinese wording has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
 
 ## 13. Decisions and known limits
@@ -221,7 +224,7 @@ Done (2026-11-19):
 
 # 中文
 
-**更新日期：** 2026-11-20（模块版本 0.1.2）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（模块版本 0.1.3）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -350,7 +353,7 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 1. Python 应用的配置文件夹（`config.json` + `patch_<hostname>.json`），由 `DASH_GO_DASH_CONFIG_DIR` 或 `dash_config_dir` 指定。使用的 key：`postgresql`、`redis`、`api.salt_3`、`api_server`、`cdn_data_folder`、`HC_PROCESS_LIST`、`SHIFT_LEAVE_PATTERN`（请假选项是它从第三个 key 起的各个 key，按文件中的顺序）。
 2. `DASH_GO_CONFIG_DIR`（默认 `./config`）中的 `dash_go.json` + `dash_go_patch_<hostname>.json`。它可以覆盖第 1 层的任何 key。示例见 `config/dash_go.example.json`。
 
-服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`，以及自 0.1.1 起的 `photo_url_template`、`dash_api_url`、`login_password`、`sso_require_same_ip`、`trusted_proxies`（见 [shell_and_login.md](shell_and_login.md) 第 8 节；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`）。
+服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`，以及自 0.1.1 起的 `photo_url_template`、`dash_api_url`、`login_password`、`sso_require_same_ip`、`trusted_proxies`（见 [shell_and_login.md](shell_and_login.md) 第 8 节；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`）。自 0.1.3 起还有 `update_url`、`update_interval_minutes` 和 `update_restart`（不设置 `update_url` 就不会自动更新，见 [auto_update.md](auto_update.md) 第 6 节）。
 
 询问哪个 Python API：设置了 `dash_api_url` 就用它（在这里是 `modules.hc_scan.dash_api_url`，或顶层的），否则用 `http://<api_server>/api`。`api_server` 来自 Python 配置，**包括本机的 patch 文件**，而开发机的 patch 文件常常为了 Python 应用自己的调用，把它设成生产服务器。这样 dash_go 询问的后端在 Python 的改动部署到那里之前，并没有 `hc_user_processes`（第 11 节）。自 0.1.2 起，日志（所以 `dash_go.exe -check` 也是）会说明用的是哪个 API 以及它来自哪个 key：`hc_scan: the Dash API of the permission check url=http://localhost/api from=dash_api_url`。在开发机上请在 `dash_go.json` 中设置 `dash_api_url`，例如 `http://localhost/api`。
 
@@ -379,9 +382,11 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 
 1. 构建包：`scripts\build.ps1 -Modules hc_scan`（不带 `-Modules` 则包含所有模块），并在 s2 上解压。
 2. 用示例创建 `config\dash_go.json`。把 `dash_config_dir` 指向 s2 上 Python 应用的配置文件夹，把 `modules.hc_scan.dash_data_dir` 指向它的 `data` 文件夹。用 `dash_go.exe -check` 检查连接设置，它也会说明用的是哪个 Python API。
-3. 把 `deploy\nginx_dash_go.conf.example` 中的 location 加入 s2 的 nginx 站点并 reload。服务自己处理 `/dash_go/` 之下的所有路径。
+3. nginx。把 `deploy\nginx_dash_go.conf.example` 中的 location 加入 s2 的 nginx 站点并 reload；服务自己处理 `/dash_go/` 之下的所有路径。s1（`prod_eng`，前置入口）只负责把 `/dash_go/` 转发给 s2：它需要示例第二部分的 upstream 和 location，其中 s2 是唯一的服务器（没有本机 backup，因为 dash_go 只运行在 s2 上）。s2 的 nginx 必须信任来自 s1 的 `X-Forwarded-For`，并且它的 `/dash_go/` location 必须发送 `X-Forwarded-For $proxy_add_x_forwarded_for`，而不是 `$http_x_forwarded_for`（[shell_and_login.md](shell_and_login.md) 第 9 节）。两个文件都在 Dash 仓库中：`config/nginx_sgmescimai.conf`（s2）和 `config/nginx_prod_eng.conf`（s1）。
 4. 启动 `dash_go.exe`（控制台进程；如果需要在注销后继续运行，请用服务管理工具包装）。日志为 `logs\dash_go-<date>.log`。
 5. 部署 Python 的改动（`IE.py`、`LocalListV3.py`、`appV2.py`）。Dash 应用重启后新菜单按钮即可使用；权限函数必须部署到回答 `/api` 的服务器上。
+
+顺序：先在 s2 上部署 dash_go 和 Python 函数，然后是 s2 的 nginx，最后是 s1 的 nginx。后面没有运行中的后端的路由会返回 502。在使用前置服务器之前，先测试 `http://<s2>/dash_go/`。副本 `config/nginx_prod_eng.conf` 里还带着已准备、尚未部署的 API 迁移第 1 步（`/api` 转到 s2，Dash 仓库中的 `migration_step1_api_to_s2.md`）：替换之前先把它和线上文件对比，或者只加入 `dash_go_backend` upstream 和两个 `/dash_go` location。
 
 在开发机上本地调试：Dash 仓库的 `config/nginx_asrock.conf` 的本地调试 server 块里有同样的 location（`http://localhost/dash_go/` 转发到 `127.0.0.1:8750`）。把它复制到正在运行的 nginx，reload nginx，并在启动 `dash_go.exe` 时让 `DASH_GO_DASH_CONFIG_DIR` 指向 Dash 仓库的配置文件夹。如果这台机器的 patch 文件把 `api_server` 指向了另一台服务器，请把 `dash_api_url` 设为本地 API（`http://localhost/api`，见第 9 节）。
 
@@ -416,14 +421,15 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 页面在无头 Chrome 中对该数据库做了操作（带和不带 Enter 的扫描、条码前后缀、重复扫描、未知 ID、每一种警告、手动修改、删除、确认对话框、保存、保存后再次扫描）。没有 JavaScript 报错。
 - Python 新增部分有单元测试（`tests/test_dash_go_link.py`）；`tests/test_callback_registration.py` 仍然通过。
 - 0.1.1（2026-11-20）：模块被移入 shell，所有文字被移入词条文件。原有的测试仍然通过；新的测试覆盖词条（`catalog_test.go`：两种语言完整、代码用到的每个键和值、没有未使用的文字）和语言（`language_test.go`：页面、API 错误、一份草稿在两种语言下阅读、0.1.0 的草稿）。真实的可执行文件配合临时数据库和一个 Python 后端的替身再次运行，页面在两种主题和两种语言下用无头 Chrome 操作过：详情见 [shell_and_login.md](shell_and_login.md) 第 12 节。
-- 0.1.2（2026-11-20）：第 11 节中那次失败的原因，是用真实的可执行文件在开发机上找到的（临时配置、真实的本地 Python API 和 Redis）：API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。新的单元测试：状态 204 和错误消息中的地址（`internal/core/dashapi/client_test.go`），API 地址来自哪里（`internal/core/config/config_test.go`）。0.1.2 的 Windows 登录检查见 [shell_and_login.md](shell_and_login.md) 第 12 节。页面本身没有再用浏览器操作过。
+- 0.1.2（2026-11-20）：第 11 节中那次失败的原因，是用真实的可执行文件在开发机上找到的（临时配置、真实的本地 Python API 和 Redis）：API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。新的单元测试：状态 204 和错误消息中的地址（`internal/core/dashapi/client_test.go`），API 地址来自哪里（`internal/core/config/config_test.go`）。0.1.2 的 Windows 登录检查，以及 nginx 链路 s1 → s2 → dash_go 的测试，见 [shell_and_login.md](shell_and_login.md) 第 12 节。页面本身没有再用浏览器操作过。
+- 0.1.3（2026-11-20）：页面本身没有改动，模块版本跟随程序版本。顶栏的变化（更醒目的模块名称和返回按钮）见 [shell_and_login.md](shell_and_login.md) 第 2 节和第 12 节；自动更新见 [auto_update.md](auto_update.md)。更新会重启服务：草稿在 Redis（`draft_store` 默认值）中，会保留；`draft_store` 为 `memory` 时会丢失。更新只在没有人在点击或提交时安装，所以不会打断正在进行的扫描。模块页面在带有返回按钮的新顶栏下没有用真实数据再操作过（只在顶栏上看了模块页面和“Cannot start”的提示）。
 
 **没有验证：**
 
 - 对真实表的写入（只对带真实列类型的临时数据库写过），以及生产数据库。
 - 真实的照片、真实的扫码枪（是否发送 Enter、会加哪些字符）以及真实的 Redis 服务器（Redis 存储只用进程内的 Redis 测试过）。
 - 针对 s2 本身的 Python 后端调用 `hc_user_processes`（0.1.2 中它是对开发机的后端试的，以及通过 `prod_eng` 试的，后者回答 204：该函数没有部署到它后面），以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
-- s2 上的 nginx location 和端口。
+- 已部署的 s1 和 s2 上的 nginx（它们的文件用隔离实例测试过，[shell_and_login.md](shell_and_login.md) 第 12 节）以及 s2 上的端口。
 - 使用者对中文措辞的审阅；人员的头像（页面只在没有头像的情况下试过）。
 
 ## 13. 决定与已知限制

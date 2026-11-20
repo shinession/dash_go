@@ -2,6 +2,8 @@
   "ui.home": "dash_go home",
   "ui.theme_toggle": "Switch light / dark theme",
   "ui.lang_label": "Language",
+  "ui.back": "Back",
+  "ui.back_title": "Back to the home page of this server",
   "ui.sign_in": "Sign in",
   "ui.sign_out": "Sign out",
   "ui.ok": "OK",
@@ -52,5 +54,6 @@
   "err.forbidden": "The request was refused.",
   "err.bad_request": "The request is not valid.",
   "err.internal": "Internal error.",
-  "err.sso_unavailable": "The login service is temporarily unavailable."
+  "err.sso_unavailable": "The login service is temporarily unavailable.",
+  "err.updating": "dash_go is being updated. Try again in a few seconds."
 }

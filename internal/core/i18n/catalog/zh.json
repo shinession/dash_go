@@ -2,6 +2,8 @@
   "ui.home": "dash_go 首页",
   "ui.theme_toggle": "切换浅色 / 深色主题",
   "ui.lang_label": "语言",
+  "ui.back": "返回",
+  "ui.back_title": "返回本服务器的首页",
   "ui.sign_in": "登录",
   "ui.sign_out": "退出登录",
   "ui.ok": "确定",
@@ -52,5 +54,6 @@
   "err.forbidden": "请求被拒绝。",
   "err.bad_request": "请求无效。",
   "err.internal": "内部错误。",
-  "err.sso_unavailable": "登录服务暂时不可用。"
+  "err.sso_unavailable": "登录服务暂时不可用。",
+  "err.updating": "dash_go 正在更新，请几秒钟后再试。"
 }

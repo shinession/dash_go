@@ -19,10 +19,12 @@ import (
 	"io"
 	"io/fs"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Environment variables understood by Load.
@@ -90,6 +92,18 @@ type Login struct {
 	TrustedProxies []netip.Prefix
 }
 
+// Update holds the settings of the automatic update (internal/core/update, docs/auto_update.md).
+type Update struct {
+	// URL is where the release manifest (dash_go.json) is: an http(s) address, or the absolute path of the file or of
+	// its folder (update_url). Empty means the service does not update itself, which is the default.
+	URL string
+	// Interval is the time between two looks at the manifest (update_interval_minutes, default 10).
+	Interval time.Duration
+	// Restart is how the service starts the new program: "supervise" keeps the process as a launcher, "exit" ends it
+	// with the code 75 for a service manager (update_restart, default supervise).
+	Restart string
+}
+
 // Config is the effective configuration of the service.
 type Config struct {
 	Listen   string
@@ -107,6 +121,7 @@ type Config struct {
 	// api_server of a development machine's patch file may point at the production server.
 	DashAPISource string
 	Login         Login
+	Update        Update
 	Dash          Dash
 	Sources       []string // configuration files that were loaded (paths only)
 
@@ -155,10 +170,14 @@ func Load(opts Options) (*Config, error) {
 		SessionHours:     12,
 		PhotoURLTemplate: firstNonEmpty(rawString(merged["photo_url_template"]), DefaultPhotoURLTemplate),
 		Login:            Login{Password: true, SSORequireSameIP: true},
+		Update:           Update{Interval: 10 * time.Minute, Restart: "supervise"},
 		Sources:          sources,
 		modules:          map[string]json.RawMessage{},
 	}
 	if err := loadLogin(merged, &cfg.Login); err != nil {
+		return nil, err
+	}
+	if err := loadUpdate(merged, &cfg.Update); err != nil {
 		return nil, err
 	}
 	if raw, ok := merged["session_hours"]; ok {
@@ -269,6 +288,66 @@ func loadLogin(merged map[string]json.RawMessage, l *Login) error {
 		l.TrustedProxies = append(l.TrustedProxies, prefix)
 	}
 	return nil
+}
+
+// loadUpdate reads update_url, update_interval_minutes and update_restart. The defaults are in u already.
+func loadUpdate(merged map[string]json.RawMessage, u *Update) error {
+	var address string
+	if err := decodeKey(merged, "update_url", &address); err != nil {
+		return fmt.Errorf("%w (an address or a path in quotes)", err)
+	}
+	address, err := parseUpdateURL(address)
+	if err != nil {
+		return fmt.Errorf("config key update_url %w", err)
+	}
+	u.URL = address
+
+	minutes := int(u.Interval / time.Minute)
+	if err := decodeKey(merged, "update_interval_minutes", &minutes); err != nil {
+		return fmt.Errorf("%w (a whole number of minutes)", err)
+	}
+	if minutes < 1 || minutes > 24*60 {
+		return errors.New("config key update_interval_minutes must be a whole number of minutes between 1 and 1440")
+	}
+	u.Interval = time.Duration(minutes) * time.Minute
+
+	restart := u.Restart
+	if err := decodeKey(merged, "update_restart", &restart); err != nil {
+		return fmt.Errorf("%w (supervise or exit)", err)
+	}
+	switch restart = strings.ToLower(strings.TrimSpace(restart)); restart {
+	case "supervise", "exit":
+		u.Restart = restart
+	default:
+		return errors.New(`config key update_restart must be "supervise" or "exit"`)
+	}
+	return nil
+}
+
+// parseUpdateURL checks the address of the release manifest: an http(s) address with no user name, password, query or
+// fragment (the address is written to the log), or the absolute path of the manifest or of its folder. The error text
+// starts with a verb, so a caller can put the name of the setting in front of it.
+func parseUpdateURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if l := strings.ToLower(raw); strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") {
+		u, err := url.Parse(raw)
+		switch {
+		case err != nil || u.Hostname() == "":
+			return "", errors.New("is not a valid address; write it as http://host/path/")
+		case u.User != nil:
+			return "", errors.New("must not contain a user name or password")
+		case u.RawQuery != "" || u.ForceQuery || u.Fragment != "":
+			return "", errors.New("must not have a query or a fragment")
+		}
+		return raw, nil
+	}
+	if !filepath.IsAbs(raw) {
+		return "", errors.New(`must be an http(s) address or an absolute path, such as http://localhost/api/static/cd/dash_go.json or D:\dash_go_release`)
+	}
+	return raw, nil
 }
 
 // parseProxy reads an address (10.0.0.5, ::1) or a range (10.0.0.0/8). An IPv4 address that is mapped into IPv6
