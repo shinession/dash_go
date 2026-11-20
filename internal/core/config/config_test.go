@@ -172,17 +172,23 @@ func TestDashAPIURL(t *testing.T) {
 	py, goDir := t.TempDir(), t.TempDir()
 	write(t, py, "config.json", `{"api_server": "api.example.local"}`)
 	cfg, err := Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
-	if err != nil || cfg.DashAPIURL != "http://api.example.local/api" {
-		t.Errorf("derived from api_server: %q %v", cfg.DashAPIURL, err)
+	if err != nil || cfg.DashAPIURL != "http://api.example.local/api" || cfg.DashAPISource != "api_server" {
+		t.Errorf("derived from api_server: %q from %q %v", cfg.DashAPIURL, cfg.DashAPISource, err)
+	}
+	// the patch file of a host replaces api_server, and dash_go.json replaces both
+	write(t, py, "patch_x.json", `{"api_server": "production.example.local"}`)
+	cfg, err = Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashAPIURL != "http://production.example.local/api" || cfg.DashAPISource != "api_server" {
+		t.Errorf("patched api_server: %q from %q %v", cfg.DashAPIURL, cfg.DashAPISource, err)
 	}
 	write(t, goDir, "dash_go.json", `{"dash_api_url": " http://127.0.0.1:9999/api "}`)
 	cfg, err = Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
-	if err != nil || cfg.DashAPIURL != "http://127.0.0.1:9999/api" {
-		t.Errorf("explicit: %q %v", cfg.DashAPIURL, err)
+	if err != nil || cfg.DashAPIURL != "http://127.0.0.1:9999/api" || cfg.DashAPISource != "dash_api_url" {
+		t.Errorf("explicit: %q from %q %v", cfg.DashAPIURL, cfg.DashAPISource, err)
 	}
 	cfg, err = Load(Options{ConfigDir: t.TempDir(), Host: "x", Getenv: noEnv})
-	if err != nil || cfg.DashAPIURL != "" {
-		t.Errorf("none: %q %v", cfg.DashAPIURL, err)
+	if err != nil || cfg.DashAPIURL != "" || cfg.DashAPISource != "" {
+		t.Errorf("none: %q from %q %v", cfg.DashAPIURL, cfg.DashAPISource, err)
 	}
 }
 

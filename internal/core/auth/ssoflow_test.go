@@ -248,6 +248,70 @@ func TestSSOUsesTheAddressBehindATrustedProxy(t *testing.T) {
 	}
 }
 
+// A browser on the computer that runs dash_go, opened as localhost, is a loopback address for dash_go but the address
+// of that computer for the sign-on service. It is one browser on one computer.
+func TestSSOBrowserOnThisComputerMatchesTheAddressOfThisComputer(t *testing.T) {
+	local := func(s *Settings) {
+		s.TrustedProxies = append(s.TrustedProxies, netip.MustParsePrefix("::1/128")) // the default of trusted_proxies
+		s.LocalAddrs = func() []netip.Addr {
+			return []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("::1"), netip.MustParseAddr("10.135.36.89")}
+		}
+	}
+	direct := func(q *http.Request) { q.RemoteAddr = "127.0.0.1:50000" }
+	throughNginx := func(q *http.Request) { // nginx on this computer, the browser came from ::1
+		q.RemoteAddr = "127.0.0.1:41000"
+		q.Header.Set("X-Forwarded-For", "::1")
+	}
+	cases := []struct {
+		name    string
+		browser func(*http.Request)
+		ssoSaw  string
+		want    string
+	}{
+		{"localhost, the sign-on service saw the address of this computer", direct, "10.135.36.89", "ok"},
+		{"localhost through nginx on this computer", throughNginx, "10.135.36.89", "ok"},
+		{"localhost, the sign-on service saw the other loopback address", direct, "::1", "ok"},
+		{"localhost, the sign-on service saw another computer", direct, "10.135.36.90", "mismatch"},
+		{"localhost, the sign-on service saw no address", direct, "", "mismatch"},
+	}
+	for _, c := range cases {
+		r := newRig(t, local)
+		token := decode(t, r.post("/auth/sso/start", map[string]string{}, c.browser))["token"].(string)
+		r.now = r.now.Add(2 * time.Second)
+		r.sso.set(token, okResult(c.ssoSaw))
+		if status, _, _ := r.pollSSO(token, "", c.browser); status != c.want {
+			t.Errorf("%s: %s, want %s", c.name, status, c.want)
+		}
+	}
+}
+
+// The relaxation is only for a browser that dash_go sees as loopback. A browser on another computer cannot take over an
+// identity that was recorded for this computer: that is the forced sign-in the address check exists to stop.
+func TestSSOAnAddressOfThisComputerDoesNotHelpABrowserOnAnotherComputer(t *testing.T) {
+	r := newRig(t, func(s *Settings) {
+		s.LocalAddrs = func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("10.135.36.89")} }
+	})
+	token, _ := r.startSSO("198.51.100.7", "")
+	r.now = r.now.Add(2 * time.Second)
+	r.sso.set(token, okResult("10.135.36.89"))
+	if status, _, rec := r.pollSSO(token, "198.51.100.7"); status != "mismatch" || sessionCookie(rec) != nil {
+		t.Errorf("%s", status)
+	}
+}
+
+func TestOwnAddressesListsTheLoopbackInterface(t *testing.T) {
+	loopback := false
+	for _, a := range ownAddresses() {
+		if a.Zone() != "" || a.Is4In6() {
+			t.Errorf("%v must be written the way parseAddr writes an address", a)
+		}
+		loopback = loopback || a.IsLoopback()
+	}
+	if !loopback {
+		t.Error("every computer has a loopback address")
+	}
+}
+
 func TestSSOOtherOutcomes(t *testing.T) {
 	cases := []struct {
 		name   string

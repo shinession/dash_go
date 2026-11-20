@@ -4,7 +4,7 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.1** (see `VERSION`).
+Current version: **0.1.2** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
@@ -48,13 +48,13 @@ A plain `go build ./cmd/dash_go` includes every module.
 
 ## Configuration
 
-Settings come from two layers of JSON files: the config folder of the Python application (`DASH_GO_DASH_CONFIG_DIR`: database, Redis, API secret, process list) and `dash_go.json` (`DASH_GO_CONFIG_DIR`, default `./config`: listen address, module settings). `patch_<hostname>.json` files work like in the Python application. Secrets can be given by the environment variables `DASH_GO_PG_PASSWORD`, `DASH_GO_REDIS_PASSWORD`, `DASH_GO_API_SALT` and `DASH_GO_API_SALT_2`. The login page needs `api_server` (or `dash_api_url`); the Windows sign-in also `sso_server` and `api.salt_2` of the Python configuration. Keys of the sign-in, the theme and the pictures: [docs/shell_and_login.md](docs/shell_and_login.md), section 8. Never commit real configuration files or write secrets into documents or logs. Details: [docs/hc_scan_page.md](docs/hc_scan_page.md), section 9.
+Settings come from two layers of JSON files: the config folder of the Python application (`DASH_GO_DASH_CONFIG_DIR`: database, Redis, API secret, process list) and `dash_go.json` (`DASH_GO_CONFIG_DIR`, default `./config`: listen address, module settings). `patch_<hostname>.json` files work like in the Python application. Secrets can be given by the environment variables `DASH_GO_PG_PASSWORD`, `DASH_GO_REDIS_PASSWORD`, `DASH_GO_API_SALT` and `DASH_GO_API_SALT_2`. The login page needs `api_server` (or `dash_api_url`); the Windows sign-in also `sso_server` and `api.salt_2` of the Python configuration. `api_server` comes from the Python configuration including the patch file of the host: on a development machine whose patch file points it at the production server, set `dash_api_url` (for example `http://localhost/api`). Keys of the sign-in, the theme and the pictures: [docs/shell_and_login.md](docs/shell_and_login.md), section 8. Never commit real configuration files or write secrets into documents or logs. Details: [docs/hc_scan_page.md](docs/hc_scan_page.md), section 9.
 
 ## Run
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<config folder of the Python application>'
-.\dash_go.exe -check        # load the configuration and the modules, say whether the password and Windows sign-in are on, then exit
+.\dash_go.exe -check        # load the configuration and the modules, say which Python API is used and whether the password and Windows sign-in are on, then exit
 .\dash_go.exe               # serve on the address of "listen", below /dash_go/
 .\dash_go.exe -version      # version and compiled-in modules
 ```
@@ -76,7 +76,7 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.1**（见 `VERSION`）。
+当前版本：**0.1.2**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
@@ -120,13 +120,13 @@ docs/                      文档，每个模块一个文件
 
 ## 配置
 
-设置来自两层 JSON 文件：Python 应用的配置文件夹（`DASH_GO_DASH_CONFIG_DIR`：数据库、Redis、API 密钥、process 列表）和 `dash_go.json`（`DASH_GO_CONFIG_DIR`，默认 `./config`：监听地址、模块设置）。`patch_<hostname>.json` 的用法与 Python 应用相同。机密信息可以通过环境变量 `DASH_GO_PG_PASSWORD`、`DASH_GO_REDIS_PASSWORD`、`DASH_GO_API_SALT` 和 `DASH_GO_API_SALT_2` 提供。登录页需要 `api_server`（或 `dash_api_url`）；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`。登录、主题和头像的配置项：[docs/shell_and_login.md](docs/shell_and_login.md) 第 8 节。不要提交真实的配置文件，也不要把机密信息写进文档或日志。详情见 [docs/hc_scan_page.md](docs/hc_scan_page.md) 第 9 节。
+设置来自两层 JSON 文件：Python 应用的配置文件夹（`DASH_GO_DASH_CONFIG_DIR`：数据库、Redis、API 密钥、process 列表）和 `dash_go.json`（`DASH_GO_CONFIG_DIR`，默认 `./config`：监听地址、模块设置）。`patch_<hostname>.json` 的用法与 Python 应用相同。机密信息可以通过环境变量 `DASH_GO_PG_PASSWORD`、`DASH_GO_REDIS_PASSWORD`、`DASH_GO_API_SALT` 和 `DASH_GO_API_SALT_2` 提供。登录页需要 `api_server`（或 `dash_api_url`）；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`。`api_server` 来自 Python 配置，包括本机的 patch 文件：在开发机上，如果 patch 文件把它指向了生产服务器，请设置 `dash_api_url`（例如 `http://localhost/api`）。登录、主题和头像的配置项：[docs/shell_and_login.md](docs/shell_and_login.md) 第 8 节。不要提交真实的配置文件，也不要把机密信息写进文档或日志。详情见 [docs/hc_scan_page.md](docs/hc_scan_page.md) 第 9 节。
 
 ## 运行
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<Python 应用的配置文件夹>'
-.\dash_go.exe -check        # 加载配置和模块，说明密码登录和 Windows 登录是否开启，然后退出
+.\dash_go.exe -check        # 加载配置和模块，说明使用哪个 Python API 以及密码登录和 Windows 登录是否开启，然后退出
 .\dash_go.exe               # 在 "listen" 指定的地址上，于 /dash_go/ 之下提供服务
 .\dash_go.exe -version      # 版本和已编入的模块
 ```

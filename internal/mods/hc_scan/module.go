@@ -21,7 +21,7 @@ import (
 const Name = "hc_scan"
 
 // ModuleVersion is the version of this module.
-const ModuleVersion = "0.1.1"
+const ModuleVersion = "0.1.2"
 
 func init() {
 	i18n.Register(webFS, "i18n") // the texts of the page, the warnings and the messages, in English and Chinese
@@ -82,14 +82,16 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 		return fmt.Errorf("%s: draft_store must be redis or memory, not %q", Name, set.DraftStore)
 	}
 
-	apiURL := set.DashAPIURL
+	apiURL, apiFrom := set.DashAPIURL, "modules.hc_scan.dash_api_url"
 	if apiURL == "" {
-		apiURL = env.Cfg.DashAPIURL
+		apiURL, apiFrom = env.Cfg.DashAPIURL, env.Cfg.DashAPISource
 	}
 	if apiURL == "" {
 		return fmt.Errorf("%s: set modules.hc_scan.dash_api_url, dash_api_url or api_server in the Dash config", Name)
 	}
-	perms := NewDashPermissions(dashapi.New(apiURL, env.Cfg.Dash.APISalt, 5*time.Second), time.Minute)
+	api := dashapi.New(apiURL, env.Cfg.Dash.APISalt, 5*time.Second)
+	env.Log.Info("hc_scan: the Dash API of the permission check", "url", api.Root(), "from", apiFrom)
+	perms := NewDashPermissions(api, time.Minute)
 
 	svc, err := NewService(Deps{
 		Repo:      NewPGRepository(pool),

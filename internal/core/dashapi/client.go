@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -24,6 +25,9 @@ var (
 	ErrUnauthorized   = errors.New("dash api rejected the request signature")
 	ErrNotAllowed     = errors.New("user is unknown or deactivated")
 	ErrBadCredentials = errors.New("account or password is wrong, or the account is deactivated")
+	// ErrFunctionUnknown means the backend answered 204, which is what /user answers to a function it does not have:
+	// it is older than dash_go, or it is not the backend that was meant.
+	ErrFunctionUnknown = errors.New("dash api does not know this function")
 )
 
 // Profile is the answer of the hc_user_processes function.
@@ -36,6 +40,7 @@ type Profile struct {
 // Client calls the Python API.
 type Client struct {
 	base string
+	root string // base without credentials, for logs and messages
 	salt string
 	hc   *http.Client
 	now  func() time.Time
@@ -46,7 +51,21 @@ func New(baseURL, salt string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	return &Client{base: strings.TrimRight(baseURL, "/"), salt: salt, hc: &http.Client{Timeout: timeout}, now: time.Now}
+	base := strings.TrimRight(baseURL, "/")
+	return &Client{base: base, root: withoutCredentials(base), salt: salt, hc: &http.Client{Timeout: timeout}, now: time.Now}
+}
+
+// Root is the API root this client asks, as it may be written to a log. It tells which backend answered: a development
+// machine whose api_server points at production reaches a backend that is older than the code that asks it.
+func (c *Client) Root() string { return c.root }
+
+func withoutCredentials(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(address that cannot be read)"
+	}
+	u.User = nil
+	return u.String()
 }
 
 // Signature returns the Authorization value the Python endpoint expects: md5("<salt>_<yymmddHH>") with the
@@ -145,10 +164,12 @@ func (c *Client) post(ctx context.Context, payload map[string]string) (status in
 func (c *Client) refusal(status int) (bool, error) {
 	switch status {
 	case http.StatusUnauthorized:
-		return true, ErrUnauthorized
+		return true, fmt.Errorf("%w: %s", ErrUnauthorized, c.root)
 	case http.StatusForbidden: // "Too many requests": the endpoint refuses calls closer than 10 ms
-		return true, fmt.Errorf("dash api is rate limiting this host (status 403)")
+		return true, fmt.Errorf("dash api %s is rate limiting this host (status 403)", c.root)
+	case http.StatusNoContent:
+		return false, fmt.Errorf("%w: %s answered status 204; it is older than dash_go or is not the backend that was meant (check dash_api_url and api_server)", ErrFunctionUnknown, c.root)
 	default:
-		return false, fmt.Errorf("dash api answered status %d", status)
+		return false, fmt.Errorf("dash api %s answered status %d", c.root, status)
 	}
 }

@@ -46,6 +46,28 @@ func trusted(proxies []netip.Prefix, a netip.Addr) bool {
 	return false
 }
 
+// ownAddresses lists the addresses of the network interfaces of this computer, loopback included.
+func ownAddresses() []netip.Addr {
+	nets, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	out := make([]netip.Addr, 0, len(nets))
+	for _, n := range nets {
+		var ip net.IP
+		switch v := n.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if a, ok := netip.AddrFromSlice(ip); ok {
+			out = append(out, a.WithZone("").Unmap())
+		}
+	}
+	return out
+}
+
 // clientIP is the address of the browser. It is the address of the connection, unless that is one of the configured
 // reverse proxies: then it is the nearest address in the X-Forwarded-For header that is not a proxy itself. What
 // the proxies did not add, the left side of the header, is never believed.

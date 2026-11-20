@@ -93,6 +93,10 @@ type Settings struct {
 	SSORequireSameIP bool
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header is believed.
 	TrustedProxies []netip.Prefix
+	// LocalAddrs lists the addresses of the computer that runs dash_go; nil means those of its network interfaces.
+	// It is only asked for a Windows sign-in that started from a loopback address (see sameBrowser), and exists so
+	// that tests do not depend on the computer they run on.
+	LocalAddrs func() []netip.Addr
 }
 
 // Service handles the sign-in (the hand-over from Dash, the password and the Windows sign-in), the session cookie

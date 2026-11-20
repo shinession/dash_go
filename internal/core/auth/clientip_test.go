@@ -48,6 +48,10 @@ func TestClientIP(t *testing.T) {
 		{"the left side of the header is the browser's own claim", local, request("127.0.0.1:41000", "6.6.6.6, 198.51.100.7"), "198.51.100.7"},
 		{"two proxies in a row", chain, request("127.0.0.1:41000", "198.51.100.7, 10.0.0.5"), "198.51.100.7"},
 		{"two proxies, the front one adds its own entry", chain, request("127.0.0.1:41000", "6.6.6.6", "198.51.100.7, 10.0.0.5"), "198.51.100.7"},
+		// nginx next to dash_go trusts the front server (set_real_ip_from): the browser is then in the header twice
+		{"the front server is trusted by nginx", local, request("127.0.0.1:41000", "198.51.100.7, 198.51.100.7"), "198.51.100.7"},
+		// nobody trusts the front server: its address is taken for the browser, which a Windows sign-in refuses
+		{"the front server is not trusted anywhere", local, request("127.0.0.1:41000", "198.51.100.7, 10.0.0.5"), "10.0.0.5"},
 		{"a hop that is no address is not guessed", local, request("127.0.0.1:41000", "198.51.100.7, unknown"), "127.0.0.1"},
 		{"an IPv4 address mapped into IPv6", local, request("127.0.0.1:41000", "::ffff:198.51.100.7"), "198.51.100.7"},
 		{"only proxies in the header", local, request("127.0.0.1:41000", "127.0.0.1"), "127.0.0.1"},

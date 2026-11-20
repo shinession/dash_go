@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (module version 0.1.1). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (module version 0.1.2). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -131,6 +131,8 @@ Two layers of JSON files are read, with the patch convention of the Python appli
 
 Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`, and since 0.1.1 `photo_url_template`, `dash_api_url`, `login_password`, `sso_require_same_ip`, `trusted_proxies` (see [shell_and_login.md](shell_and_login.md), section 8; the Windows sign-in also needs `sso_server` and `api.salt_2` in the Python configuration).
 
+Which Python API is asked: `dash_api_url` if it is set (here as `modules.hc_scan.dash_api_url`, or at the top level), otherwise `http://<api_server>/api`. `api_server` comes from the Python configuration **including the patch file of the host**, and the patch file of a development machine often sets it to the production server for the calls of the Python application itself. dash_go would then ask a backend that does not have `hc_user_processes` until the Python changes are deployed there (section 11). Since 0.1.2 the log, and so `dash_go.exe -check`, says which API is used and which key it came from: `hc_scan: the Dash API of the permission check url=http://localhost/api from=dash_api_url`. On a development machine set `dash_api_url` in `dash_go.json`, for example to `http://localhost/api`.
+
 Module keys (`modules.hc_scan`):
 
 | Key | Default | Meaning |
@@ -155,12 +157,12 @@ Python side: the optional key `dash_go_url` of `config.json` (default `/dash_go/
 ## 10. Deployment (server s2)
 
 1. Build the package: `scripts\build.ps1 -Modules hc_scan` (or without `-Modules` for every module) and unpack it on s2.
-2. Create `config\dash_go.json` from the example. Point `dash_config_dir` to the config folder of the Python application on s2 and `modules.hc_scan.dash_data_dir` to its `data` folder. Check the connection settings with `dash_go.exe -check`.
+2. Create `config\dash_go.json` from the example. Point `dash_config_dir` to the config folder of the Python application on s2 and `modules.hc_scan.dash_data_dir` to its `data` folder. Check the connection settings with `dash_go.exe -check`, which also says which Python API is used.
 3. Add the location of `deploy\nginx_dash_go.conf.example` to the nginx site of s2 and reload nginx. The service serves everything below `/dash_go/` itself.
 4. Start `dash_go.exe` (a console process; wrap it with a service manager if it has to survive log-offs). The log is `logs\dash_go-<date>.log`.
 5. Deploy the Python changes (`IE.py`, `LocalListV3.py`, `appV2.py`). The new menu button works as soon as the Dash application is restarted; the permission function must be deployed to the server that answers `/api`.
 
-Local debugging on a development machine: the Dash repository has the same location in the local debug server block of `config/nginx_asrock.conf` (`http://localhost/dash_go/` to `127.0.0.1:8750`). Copy it to the nginx that is running, reload nginx and start `dash_go.exe` with `DASH_GO_DASH_CONFIG_DIR` pointing at the config folder of the Dash repository.
+Local debugging on a development machine: the Dash repository has the same location in the local debug server block of `config/nginx_asrock.conf` (`http://localhost/dash_go/` to `127.0.0.1:8750`). Copy it to the nginx that is running, reload nginx and start `dash_go.exe` with `DASH_GO_DASH_CONFIG_DIR` pointing at the config folder of the Dash repository. Set `dash_api_url` to the local API (`http://localhost/api`) when the patch file of the machine points `api_server` at another server (section 9).
 
 Run one instance only: the lock that keeps two terminals from taking the last seat twice is in the process.
 
@@ -169,7 +171,13 @@ Run one instance only: the lock that keeps two terminals from taking the last se
 - **A machine never gets anybody automatically.** Open the page: a machine card with "no MTR mapping" has no machine of the same name in the LMS records of that process. Fix the name in `t_mqpd_hc_table` or in LMS; the match is exact (trimmed).
 - **MTR changes are not seen.** `MTR data:` on the page is the newest `updated_at` of `t_mtr_checkpoint`. The Python application refreshes the table from LMS when its pages read the MTR data, so it can be stale when nobody opened them. Cached for 60 seconds.
 - **Saved data is not shown on the Python pages.** The save answered "The data is saved, but the Python pages may show it late": the change log folder cannot be written (`dash_data_dir`, `cdn_data_folder`). Fix the permission; touching `DailyAttnData.log` refreshes the pages.
-- **"Your permission could not be verified".** The Python API does not answer or rejects the signature: check `api_server` or `dash_api_url`, that `api.salt_3` is the same on both sides, and that the clocks and time zones of both hosts agree (the signature contains the hour).
+- **"Cannot start: Your permission could not be verified right now" (`api/me` answers 502).** The log line `permission check failed` has the reason. Found on 2026-11-20 on a development machine:
+  - *Symptoms:* the page cannot start for anybody. The log says `permission check failed ... answered status 204` (in 0.1.0 and 0.1.1 only `dash api answered status 204`, without the address). The API log of the machine never shows `user_mgmt: hc_user_processes`.
+  - *Root cause:* dash_go asks `dash_api_url`, by default `http://<api_server>/api`, and the patch file of the machine (`patch_sgmeslt595.json`) sets `api_server` to `prod_eng`. According to `nginx_prod_eng.conf`, `prod_eng` forwards `/api` to s2. The API reached that way answered 204 to this call, and `/api/user` answers 204 to a function it does not have, so the Python changes (`hc_user_processes`) are not deployed behind `prod_eng` yet. The signed call was right; it went to another server than the one with the new function.
+  - *Rule:* where `api_server` is not the server that has `hc_user_processes`, set `dash_api_url` in `dash_go.json` (development machine: `http://localhost/api`). Deploy `appV2.py` to a server before dash_go is pointed at its API.
+  - *How to confirm:* `dash_go.exe -check`, or the first lines of the log, say `the Dash API of the permission check url=... from=...`; then look for `hc_user_processes` in the API log of the machine at that address. The same signed call answered 200 with the processes from `http://localhost/api` and 204 from `http://prod_eng.co.murata.local/api`.
+  - *Ruled out:* the signature (`api.salt_3` and the hour were right, the local API accepted the same call), the permissions of the user, and nginx on the development machine.
+  - *Other causes of the same message:* `dash api rejected the request signature` (status 401): `api.salt_3` differs between the two sides, or the clocks and time zones of both hosts differ (the signature contains the hour). `dash api request failed`: the API cannot be reached from this computer (address, firewall, nginx).
 - **"The login link from Dash has expired / was already used".** The login page of dash_go shows this since 0.1.1 (before, a plain error page): sign in there, or open **Scan Assign** from Dash again.
 - **"No permission" after signing in.** The account is valid, but the Python backend lists no HC process for it (HeadCount groups, `HeadCount-All`, `MQPD_AUTH_LIST`): ask the HeadCount group admin for access. In 0.1.0 this case showed a blank page because the list of processes was `null`; 0.1.1 sends an empty list and the page says so (found by the browser test of 0.1.1).
 - **A person is flagged yellow although everything looks right.** The reason is written on the line. Roster and shift follow `t_daily_attn_member`, `t_mes_ee` and `t_daily_attn_calendar`, exactly like the HC Input page.
@@ -187,12 +195,13 @@ Done (2026-11-19):
 - The page was driven in headless Chrome against that database (scan with and without Enter, barcode wrapper, duplicate, unknown ID, every warning, manual change, removal, acknowledgement dialog, saving, scan after saving). No JavaScript error was reported.
 - The Python additions have unit tests (`tests/test_dash_go_link.py`); `tests/test_callback_registration.py` still passes.
 - 0.1.1 (2026-11-20): the module was moved into the shell and every text into the catalogs. The old tests still pass; new tests cover the catalogs (`catalog_test.go`: both languages complete, every key and value the code uses, no unused text) and the languages (`language_test.go`: page, API errors, a draft read in both languages, drafts of 0.1.0). The real binary was run again with the scratch database and a stand-in for the Python backend, and the page was driven in headless Chrome in both themes and both languages: details in [shell_and_login.md](shell_and_login.md), section 12.
+- 0.1.2 (2026-11-20): the cause of the failure in section 11 was found with the real binary on the development machine (scratch configuration, the real local Python API and Redis): with the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. New unit tests: the status 204 and the address in the error messages (`internal/core/dashapi/client_test.go`), where the API address comes from (`internal/core/config/config_test.go`). The Windows sign-in checks of 0.1.2 are in [shell_and_login.md](shell_and_login.md), section 12. The page itself was not driven in a browser again.
 
 **Not verified:**
 
 - Writing to the real tables (only a scratch database with the real column types was written), and the production database.
 - Real photos, a real barcode scanner (whether it presses Enter, which characters it adds), and a real Redis server (the Redis store was tested with an in-process Redis).
-- The call `hc_user_processes` against a running Python backend, and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
+- The call `hc_user_processes` against the Python backend on s2 itself (in 0.1.2 it was tried against the backend of the development machine, and through `prod_eng`, which answered 204: the function is not deployed behind it), and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
 - The nginx location and the port on s2.
 - The Chinese wording has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
 
@@ -212,7 +221,7 @@ Done (2026-11-19):
 
 # 中文
 
-**更新日期：** 2026-11-20（模块版本 0.1.1）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（模块版本 0.1.2）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -343,6 +352,8 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 
 服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`，以及自 0.1.1 起的 `photo_url_template`、`dash_api_url`、`login_password`、`sso_require_same_ip`、`trusted_proxies`（见 [shell_and_login.md](shell_and_login.md) 第 8 节；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`）。
 
+询问哪个 Python API：设置了 `dash_api_url` 就用它（在这里是 `modules.hc_scan.dash_api_url`，或顶层的），否则用 `http://<api_server>/api`。`api_server` 来自 Python 配置，**包括本机的 patch 文件**，而开发机的 patch 文件常常为了 Python 应用自己的调用，把它设成生产服务器。这样 dash_go 询问的后端在 Python 的改动部署到那里之前，并没有 `hc_user_processes`（第 11 节）。自 0.1.2 起，日志（所以 `dash_go.exe -check` 也是）会说明用的是哪个 API 以及它来自哪个 key：`hc_scan: the Dash API of the permission check url=http://localhost/api from=dash_api_url`。在开发机上请在 `dash_go.json` 中设置 `dash_api_url`，例如 `http://localhost/api`。
+
 模块 key（`modules.hc_scan`）：
 
 | Key | 默认值 | 含义 |
@@ -367,12 +378,12 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 ## 10. 部署（服务器 s2）
 
 1. 构建包：`scripts\build.ps1 -Modules hc_scan`（不带 `-Modules` 则包含所有模块），并在 s2 上解压。
-2. 用示例创建 `config\dash_go.json`。把 `dash_config_dir` 指向 s2 上 Python 应用的配置文件夹，把 `modules.hc_scan.dash_data_dir` 指向它的 `data` 文件夹。用 `dash_go.exe -check` 检查连接设置。
+2. 用示例创建 `config\dash_go.json`。把 `dash_config_dir` 指向 s2 上 Python 应用的配置文件夹，把 `modules.hc_scan.dash_data_dir` 指向它的 `data` 文件夹。用 `dash_go.exe -check` 检查连接设置，它也会说明用的是哪个 Python API。
 3. 把 `deploy\nginx_dash_go.conf.example` 中的 location 加入 s2 的 nginx 站点并 reload。服务自己处理 `/dash_go/` 之下的所有路径。
 4. 启动 `dash_go.exe`（控制台进程；如果需要在注销后继续运行，请用服务管理工具包装）。日志为 `logs\dash_go-<date>.log`。
 5. 部署 Python 的改动（`IE.py`、`LocalListV3.py`、`appV2.py`）。Dash 应用重启后新菜单按钮即可使用；权限函数必须部署到回答 `/api` 的服务器上。
 
-在开发机上本地调试：Dash 仓库的 `config/nginx_asrock.conf` 的本地调试 server 块里有同样的 location（`http://localhost/dash_go/` 转发到 `127.0.0.1:8750`）。把它复制到正在运行的 nginx，reload nginx，并在启动 `dash_go.exe` 时让 `DASH_GO_DASH_CONFIG_DIR` 指向 Dash 仓库的配置文件夹。
+在开发机上本地调试：Dash 仓库的 `config/nginx_asrock.conf` 的本地调试 server 块里有同样的 location（`http://localhost/dash_go/` 转发到 `127.0.0.1:8750`）。把它复制到正在运行的 nginx，reload nginx，并在启动 `dash_go.exe` 时让 `DASH_GO_DASH_CONFIG_DIR` 指向 Dash 仓库的配置文件夹。如果这台机器的 patch 文件把 `api_server` 指向了另一台服务器，请把 `dash_api_url` 设为本地 API（`http://localhost/api`，见第 9 节）。
 
 只运行一个实例：防止两个终端重复占用最后一个位置的锁在进程内。
 
@@ -381,7 +392,13 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - **某台 machine 一直没有人被自动分派。** 打开页面：machine 卡片上有 “no MTR mapping” 说明该 process 的 LMS 记录中没有同名 machine。请修正 `t_mqpd_hc_table` 或 LMS 中的名称；匹配是精确的（去掉首尾空格）。
 - **看不到 MTR 的变更。** 页面上的 `MTR data:` 是 `t_mtr_checkpoint` 最新的 `updated_at`。Python 应用在它的页面读取 MTR 数据时才从 LMS 刷新该表，所以没人打开那些页面时可能是旧的。缓存 60 秒。
 - **Python 页面看不到已保存的数据。** 保存时提示 “The data is saved, but the Python pages may show it late”：变更日志文件夹无法写入（`dash_data_dir`、`cdn_data_folder`）。修复权限；对 `DailyAttnData.log` 做一次追加或 touch 即可刷新页面。
-- **“Your permission could not be verified”。** Python API 没有响应或拒绝了签名：检查 `api_server` 或 `dash_api_url`，两边的 `api.salt_3` 是否相同，以及两台主机的时钟和时区是否一致（签名包含小时）。
+- **“Cannot start: Your permission could not be verified right now”（`api/me` 回答 502）。** 日志行 `permission check failed` 里有原因。2026-11-20 在一台开发机上发现：
+  - *现象：* 页面对任何人都无法启动。日志写着 `permission check failed ... answered status 204`（0.1.0 和 0.1.1 中只有 `dash api answered status 204`，没有地址）。这台机器的 API 日志里从未出现过 `user_mgmt: hc_user_processes`。
+  - *根因：* dash_go 询问 `dash_api_url`，默认是 `http://<api_server>/api`，而这台机器的 patch 文件（`patch_sgmeslt595.json`）把 `api_server` 设成了 `prod_eng`。根据 `nginx_prod_eng.conf`，`prod_eng` 把 `/api` 转发给 s2。用这种方式到达的 API 对这个调用回答了 204，而 `/api/user` 对它没有的函数回答 204，所以 Python 的改动（`hc_user_processes`）还没有部署到 `prod_eng` 后面。带签名的调用本身是对的；它只是发到了另一台服务器，而不是有新函数的那一台。
+  - *规则：* 凡是 `api_server` 不是拥有 `hc_user_processes` 的那台服务器的地方，都要在 `dash_go.json` 中设置 `dash_api_url`（开发机：`http://localhost/api`）。先把 `appV2.py` 部署到一台服务器上，再让 dash_go 指向它的 API。
+  - *如何确认：* `dash_go.exe -check` 或日志开头几行会写出 `the Dash API of the permission check url=... from=...`；然后在该地址所在机器的 API 日志里查找 `hc_user_processes`。同一个带签名的调用，从 `http://localhost/api` 得到 200 和 process 列表，从 `http://prod_eng.co.murata.local/api` 得到 204。
+  - *已排除：* 签名（`api.salt_3` 和小时都是对的，本地 API 接受了同一个调用）、用户的权限，以及开发机上的 nginx。
+  - *同一条消息的其他原因：* `dash api rejected the request signature`（状态 401）：两边的 `api.salt_3` 不同，或者两台主机的时钟和时区不一致（签名包含小时）。`dash api request failed`：这台电脑访问不到该 API（地址、防火墙、nginx）。
 - **“The login link from Dash has expired / was already used”。** 自 0.1.1 起由 dash_go 的登录页显示（以前是一个纯错误页）：在那里登录，或重新从 Dash 打开 **Scan Assign**。
 - **登录后提示“没有权限”。** 账号有效，但 Python 后端没有给它列出任何 HC process（HeadCount 组、`HeadCount-All`、`MQPD_AUTH_LIST`）：请联系 HeadCount 组的管理员申请权限。0.1.0 中这种情况会显示空白页，因为 process 列表是 `null`；0.1.1 返回空列表，页面会说明情况（由 0.1.1 的浏览器测试发现）。
 - **某人明明正常却被标黄。** 原因写在该行上。名单和班次与 HC Input 页面一样，来自 `t_daily_attn_member`、`t_mes_ee` 和 `t_daily_attn_calendar`。
@@ -399,12 +416,13 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 页面在无头 Chrome 中对该数据库做了操作（带和不带 Enter 的扫描、条码前后缀、重复扫描、未知 ID、每一种警告、手动修改、删除、确认对话框、保存、保存后再次扫描）。没有 JavaScript 报错。
 - Python 新增部分有单元测试（`tests/test_dash_go_link.py`）；`tests/test_callback_registration.py` 仍然通过。
 - 0.1.1（2026-11-20）：模块被移入 shell，所有文字被移入词条文件。原有的测试仍然通过；新的测试覆盖词条（`catalog_test.go`：两种语言完整、代码用到的每个键和值、没有未使用的文字）和语言（`language_test.go`：页面、API 错误、一份草稿在两种语言下阅读、0.1.0 的草稿）。真实的可执行文件配合临时数据库和一个 Python 后端的替身再次运行，页面在两种主题和两种语言下用无头 Chrome 操作过：详情见 [shell_and_login.md](shell_and_login.md) 第 12 节。
+- 0.1.2（2026-11-20）：第 11 节中那次失败的原因，是用真实的可执行文件在开发机上找到的（临时配置、真实的本地 Python API 和 Redis）：API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。新的单元测试：状态 204 和错误消息中的地址（`internal/core/dashapi/client_test.go`），API 地址来自哪里（`internal/core/config/config_test.go`）。0.1.2 的 Windows 登录检查见 [shell_and_login.md](shell_and_login.md) 第 12 节。页面本身没有再用浏览器操作过。
 
 **没有验证：**
 
 - 对真实表的写入（只对带真实列类型的临时数据库写过），以及生产数据库。
 - 真实的照片、真实的扫码枪（是否发送 Enter、会加哪些字符）以及真实的 Redis 服务器（Redis 存储只用进程内的 Redis 测试过）。
-- 针对运行中的 Python 后端调用 `hc_user_processes`，以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
+- 针对 s2 本身的 Python 后端调用 `hc_user_processes`（0.1.2 中它是对开发机的后端试的，以及通过 `prod_eng` 试的，后者回答 204：该函数没有部署到它后面），以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
 - s2 上的 nginx location 和端口。
 - 使用者对中文措辞的审阅；人员的头像（页面只在没有头像的情况下试过）。
 

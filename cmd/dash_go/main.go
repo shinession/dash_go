@@ -149,7 +149,9 @@ func authSettings(cfg *config.Config, log *slog.Logger) (auth.Settings, error) {
 		log.Warn("the login page is switched off: neither api_server nor dash_api_url is set, so accounts cannot be checked; people can still open the page from the Dash application")
 		return set, nil
 	}
-	set.Directory = auth.NewDashDirectory(dashapi.New(cfg.DashAPIURL, cfg.Dash.APISalt, 5*time.Second))
+	api := dashapi.New(cfg.DashAPIURL, cfg.Dash.APISalt, 5*time.Second)
+	log.Info("the Dash API of the sign-in", "url", api.Root(), "from", cfg.DashAPISource)
+	set.Directory = auth.NewDashDirectory(api)
 	set.PasswordLogin = cfg.Login.Password
 	if cfg.Dash.SSOServer != "" {
 		sso, err := dashapi.NewSSO(cfg.Dash.SSOServer, cfg.Dash.APISalt2, 10*time.Second)

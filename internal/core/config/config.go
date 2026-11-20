@@ -103,9 +103,12 @@ type Config struct {
 	// DashAPIURL is the root of the Python API including /api (dash_api_url, default http://<api_server>/api); empty
 	// when neither is set. The login and the permission checks ask it.
 	DashAPIURL string
-	Login      Login
-	Dash       Dash
-	Sources    []string // configuration files that were loaded (paths only)
+	// DashAPISource is the key DashAPIURL was taken from, "dash_api_url" or "api_server": the log says it, because the
+	// api_server of a development machine's patch file may point at the production server.
+	DashAPISource string
+	Login         Login
+	Dash          Dash
+	Sources       []string // configuration files that were loaded (paths only)
 
 	modules map[string]json.RawMessage
 }
@@ -205,9 +208,10 @@ func Load(opts Options) (*Config, error) {
 		SSOServer:     strings.TrimSpace(rawString(merged["sso_server"])),
 		CDNDataFolder: rawString(merged["cdn_data_folder"]),
 	}
-	cfg.DashAPIURL = strings.TrimSpace(rawString(merged["dash_api_url"]))
-	if cfg.DashAPIURL == "" && cfg.Dash.APIServer != "" {
-		cfg.DashAPIURL = "http://" + cfg.Dash.APIServer + "/api"
+	if u := strings.TrimSpace(rawString(merged["dash_api_url"])); u != "" {
+		cfg.DashAPIURL, cfg.DashAPISource = u, "dash_api_url"
+	} else if cfg.Dash.APIServer != "" {
+		cfg.DashAPIURL, cfg.DashAPISource = "http://"+cfg.Dash.APIServer+"/api", "api_server"
 	}
 	if cfg.Dash.Postgres.Port == 0 {
 		cfg.Dash.Postgres.Port = 5432

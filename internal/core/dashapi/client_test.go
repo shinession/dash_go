@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,5 +74,39 @@ func TestHCProfileErrors(t *testing.T) {
 	status.Store(500)
 	if _, err := c.HCProfile(context.Background(), "x"); err == nil || calls.Load() != 1 {
 		t.Errorf("500 must fail without retry: %v calls=%d", err, calls.Load())
+	} else if !strings.Contains(err.Error(), srv.URL) {
+		t.Errorf("the error must say which backend answered: %v", err)
+	}
+}
+
+// /api/user answers 204 to a function it does not have: the backend is older than dash_go, or it is the wrong one
+// (the api_server of a development machine's patch file points at production). That is not "try again in a moment".
+func TestAFunctionTheBackendDoesNotKnowIsReportedWithTheBackendAddress(t *testing.T) {
+	calls := atomic.Int32{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := New(srv.URL+"/api/", "salt", time.Second)
+
+	_, err := c.HCProfile(context.Background(), "AB12C34")
+	if !errors.Is(err, ErrFunctionUnknown) || !strings.Contains(err.Error(), srv.URL+"/api answered status 204") {
+		t.Fatalf("hc_user_processes: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("an answer that will not change is not repeated, calls=%d", calls.Load())
+	}
+	if err := c.VerifyUser(context.Background(), "AB12C34", "pw"); !errors.Is(err, ErrFunctionUnknown) {
+		t.Errorf("verify_user: %v", err)
+	}
+}
+
+func TestRootIsWrittenWithoutCredentials(t *testing.T) {
+	if got := New("http://user:secret@api.example.local/api/", "salt", time.Second).Root(); got != "http://api.example.local/api" {
+		t.Errorf("%q", got)
+	}
+	if got := New("http://user:secret@api.example.local:bad/api", "salt", time.Second).Root(); strings.Contains(got, "secret") {
+		t.Errorf("an address that cannot be read must not be written as it is: %q", got)
 	}
 }

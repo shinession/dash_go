@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (dash_go version 0.1.1). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (dash_go version 0.1.2). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -109,7 +109,7 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 - The JSON endpoints need the header `X-Requested-With: dash_go` (a cross-site form cannot send it), refuse a request that the browser marks `Sec-Fetch-Site: cross-site` or whose `Origin` names another host (compared without the port, as the browser compares sites). Logout needs the same, so a link cannot sign somebody out.
 - **Limits of failed password sign-ins**: 5 per client address and 10 per account in 10 minutes (the account is compared without case and, for an e-mail address, by the part before the @). The answer is 429 with `Retry-After`. A successful sign-in forgets the failures of the account and gives the address one slot back; an outage of the user directory is not counted against the account. The limits are in memory: they restart with the service, which is why only one instance must run.
 - The same message for an unknown account, a wrong password and a deactivated account (the backend answers 202 for all three).
-- **Windows sign-in**: only tokens this server issued are accepted (24 random characters, 120 bits), a result is used once, at most 5 waiting sign-ins per address and 2000 in all, one look at the result per second and flow. The address of the browser that started the flow must equal the address the sign-on service recorded (`sso_require_same_ip`, default on): that stops the forced sign-in in which an attacker starts a flow, makes a victim open the sign-on link with the attacker's token and polls for the identity of the victim. The address of the browser is the address of the connection, unless that is one of the `trusted_proxies`: then it is the right-most address of `X-Forwarded-For` that is not a trusted proxy (so a browser cannot choose its own address).
+- **Windows sign-in**: only tokens this server issued are accepted (24 random characters, 120 bits), a result is used once, at most 5 waiting sign-ins per address and 2000 in all, one look at the result per second and flow. The address of the browser that started the flow must equal the address the sign-on service recorded (`sso_require_same_ip`, default on): that stops the forced sign-in in which an attacker starts a flow, makes a victim open the sign-on link with the attacker's token and polls for the identity of the victim. The address of the browser is the address of the connection, unless that is one of the `trusted_proxies`: then it is the right-most address of `X-Forwarded-For` that is not a trusted proxy (so a browser cannot choose its own address). **A browser on the computer that runs dash_go** is the one exception (0.1.2): opened as `localhost` it comes from a loopback address (`127.0.0.1`, `::1`), while the sign-on service records the address of that computer. That is one browser on one computer, so when the sign-in started from a loopback address, any address of this computer's network interfaces counts as the same address (`sameBrowser` in `internal/core/auth/ssoflow.go`). A browser on another computer never comes from a loopback address (the left side of `X-Forwarded-For` is not believed), so no other sign-in is relaxed. Before 0.1.2 a sign-in from `localhost` was always refused.
 - Nothing secret is logged: the password is never written, the typed account is only written as a short hash (`acct=`), because a person may type a password into the account field. A refused Windows sign-in logs the two addresses that were compared and how the request reached the server (`connection`, `trusted_proxy`, `forwarded`) with a hint.
 - `next` is only accepted as a local path below the base path. The content security policy allows scripts, styles and pictures only from the service itself and forbids `base`, plug-ins and forms that post elsewhere.
 
@@ -131,18 +131,20 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 | `login_password` | `dash_go.json` | `true` | The login page asks for an account and a password. |
 | `sso_require_same_ip` | `dash_go.json` | `true` | Windows sign-in: the sign-on service must have seen the address that started it. Turn it off only when no proxy can pass the address of the browser. |
 | `trusted_proxies` | `dash_go.json` | `["127.0.0.1", "::1"]` | Reverse proxies (addresses or CIDR ranges) whose `X-Forwarded-For` is believed. `[]` trusts none. |
-| `dash_api_url` | `dash_go.json` | `http://<api_server>/api` | Root of the Python API. Without it and without `api_server` the login page is off (the link from Dash still works). |
+| `dash_api_url` | `dash_go.json` | `http://<api_server>/api` | Root of the Python API. Without it and without `api_server` the login page is off (the link from Dash still works). `api_server` comes from the Python configuration **including the patch file of the host**: on a development machine that may be the production server, which can be older than dash_go (section 10). The log and `dash_go.exe -check` say which API is used. |
 | `sso_server` | Python `config.json` (or `dash_go.json`) | none | Host of the Windows sign-on service (`host`, `host:port` or `http(s)://host[:port]`); without it the Windows sign-in is off. |
 | `api.salt_2` | Python `config.json` | none | Secret of the sign-on result endpoint; required when `sso_server` is set (`dash_go.exe` refuses to start without it). Environment variable `DASH_GO_API_SALT_2` wins. |
 | `api.salt_3` | Python `config.json` | none | Secret of the `/api/user` endpoint and of the hand-over link (unchanged). |
 | `dash_home` | `dash_go.json` | `/ie/` | The login page links to the Dash application. |
 
-`dash_go.exe -check` prints whether the password and the Windows sign-in are on.
+`dash_go.exe -check` prints whether the password and the Windows sign-in are on. Since 0.1.2 the log (and so `-check`) also says which Python API the sign-in and the modules ask and which key it came from: `the Dash API of the sign-in url=http://localhost/api from=dash_api_url`.
 
 ## 9. Deployment
 
 - No new location is needed: `/dash_go/` already covers `_shell`, `login`, `lang` and `auth`. The nginx example sets `X-Forwarded-For $proxy_add_x_forwarded_for`, which the sign-in uses; the default `trusted_proxies` trusts nginx on the same computer.
-- **Two proxies in a row** (a server in front of the server that runs dash_go): the nginx next to dash_go sees the address of the front server, not the browser. Either list the front server in `trusted_proxies` (the right-most address that is not trusted wins), or let that nginx use `set_real_ip_from <front server>; real_ip_header X-Forwarded-For; real_ip_recursive on;`. Without one of them every Windows sign-in is refused as `address_mismatch`; the log line says which addresses were compared. `sso_require_same_ip: false` makes it work but removes the protection against the forced sign-in.
+- **Two proxies in a row** (a server in front of the server that runs dash_go): the nginx next to dash_go sees the address of the front server, not the browser. Either list the front server in `trusted_proxies` (the right-most address that is not trusted wins), or let that nginx use `set_real_ip_from <front server>; real_ip_header X-Forwarded-For; real_ip_recursive on;`. Without one of them every Windows sign-in is refused as `address_mismatch`; the log line says which addresses were compared. `sso_require_same_ip: false` makes it work but removes the protection against the forced sign-in. Example: the development machine `sgmeslt595` behind the front server `prod_eng`. `config/nginx_sgmeslt595.conf` of the Dash repository has the three directives in its `http` block with the address of `prod_eng`, like `nginx_sgmescimai.conf` of s2, which trusts `prod_eng` the same way. nginx believes the header only from that address, so a browser cannot choose its own address; `/tv/` keeps its own `set_real_ip_from` for s2. The nginx that is running reads its own copy of the file: copy it, run `nginx -t`, then reload nginx.
+- **A browser on the computer that runs dash_go** (a development machine, `http://localhost/...`): the Windows sign-in matches the address of the computer, section 7.2. Nothing has to be configured.
+- **The Python API of a development machine.** dash_go asks `dash_api_url`, by default `http://<api_server>/api`, and the patch file of a development machine often sets `api_server` to the production server for the calls of the Python application itself. Set `dash_api_url` in `dash_go.json` there (for example `http://localhost/api`); otherwise the sign-in and the permission check ask a backend that may not have the functions `verify_user` and `hc_user_processes` yet (section 10).
 - The sign-on service is opened by the **browser** (the popup), and read by **s2** through its backend: s2 must reach `http://<sso_server>/api/sso_result/anything`.
 - Passwords travel from the browser to dash_go and from dash_go to the Python backend over the same http as the rest of the company applications. Use https between the browser and nginx where the site has it; then the cookie is `Secure` automatically (`X-Forwarded-Proto`).
 
@@ -150,7 +152,11 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 
 - **The login page says "Signing in on this page is not set up".** Neither `login_password` nor the Windows sign-in is on, or neither `dash_api_url` nor `api_server` is set. `dash_go.exe -check` and the first lines of the log say which.
 - **"Invalid account or password" for a right password.** The user may be deactivated (the backend answers the same for all failures), or the clocks of s2 and the backend differ by more than the hour of the signature (`log: dash api rejected the request signature`).
-- **Windows sign-in says "could not be matched to this browser".** The two addresses differ: see the log line `single sign-on refused` (`started_from`, `sso_address`, `connection`, `trusted_proxy`, `forwarded`) and section 9.
+- **Windows sign-in says "could not be matched to this browser".** The two addresses differ. The log line `single sign-on refused` says which: `started_from` is the address dash_go took for the browser, `sso_address` the one the sign-on service saw, and `connection`, `trusted_proxy` and `forwarded` say how the request arrived.
+  - `started_from` is the address of a server and `forwarded` ends with it: a proxy in front of the nginx next to dash_go hides the browser. Section 9: `set_real_ip_from` in that nginx, or `trusted_proxies`. This is what happens when `prod_eng` forwards to a development machine whose nginx does not trust it.
+  - `trusted_proxy=false` and `forwarded` is set: the proxy that connects is not in `trusted_proxies`.
+  - `started_from` is `127.0.0.1` or `::1`: the page was opened from the computer that runs dash_go (`http://localhost/...`). Found on 2026-11-20 on the development machine: `started_from=127.0.0.1`, `forwarded=::1`, `sso_address=10.135.36.89`, the LAN address of the computer; there was no proxy in front of its nginx, so the proxy settings were not the cause. Until 0.1.1 this was always refused; since 0.1.2 it matches when `sso_address` is an address of this computer. If it is still refused, `sso_address` belongs to another computer (a proxy for browsers, a VPN).
+  - The addresses match, but the page then says that the sign-in cannot be completed right now (log: `single sign-on failed: the user directory cannot be reached`, with `answered status 204`): the Python API behind `dash_api_url` or `api_server` is the wrong one, or older than dash_go. See [hc_scan_page.md](hc_scan_page.md), section 11.
 - **The popup is blocked.** The page says so; allow pop-ups for the site.
 - **The Chinese page shows English text.** A text that is only in English: add it to `zh.json` (the tests fail when a key is missing in one language, so this means a draft of version 0.1.0 or a text written by a person, such as a machine name).
 - **After a restart everybody has to sign in again.** No: sessions are signed cookies and survive a restart as long as `api.salt_3` is unchanged. Failed-login counters and waiting Windows sign-ins are lost.
@@ -164,6 +170,7 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 - The limits are per process. Do not run two instances behind one address.
 - The Windows sign-in needs the browser to reach the sign-on service and s2 to reach its backend.
 - The light palette and the Chinese wording are the developer's proposal.
+- A browser on the computer that runs dash_go matches the addresses of that computer (0.1.2). One browser on one computer must not be refused because the two services name the computer differently (loopback for dash_go, the LAN address for the sign-on service); the rule of the check, the same computer for both steps, is unchanged. Only a sign-in that started from a loopback address is affected.
 
 ## 12. Verification status
 
@@ -172,10 +179,16 @@ Done (2026-11-20):
 - Go unit tests of every package: catalogs (same keys and placeholders in both languages, every key and value the code uses, no unused text), language choice, the pickle reader (vectors made by the real Python 3.12 `pickle` and `zlib`, hostile and damaged input, zip bomb, depth), the Python clients (signatures checked against values computed in Python), configuration, the sign-in (password, limits, Windows flow with every outcome, address checks, trusted proxies, cross-site refusals, no password or typed account in the log), the shell pages (header, user box, language, login page notices, redirects, escaping, files), the contrast of both palettes.
 - The real binary was run with a Python configuration folder, a stand-in for the Python backend and the sign-on service that uses the real `pickle` and `zlib` (`verify_user`, `hc_user_processes`, `sso_result`, the sign-on page), and the scratch PostgreSQL 18 with demo data. Driven in headless Chrome: landing, login (wrong and right password, by e-mail), redirect back, process picker, scans, manual change, acknowledgement and saving, sign-out, the Windows popup flow (signed in, no Windows user, unknown account), the link from Dash (and its second use), the session ending while the page is open, a 620 px window, the four combinations of theme and language, pictures (placeholder size, real picture, broken link). No console error except the expected 401 / 409 answers.
 
+Done (2026-11-20, version 0.1.2):
+
+- New unit tests: a Windows sign-in that started from a loopback address matches an address of this computer (direct, and through nginx on the same computer as in the log of the development machine) and is refused for the address of another computer or no address, and a browser on another computer gets no relaxation (`ssoflow_test.go`; the first test fails when the rule is switched off); the header of a trusted and of a not trusted front server (`clientip_test.go`); the errors of the Python API (status 204, the address in the message, no credentials in it: `client_test.go`); where the API address comes from (`config_test.go`).
+- The real 0.1.2 binary on the development machine, with scratch configuration on port 18750, the real local Python API, the local Redis and a stand-in for the sign-on service that answers with the real `pickle` and `zlib`. With the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. A Windows sign-in started from `localhost` ended `ok` when the sign-on service reported the LAN address of the computer, and `mismatch` when it reported another computer.
+- The nginx configuration of the development machine with a front server in front: an isolated nginx 1.24 instance made from `config/nginx_sgmeslt595.conf` in front of the real binary. Only the listen port, the port of dash_go and the trusted address were changed, because requests cannot be sent from the real `prod_eng` address; a loopback address played the front server. With the three directives the Windows sign-in through the front server ended `ok` and the log showed the address of the browser. Without them it was refused with `started_from` = the front server and `forwarded="<browser>, <front server>"`. In a second run of the same kind with a stub backend that echoes the headers, a forged left part of `X-Forwarded-For` was ignored, and a request from an address that is not trusted kept its own address.
+
 **Not verified:**
 
-- The real Python backend (`verify_user`, `sso_result` as deployed), the real Windows sign-on service and a real Windows user.
-- nginx on s2: `X-Forwarded-For` handling, `trusted_proxies` behind two proxies, https.
+- The real Python backend (`verify_user`, `sso_result` as deployed; `hc_user_processes` was tried against the Python backend of the development machine in 0.1.2, not against s2), the real Windows sign-on service and a real Windows user.
+- nginx on s2: `X-Forwarded-For` handling, `trusted_proxies` behind two proxies, https. The real `prod_eng` in front of the development machine (its address was simulated), and the nginx that is running on the development machine after the new file is copied and reloaded.
 - The 480 x 320 placeholder of the real static endpoint (taken from the TimeVault records) and real photos.
 - Browsers other than Chrome (Edge is expected to behave the same), a real scanner.
 - A review of the Chinese wording by the users.
@@ -184,7 +197,7 @@ Done (2026-11-20):
 
 # 中文
 
-**更新日期：** 2026-11-20（dash_go 版本 0.1.1）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（dash_go 版本 0.1.2）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -293,7 +306,7 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - JSON 接口需要请求头 `X-Requested-With: dash_go`（跨站表单发不出它），并拒绝浏览器标记为 `Sec-Fetch-Site: cross-site` 的请求，以及 `Origin` 指向其他主机的请求（比较时不含端口，和浏览器判断同站的方式一致）。退出登录也有同样的要求，所以一个链接不能让别人退出登录。
 - **失败密码登录的限制**：10 分钟内每个客户端地址 5 次、每个账号 10 次（账号比较时不分大小写，邮箱地址只比较 @ 之前的部分）。回答是 429，并带 `Retry-After`。登录成功会清除该账号的失败记录，并还给该地址一个名额；用户目录不可用不会记到账号头上。限制保存在内存中，随服务重启而清零，所以只能运行一个实例。
 - 账号不存在、密码错误和账号已停用，提示相同（后端对这三种情况都回答 202）。
-- **Windows 登录**：只接受本服务器签发的令牌（24 个随机字符，120 位），一个结果只能使用一次，每个地址最多同时等待 5 个、总共最多 2000 个，每个流程每秒最多查看一次结果。启动流程的浏览器的地址，必须等于登录服务记录的地址（`sso_require_same_ip`，默认开启）：这样可以阻止“强加登录”，即攻击者启动一个流程，让受害者用攻击者的令牌打开登录链接，然后轮询得到受害者的身份。浏览器的地址是连接的地址；如果连接来自 `trusted_proxies` 之一，则取 `X-Forwarded-For` 中最右边的、不是受信任代理的地址（所以浏览器不能自己选择地址）。
+- **Windows 登录**：只接受本服务器签发的令牌（24 个随机字符，120 位），一个结果只能使用一次，每个地址最多同时等待 5 个、总共最多 2000 个，每个流程每秒最多查看一次结果。启动流程的浏览器的地址，必须等于登录服务记录的地址（`sso_require_same_ip`，默认开启）：这样可以阻止“强加登录”，即攻击者启动一个流程，让受害者用攻击者的令牌打开登录链接，然后轮询得到受害者的身份。浏览器的地址是连接的地址；如果连接来自 `trusted_proxies` 之一，则取 `X-Forwarded-For` 中最右边的、不是受信任代理的地址（所以浏览器不能自己选择地址）。**运行 dash_go 的那台电脑上的浏览器**是唯一的例外（0.1.2）：以 `localhost` 打开时，它对 dash_go 来说来自回环地址（`127.0.0.1`、`::1`），而登录服务记录的是这台电脑的地址。这是同一台电脑上的同一个浏览器，所以当登录流程从回环地址启动时，这台电脑任何网络接口的地址都算作同一个地址（`internal/core/auth/ssoflow.go` 中的 `sameBrowser`）。另一台电脑上的浏览器绝不会来自回环地址（`X-Forwarded-For` 的左侧不被相信），所以其他登录都没有被放宽。0.1.2 之前，从 `localhost` 发起的登录总是被拒绝。
 - 不记录任何机密：密码从不写入日志，输入的账号只以短哈希形式写入（`acct=`），因为有人可能把密码输进账号栏。被拒绝的 Windows 登录会记录被比较的两个地址、请求是怎样到达服务器的（`connection`、`trusted_proxy`、`forwarded`）以及一条提示。
 - `next` 只接受 base path 之下的本地路径。内容安全策略只允许脚本、样式和图片来自服务本身，并禁止 `base`、插件以及向其他地方提交的表单。
 
@@ -315,18 +328,20 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 | `login_password` | `dash_go.json` | `true` | 登录页要求输入账号和密码。 |
 | `sso_require_same_ip` | `dash_go.json` | `true` | Windows 登录：登录服务必须看到启动流程的那个地址。只有在没有代理能传递浏览器地址时才关闭。 |
 | `trusted_proxies` | `dash_go.json` | `["127.0.0.1", "::1"]` | 其 `X-Forwarded-For` 会被信任的反向代理（地址或 CIDR 范围）。`[]` 表示谁都不信任。 |
-| `dash_api_url` | `dash_go.json` | `http://<api_server>/api` | Python API 的根。既没有它也没有 `api_server` 时，登录页关闭（Dash 的链接仍然可用）。 |
+| `dash_api_url` | `dash_go.json` | `http://<api_server>/api` | Python API 的根。既没有它也没有 `api_server` 时，登录页关闭（Dash 的链接仍然可用）。`api_server` 来自 Python 配置，**包括本机的 patch 文件**：在开发机上它可能是生产服务器，而生产服务器可能比 dash_go 旧（第 10 节）。日志和 `dash_go.exe -check` 会说明用的是哪个 API。 |
 | `sso_server` | Python `config.json`（或 `dash_go.json`） | 无 | Windows 登录服务的主机（`host`、`host:port` 或 `http(s)://host[:port]`）；没有它则 Windows 登录关闭。 |
 | `api.salt_2` | Python `config.json` | 无 | 登录结果接口的密钥；设置了 `sso_server` 时必填（没有它 `dash_go.exe` 拒绝启动）。环境变量 `DASH_GO_API_SALT_2` 优先。 |
 | `api.salt_3` | Python `config.json` | 无 | `/api/user` 接口和交接链接的密钥（没有改变）。 |
 | `dash_home` | `dash_go.json` | `/ie/` | 登录页链接到 Dash 应用。 |
 
-`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。
+`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。自 0.1.2 起，日志（所以 `-check` 也是）还会说明登录和各模块询问的是哪个 Python API，以及它来自哪个键：`the Dash API of the sign-in url=http://localhost/api from=dash_api_url`。
 
 ## 9. 部署
 
 - 不需要新的 location：`/dash_go/` 已经覆盖 `_shell`、`login`、`lang` 和 `auth`。nginx 示例设置了 `X-Forwarded-For $proxy_add_x_forwarded_for`，登录会用到它；默认的 `trusted_proxies` 信任同一台电脑上的 nginx。
-- **两层代理**（运行 dash_go 的服务器前面还有一台服务器）：紧挨着 dash_go 的 nginx 看到的是前面那台服务器的地址，而不是浏览器的。要么把前面的服务器列入 `trusted_proxies`（最右边的、不受信任的地址优先），要么让那个 nginx 使用 `set_real_ip_from <前面的服务器>; real_ip_header X-Forwarded-For; real_ip_recursive on;`。两者都没有时，每次 Windows 登录都会因 `address_mismatch` 被拒绝；日志行会说明比较了哪些地址。`sso_require_same_ip: false` 可以让它工作，但会失去对强加登录的保护。
+- **两层代理**（运行 dash_go 的服务器前面还有一台服务器）：紧挨着 dash_go 的 nginx 看到的是前面那台服务器的地址，而不是浏览器的。要么把前面的服务器列入 `trusted_proxies`（最右边的、不受信任的地址优先），要么让那个 nginx 使用 `set_real_ip_from <前面的服务器>; real_ip_header X-Forwarded-For; real_ip_recursive on;`。两者都没有时，每次 Windows 登录都会因 `address_mismatch` 被拒绝；日志行会说明比较了哪些地址。`sso_require_same_ip: false` 可以让它工作，但会失去对强加登录的保护。示例：开发机 `sgmeslt595` 位于前置服务器 `prod_eng` 之后。Dash 仓库的 `config/nginx_sgmeslt595.conf` 在 `http` 块中用 `prod_eng` 的地址设置了这三条指令，与 s2 的 `nginx_sgmescimai.conf` 相同（s2 以同样的方式信任 `prod_eng`）。nginx 只相信来自该地址的请求头，所以浏览器不能自己选择地址；`/tv/` 仍保留它自己针对 s2 的 `set_real_ip_from`。正在运行的 nginx 读取的是该文件自己的副本：复制过去，运行 `nginx -t`，再 reload nginx。
+- **运行 dash_go 的那台电脑上的浏览器**（开发机，`http://localhost/...`）：Windows 登录会匹配这台电脑的地址，见第 7.2 节。不需要任何配置。
+- **开发机的 Python API。** dash_go 询问 `dash_api_url`，默认是 `http://<api_server>/api`，而开发机的 patch 文件常常为了 Python 应用自己的调用，把 `api_server` 设成生产服务器。在那里请在 `dash_go.json` 中设置 `dash_api_url`（例如 `http://localhost/api`）；否则登录和权限检查会询问一个可能还没有 `verify_user` 和 `hc_user_processes` 函数的后端（第 10 节）。
 - 登录服务由**浏览器**打开（弹出窗口），由 **s2** 通过它的后端读取：s2 必须能访问 `http://<sso_server>/api/sso_result/anything`。
 - 密码从浏览器传到 dash_go，再从 dash_go 传到 Python 后端，使用的是与公司其他应用相同的 http。站点有 https 的地方，浏览器到 nginx 之间应使用 https；这时 cookie 会自动带上 `Secure`（`X-Forwarded-Proto`）。
 
@@ -334,7 +349,11 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 
 - **登录页显示“本服务器没有设置在此页面登录”。** 既没有开启 `login_password` 也没有开启 Windows 登录，或者 `dash_api_url` 和 `api_server` 都没有设置。`dash_go.exe -check` 和日志开头几行会说明是哪一种。
 - **密码正确却提示“账号或密码不正确”。** 该用户可能已被停用（后端对所有失败回答相同），或者 s2 与后端的时钟相差超过签名的小时（日志：`dash api rejected the request signature`）。
-- **Windows 登录提示“无法与当前浏览器对应上”。** 两个地址不同：看日志行 `single sign-on refused`（`started_from`、`sso_address`、`connection`、`trusted_proxy`、`forwarded`）和第 9 节。
+- **Windows 登录提示“无法与当前浏览器对应上”。** 两个地址不同。日志行 `single sign-on refused` 会说明是哪两个：`started_from` 是 dash_go 当作浏览器的地址，`sso_address` 是登录服务看到的地址，`connection`、`trusted_proxy` 和 `forwarded` 说明请求是怎样到达的。
+  - `started_from` 是某台服务器的地址，且 `forwarded` 以它结尾：紧挨着 dash_go 的 nginx 前面的代理隐藏了浏览器。见第 9 节：在那个 nginx 中使用 `set_real_ip_from`，或使用 `trusted_proxies`。`prod_eng` 转发到一台其 nginx 不信任它的开发机时，就是这种情况。
+  - `trusted_proxy=false` 且设置了 `forwarded`：连接过来的代理不在 `trusted_proxies` 中。
+  - `started_from` 是 `127.0.0.1` 或 `::1`：页面是在运行 dash_go 的那台电脑上打开的（`http://localhost/...`）。2026-11-20 在开发机上发现：`started_from=127.0.0.1`、`forwarded=::1`、`sso_address=10.135.36.89`，即这台电脑的局域网地址；它的 nginx 前面没有代理，所以不是代理设置的问题。0.1.1 为止这种情况总是被拒绝；自 0.1.2 起，只要 `sso_address` 是这台电脑的地址就匹配。如果仍然被拒绝，说明 `sso_address` 属于另一台电脑（浏览器的代理、VPN）。
+  - 地址匹配，但页面随后提示现在无法完成登录（日志：`single sign-on failed: the user directory cannot be reached`，并带有 `answered status 204`）：`dash_api_url` 或 `api_server` 指向的 Python API 是错的，或者比 dash_go 旧。见 [hc_scan_page.md](hc_scan_page.md) 第 11 节。
 - **弹出窗口被拦截。** 页面会提示；请允许本站的弹出窗口。
 - **中文页面里出现英文。** 这是只有英文的文字：把它加入 `zh.json`（某种语言缺少键时测试会失败，所以这意味着它是 0.1.0 版的草稿，或是人输入的文字，例如机台名称）。
 - **重启后大家都要重新登录吗？** 不会：会话是带签名的 cookie，只要 `api.salt_3` 不变，重启后仍然有效。失败登录的计数和等待中的 Windows 登录会丢失。
@@ -348,6 +367,7 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - 限制是按进程的。不要在同一个地址后面运行两个实例。
 - Windows 登录要求浏览器能访问登录服务，并且 s2 能访问它的后端。
 - 浅色配色和中文措辞是开发者的提案。
+- 运行 dash_go 的那台电脑上的浏览器匹配这台电脑的地址（0.1.2）。同一台电脑上的同一个浏览器，不应该因为两个服务对这台电脑的称呼不同（dash_go 看到回环地址，登录服务看到局域网地址）而被拒绝；检查的规则，即两个步骤在同一台电脑上，没有改变。只有从回环地址启动的登录受影响。
 
 ## 12. 验证状态
 
@@ -356,10 +376,16 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - 每个包的 Go 单元测试：词条（两种语言的键和占位符相同、代码用到的每个键和值、没有未使用的文字）、语言选择、pickle 读取器（用真实 Python 3.12 的 `pickle` 和 `zlib` 生成的测试向量、恶意和损坏的输入、zip 炸弹、深度）、Python 客户端（签名与在 Python 中算出的值核对）、配置、登录（密码、限流、Windows 流程的每种结果、地址检查、受信任代理、跨站拒绝、日志中没有密码和输入的账号）、shell 页面（顶栏、用户框、语言、登录页提示、重定向、转义、文件）、两套配色的对比度。
 - 真实的可执行文件配合 Python 配置文件夹、一个使用真实 `pickle` 和 `zlib` 的 Python 后端与登录服务的替身（`verify_user`、`hc_user_processes`、`sso_result`、登录页面），以及带演示数据的临时 PostgreSQL 18 运行。用无头 Chrome 操作过：首页、登录（密码错误和正确、用邮箱）、登录后回到原页面、工序选择、扫描、手动更改、确认和保存、退出登录、Windows 弹窗流程（登录成功、没有 Windows 用户、未知账号）、Dash 的链接（及其第二次使用）、页面打开期间会话结束、620 px 窗口、主题和语言的四种组合、头像（占位图尺寸、真实图片、失效链接）。除预期的 401 / 409 回答外，控制台没有错误。
 
+已完成（2026-11-20，版本 0.1.2）：
+
+- 新的单元测试：从回环地址启动的 Windows 登录，会匹配这台电脑的地址（直接连接，以及通过同一台电脑上的 nginx，就像开发机的日志那样），而另一台电脑的地址或没有地址则被拒绝；另一台电脑上的浏览器没有得到任何放宽（`ssoflow_test.go`；关掉这条规则时第一个测试会失败）；受信任和不受信任的前置服务器的请求头（`clientip_test.go`）；Python API 的错误（状态 204、消息中带有地址、其中没有凭据：`client_test.go`）；API 地址来自哪里（`config_test.go`）。
+- 真实的 0.1.2 可执行文件在开发机上运行：使用端口 18750 的临时配置、真实的本地 Python API、本地 Redis，以及一个用真实 `pickle` 和 `zlib` 作答的登录服务替身。API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。从 `localhost` 发起的 Windows 登录，在登录服务报告这台电脑的局域网地址时以 `ok` 结束，在它报告另一台电脑时以 `mismatch` 结束。
+- 前面有前置服务器时的开发机 nginx 配置：用 `config/nginx_sgmeslt595.conf` 做出的一个隔离的 nginx 1.24 实例，放在真实的可执行文件前面。只改了监听端口、dash_go 的端口和受信任的地址，因为无法从真实的 `prod_eng` 地址发送请求；用一个回环地址扮演前置服务器。有这三条指令时，经前置服务器的 Windows 登录以 `ok` 结束，日志里是浏览器的地址；没有它们时被拒绝，`started_from` 是前置服务器，`forwarded="<浏览器>, <前置服务器>"`。在用一个回显请求头的桩后端所做的第二次同类运行中，被伪造的 `X-Forwarded-For` 左侧部分被忽略，来自不受信任地址的请求保持了它自己的地址。
+
 **没有验证：**
 
-- 真实的 Python 后端（部署后的 `verify_user`、`sso_result`）、真实的 Windows 登录服务和真实的 Windows 用户。
-- s2 上的 nginx：`X-Forwarded-For` 的处理、两层代理之后的 `trusted_proxies`、https。
+- 真实的 Python 后端（部署后的 `verify_user`、`sso_result`；0.1.2 中 `hc_user_processes` 是对开发机的 Python 后端试过的，不是对 s2），真实的 Windows 登录服务和真实的 Windows 用户。
+- s2 上的 nginx：`X-Forwarded-For` 的处理、两层代理之后的 `trusted_proxies`、https。真实的 `prod_eng` 位于开发机之前的情况（它的地址是模拟的），以及新文件复制过去并 reload 之后，开发机上正在运行的 nginx。
 - 真实静态接口的 480 x 320 占位图（取自 TimeVault 的记录）和真实头像。
 - Chrome 之外的浏览器（预计 Edge 表现相同）、真实的扫码枪。
 - 使用者对中文措辞的审阅。

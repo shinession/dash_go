@@ -202,7 +202,7 @@ func (s *Service) handleSSOPoll(w http.ResponseWriter, r *http.Request) {
 		reply("no_user")
 		return
 	}
-	if s.set.SSORequireSameIP && !sameAddress(res.IP, flow.ip) {
+	if s.set.SSORequireSameIP && !s.sameBrowser(res.IP, flow.ip) {
 		s.flows.drop(token)
 		refuseAddress("address_mismatch", "single sign-on refused: the sign-on service saw another address for the browser than dash_go did",
 			"sso_address", clip(res.IP, 64), "started_from", flow.ip, "windows_user", clip(res.WindowsUser, 64))
@@ -232,7 +232,38 @@ func (s *Service) handleSSOPoll(w http.ResponseWriter, r *http.Request) {
 	reply("ok", "next", flow.next)
 }
 
+// sameBrowser reports whether the address the sign-on service recorded for the browser is the address dash_go took
+// for it when the sign-in started. They differ for a browser on the computer that runs dash_go, opened as localhost:
+// dash_go sees a loopback address, the sign-on service the address of this computer. That is one browser on one
+// computer, so an address of this computer matches a loopback one. A browser on another computer never comes from a
+// loopback address (the left side of X-Forwarded-For is not believed), so no other sign-in is relaxed.
+func (s *Service) sameBrowser(ssoAddr, startedFrom string) bool {
+	if sameAddress(ssoAddr, startedFrom) {
+		return true
+	}
+	from, ok := parseAddr(startedFrom)
+	if !ok || !from.IsLoopback() {
+		return false
+	}
+	seen, ok := parseAddr(ssoAddr)
+	if !ok {
+		return false
+	}
+	local := s.set.LocalAddrs
+	if local == nil {
+		local = ownAddresses
+	}
+	for _, a := range local() {
+		if a.WithZone("").Unmap() == seen {
+			return true
+		}
+	}
+	return false
+}
+
 // addressHint is logged with a sign-in that was refused because two addresses did not match.
 const addressHint = "started_from is the address dash_go took for the browser. If it is the address of a server, a proxy in front " +
-	"of dash_go hides the browser. If trusted_proxy is false and forwarded is set, trusted_proxies does not list the proxy that " +
-	"connects (docs/shell_and_login.md)."
+	"of dash_go hides the browser: let the nginx next to dash_go trust it (set_real_ip_from, real_ip_header X-Forwarded-For) " +
+	"or list it in trusted_proxies. If trusted_proxy is false and forwarded is set, trusted_proxies does not list the proxy that " +
+	"connects. If it is 127.0.0.1 or ::1, the page was opened from this computer and sso_address is not one of its addresses " +
+	"(docs/shell_and_login.md)."
