@@ -145,9 +145,24 @@ func RosterProcesses(process string) []string {
 	return []string{process}
 }
 
+// AllProcess is the process value of an entry that was allocated on the "All Process" view of the Python application:
+// it names no process of its own.
+const AllProcess = "All Process"
+
 func contains(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// inProcesses is contains for process names: case and surrounding spaces do not matter.
+func inProcesses(list []string, process string) bool {
+	process = strings.TrimSpace(process)
+	for _, x := range list {
+		if strings.EqualFold(strings.TrimSpace(x), process) {
 			return true
 		}
 	}

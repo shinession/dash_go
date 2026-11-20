@@ -217,8 +217,8 @@ func TestRemoveAndResetForgetTheScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ = env.svc.Board(ctx, testUser, testKey)
-	if b.Totals.Pending != 0 || b.Totals.Scanned != 0 || len(b.NotScanned) != b.Totals.Expected {
-		t.Fatalf("after Reset: %+v notScanned=%d", b.Totals, len(b.NotScanned))
+	if b.Totals.Pending != 0 || b.Totals.Scanned != 0 || len(b.NotAssigned) != b.Totals.Scheduled {
+		t.Fatalf("after Reset everybody scheduled has no task again: %+v notAssigned=%d", b.Totals, len(b.NotAssigned))
 	}
 }
 
@@ -230,12 +230,18 @@ func TestBoardTotalsAndLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Totals.Expected != 5 || b.Totals.ExpectedScanned != 2 || b.Totals.Assigned != 1 || b.Totals.Unassigned != 1 || b.Totals.Warnings != 1 {
+	// five people are scheduled AM: AB12C01..04 and the shift leader. AB12C01 has a pending line with a machine; AB12C03 was
+	// scanned but nothing could be assigned, so they still have no task.
+	if b.Totals.Scheduled != 5 || b.Totals.PlacedHC != 1 || b.Totals.LeaveHC != 0 || b.Totals.ToAssignHC != 4 ||
+		b.Totals.Assigned != 1 || b.Totals.Unassigned != 1 || b.Totals.Warnings != 1 {
 		t.Fatalf("totals: %+v", b.Totals)
 	}
-	for _, p := range b.NotScanned {
-		if p.EE == "AB12C01" || p.EE == "AB12C03" || p.EE == "AB12C06" || p.EE == "AB12C07" || p.EE == "AB12C05" {
-			t.Fatalf("%s must not be listed as expected-but-missing", p.EE)
+	if len(b.NotAssigned) != 4 {
+		t.Fatalf("not assigned: %+v", b.NotAssigned)
+	}
+	for _, p := range b.NotAssigned {
+		if p.EE == "AB12C01" || p.EE == "AB12C06" || p.EE == "AB12C07" || p.EE == "AB12C05" {
+			t.Fatalf("%s must not be listed as without a task: assigned by a pending line, scheduled PM, day off, member of another process", p.EE)
 		}
 	}
 	m := b.Machines[0]

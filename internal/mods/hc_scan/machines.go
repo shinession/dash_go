@@ -8,15 +8,22 @@ import (
 // machineIndex resolves the machine names stored in t_daily_attn_data to the machines of t_mqpd_hc_table.
 type machineIndex struct {
 	machines []Machine
+	norm     []string // normName of the name of every machine, in the order of machines
 	byID     map[string]Machine
-	byName   map[string]Machine // trimmed name -> machine
+	byName   map[string]Machine // normalised name -> machine
 }
 
+// normName makes two spellings of a machine name comparable: no space at the ends and one space for every run of spaces.
+// The machine table has "CSV-10/13 Set2  (SV#9/10|SD#12/13/15|TCW#12/13/14/18)" and "Fix-Shipment/ Logistic  - 4pax"
+// with two spaces where the records have one, and the people on them were on no card.
+func normName(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 func newMachineIndex(machines []Machine) *machineIndex {
-	idx := &machineIndex{machines: machines, byID: map[string]Machine{}, byName: map[string]Machine{}}
-	for _, m := range machines {
+	idx := &machineIndex{machines: machines, norm: make([]string, len(machines)), byID: map[string]Machine{}, byName: map[string]Machine{}}
+	for i, m := range machines {
 		idx.byID[m.ID] = m
-		name := strings.TrimSpace(m.Name)
+		name := normName(m.Name)
+		idx.norm[i] = name
 		if _, dup := idx.byName[name]; !dup {
 			idx.byName[name] = m
 		}
@@ -25,9 +32,10 @@ func newMachineIndex(machines []Machine) *machineIndex {
 }
 
 // Resolve is the port of resolve_mqpd_hc_machine_id: an exact id, then the exact name, then the loose name match
-// the Python page uses for records that were typed with a shortened machine name.
+// the Python page uses for records that were typed with a shortened machine name. Names are compared with normName.
+// It looks at the names only: whether an entry belongs to the process of the page is for dayData.resolve to say.
 func (x *machineIndex) Resolve(name string) (Machine, bool) {
-	name = strings.TrimSpace(name)
+	name = normName(name)
 	if name == "" {
 		return Machine{}, false
 	}
@@ -37,8 +45,8 @@ func (x *machineIndex) Resolve(name string) (Machine, bool) {
 	if m, ok := x.byName[name]; ok {
 		return m, true
 	}
-	for _, m := range x.machines {
-		if machineMatchesRole(m.Name, name) {
+	for i, m := range x.machines {
+		if machineMatchesRole(x.norm[i], name) {
 			return m, true
 		}
 	}

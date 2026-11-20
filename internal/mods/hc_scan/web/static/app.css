@@ -88,10 +88,17 @@
 .lv { font-weight: 700; font-size: .8rem; border-radius: 4px; padding: 0 .35rem; border: 1px solid currentColor; }
 .lv1 { color: var(--lv1); } .lv2 { color: var(--lv2); } .lv3 { color: var(--lv3); } .lv0 { color: var(--muted); } .lvx { color: var(--accent); }
 .saved-mark { color: var(--green); font-size: .8rem; }
+.tag.from { flex: none; white-space: nowrap; color: var(--accent); border-color: var(--accent); }
+
+/* the card of the people on leave and the card of the people whose task is on another process: dashed, so they are not
+   taken for a machine */
+.machine.leave, .machine.away { border-style: dashed; }
+.tag.leave-code { flex: none; white-space: nowrap; }
+.member.away-member { flex-wrap: wrap; }
+.away-where { flex-basis: 100%; padding-left: calc(24px + .45rem); color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
 
 .missing { display: flex; flex-wrap: wrap; gap: .4rem; }
 .chip { display: inline-flex; align-items: center; gap: .4rem; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .15rem .7rem .15rem .2rem; font-size: .88rem; }
-.chip.assigned { border-color: var(--ok-line); }
 
 .ack-item { padding: .45rem 0; border-bottom: 1px solid var(--line); }
 .ack-item:last-child { border-bottom: 0; }

@@ -78,6 +78,13 @@ func (s *Service) entryView(ctx context.Context, d *dayData, e Entry, used map[s
 	return EntryView{Entry: e, Reason: say(ctx, e.ReasonMsg, e.Reason), Photo: s.photo(e.EE), Flags: flagViews(ctx, flags), Levels: levels, Warn: hasWarn(flags)}
 }
 
+// placing reports whether the draft line puts its person on a machine. Such a line replaces the saved record of the
+// person on this page, until it is confirmed.
+func placing(pending map[string]Entry, ee string) (Entry, bool) {
+	e, ok := pending[ee]
+	return e, ok && (e.Source == SourceAuto || e.Source == SourceManual) && e.MachineID != ""
+}
+
 func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string]Entry, scans map[string]ScanRecord) *BoardView {
 	used := s.usage(d, pending)
 	today := ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
@@ -86,29 +93,32 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 		Locked: MonthLocked(d.key.Date, today),
 	}
 
-	// machine cards: people already saved in the database plus the pending lines
+	// machine cards: the people already saved in the database plus the pending lines, only on the machines of this
+	// process (see entryHere)
 	members := map[string][]MemberView{}
 	for _, r := range d.records {
 		ee := strings.ToUpper(r.EE)
-		if e, ok := pending[ee]; ok && (e.Source == SourceAuto || e.Source == SourceManual) {
+		if _, ok := placing(pending, ee); ok {
 			continue
 		}
 		if NormShift(firstNonEmpty(r.Actual, r.Schedule)) != d.key.Shift {
 			continue
 		}
+		process := d.personProcess(ee)
 		work, _, _ := s.splitEntries(r.Entries)
 		_, scanned := scans[ee]
 		for _, h := range work {
-			if m, ok := d.machines.Resolve(h.Machine); ok {
-				members[m.ID] = append(members[m.ID], MemberView{EE: ee, Name: d.nameOf(ee), HC: h.HC, Level: d.levelOn(ee, m), Saved: true, Photo: s.photo(ee), Scaned: scanned})
+			if m, ok := d.resolve(h, process); ok {
+				members[m.ID] = append(members[m.ID], MemberView{EE: ee, Name: d.nameOf(ee), HC: h.HC, Level: d.levelOn(ee, m), Saved: true, Photo: s.photo(ee), Scaned: scanned, From: d.foreign(process)})
 			}
 		}
 	}
 	for _, e := range pending {
-		if (e.Source == SourceAuto || e.Source == SourceManual) && e.MachineID != "" {
-			if m, ok := d.machines.byID[e.MachineID]; ok {
-				members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: e.HC, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true})
-			}
+		if _, ok := placing(pending, e.EE); !ok {
+			continue
+		}
+		if m, ok := d.machines.byID[e.MachineID]; ok {
+			members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: e.HC, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true, From: d.foreign(e.Process)})
 		}
 	}
 	unmapped := 0
@@ -135,8 +145,8 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 		switch {
 		case e.Source == SourceNone || e.MachineID == "":
 			bv.Totals.Unassigned++
-		default:
-			bv.Totals.Assigned++
+		case e.Source == SourceAuto || e.Source == SourceManual:
+			bv.Totals.Assigned++ // a line of an existing record has nothing to save: scanning such a person only shows their task
 		}
 		if v.Warn {
 			bv.Totals.Warnings++
@@ -144,30 +154,8 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 	}
 	sort.SliceStable(bv.Entries, func(i, j int) bool { return bv.Entries[i].ScannedAt.After(bv.Entries[j].ScannedAt) })
 
-	// expected people who have not scanned yet
-	for _, p := range d.dir.Roster(d.key.Process) {
-		rec, hasRec := d.recByEE[p.EE]
-		effective := d.schedule(p.Shift)
-		if hasRec && strings.TrimSpace(rec.Actual) != "" {
-			effective = rec.Actual
-		}
-		if NormShift(effective) != d.key.Shift {
-			continue
-		}
-		bv.Totals.Expected++
-		_, scanned := scans[p.EE]
-		if _, isPending := pending[p.EE]; scanned || isPending {
-			bv.Totals.ExpectedScanned++
-			continue
-		}
-		pv := PersonView{EE: p.EE, Name: p.Name, Shift: p.Shift, Schedule: d.schedule(p.Shift), Photo: s.photo(p.EE)}
-		if hasRec {
-			if work, _, _ := s.splitEntries(rec.Entries); len(work) > 0 {
-				pv.Assigned = work[0].Machine
-			}
-		}
-		bv.NotScanned = append(bv.NotScanned, pv)
-	}
+	s.shiftPeople(d, pending, bv)
+
 	for _, r := range scans {
 		bv.Totals.Scanned++
 		if r.ConfirmedAt != nil {
@@ -181,8 +169,121 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 	if bv.Entries == nil {
 		bv.Entries = []EntryView{}
 	}
-	if bv.NotScanned == nil {
-		bv.NotScanned = []PersonView{}
-	}
 	return bv
+}
+
+// shiftPeople looks at the members of the roster who belong to the shift and says what each of them has: a task
+// (counted in PlacedHC), a leave (LeaveHC, listed in Leave), or nothing yet (ToAssignHC, listed in NotAssigned). The
+// counters follow the Daily Attn Summary of the Python application: Scheduled is what its "Schedule HC" is, PlacedHC its
+// "Actual HC", LeaveHC its "MC HC" plus "Other Leave HC", ToAssignHC its "To Be Recorded HC".
+//
+// A member belongs to the shift of their record when it has a machine, or of their pending line; otherwise to the shift
+// the calendar gives them. The scan only helps to assign: a person who already has a task, made on another page of
+// the Python application or earlier by this one, needs no scan and is never in NotAssigned.
+func (s *Service) shiftPeople(d *dayData, pending map[string]Entry, bv *BoardView) {
+	var placedHC, leaveHC, toAssignHC float64
+	for _, p := range d.dir.Roster(d.key.Process) {
+		var rec *DayRecord
+		var work, leave []HCEntry
+		var leaveOfDay float64
+		if r, ok := d.recByEE[p.EE]; ok {
+			rec = &r
+			work, leave, leaveOfDay = s.splitEntries(r.Entries)
+		}
+		line, isPlacing := placing(pending, p.EE)
+
+		shift := ""
+		switch {
+		case isPlacing:
+			shift = d.key.Shift
+		case len(work) > 0:
+			shift = NormShift(firstNonEmpty(rec.Actual, rec.Schedule))
+		}
+		if shift == "" {
+			shift = d.calendarShift(p, rec)
+		}
+		if shift != d.key.Shift {
+			continue
+		}
+		bv.Totals.Scheduled++
+
+		if isPlacing && leaveOfDay >= 1-eps {
+			leave, leaveOfDay = nil, 0 // Confirm replaces a full-day leave that the shift leader overrides
+		}
+		switch {
+		case isPlacing:
+			placedHC += line.HC
+		case len(work) > 0:
+			placedHC += sumHC(work)
+		case leaveOfDay >= 1-eps:
+			// on leave for the whole day
+		default:
+			left := availHC(leaveOfDay)
+			toAssignHC += left
+			bv.NotAssigned = append(bv.NotAssigned, PersonView{EE: p.EE, Name: p.Name, Shift: p.Shift, Schedule: d.schedule(p.Shift), Photo: s.photo(p.EE), HC: left})
+		}
+
+		if leaveOfDay > 0 {
+			leaveHC += leaveOfDay
+			v := LeaveView{EE: p.EE, Name: p.Name, Photo: s.photo(p.EE), HC: leaveOfDay}
+			for _, h := range leave {
+				v.Items = append(v.Items, LeaveItem{Code: shortLeave(h.Machine), Name: strings.TrimSpace(h.Machine), HC: h.HC})
+			}
+			bv.Leave = append(bv.Leave, v)
+		}
+
+		if !isPlacing {
+			var where []string
+			var awayHC float64
+			for _, h := range work {
+				if _, ok := d.resolve(h, p.Process); !ok {
+					where = append(where, entryLabel(h))
+					awayHC += h.HC
+				}
+			}
+			if len(where) > 0 {
+				bv.Elsewhere = append(bv.Elsewhere, ElsewhereView{EE: p.EE, Name: p.Name, Photo: s.photo(p.EE), HC: round2(awayHC), Where: where})
+			}
+		}
+	}
+	bv.Totals.PlacedHC, bv.Totals.LeaveHC, bv.Totals.ToAssignHC = round2(placedHC), round2(leaveHC), round2(toAssignHC)
+	if bv.NotAssigned == nil {
+		bv.NotAssigned = []PersonView{}
+	}
+	if bv.Leave == nil {
+		bv.Leave = []LeaveView{}
+	}
+	if bv.Elsewhere == nil {
+		bv.Elsewhere = []ElsewhereView{}
+	}
+}
+
+// calendarShift is the AM/PM session the calendar gives the person on the date. When the calendar has no day type for
+// their shift code, the day type stored in their record is used. It is "" for a day off and for an unknown shift code.
+func (d *dayData) calendarShift(p Person, rec *DayRecord) string {
+	if sc := strings.TrimSpace(d.schedule(p.Shift)); sc != "" {
+		return NormShift(sc)
+	}
+	if rec != nil {
+		return NormShift(rec.Schedule)
+	}
+	return ""
+}
+
+func sumHC(entries []HCEntry) float64 {
+	var sum float64
+	for _, h := range entries {
+		sum += h.HC
+	}
+	return sum
+}
+
+// entryLabel says where a share of the day is: "<process> / <machine>", or only the machine when the entry has no
+// process.
+func entryLabel(h HCEntry) string {
+	machine := strings.TrimSpace(h.Machine)
+	if p := strings.TrimSpace(h.Process); p != "" {
+		return p + " / " + machine
+	}
+	return machine
 }

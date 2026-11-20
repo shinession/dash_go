@@ -48,6 +48,9 @@ type MemberView struct {
 	Saved  bool    `json:"saved"` // true: already in the database, false: pending in the draft
 	Photo  string  `json:"photo"`
 	Scaned bool    `json:"scanned"`
+	// From is the process of a person who is not a member of this process and works on one of its machines (support
+	// from another process, for example the "Others" group). Empty for a member.
+	From string `json:"from,omitempty"`
 }
 
 // MachineView is a machine card of the board.
@@ -63,26 +66,56 @@ type MachineView struct {
 	Members   []MemberView `json:"members"`
 }
 
-// PersonView is a member who is expected on the shift but has not scanned yet.
+// PersonView is a member of the shift who has no task yet: nothing in the database and no pending line with a machine.
 type PersonView struct {
-	EE       string `json:"ee"`
-	Name     string `json:"name"`
-	Shift    string `json:"shift"`
-	Schedule string `json:"schedule"`
-	Assigned string `json:"assigned,omitempty"` // machine of an existing record
-	Photo    string `json:"photo"`
+	EE       string  `json:"ee"`
+	Name     string  `json:"name"`
+	Shift    string  `json:"shift"`
+	Schedule string  `json:"schedule"`
+	Photo    string  `json:"photo"`
+	HC       float64 `json:"hc"` // HC still to place: 1, or what a part-day leave leaves
 }
 
-// Totals are the counters of the page header.
+// LeaveItem is one leave option of a person on the day.
+type LeaveItem struct {
+	Code string  `json:"code"` // the short code, for example MCL
+	Name string  `json:"name"` // the full name of the leave option, for example "MCL - Medical Leave"
+	HC   float64 `json:"hc"`
+}
+
+// LeaveView is a member of the shift who is on leave, whatever the kind of leave. A part-day leave also shows the
+// person on their machine (or in the list of people without a task) for the rest of the day.
+type LeaveView struct {
+	EE    string      `json:"ee"`
+	Name  string      `json:"name"`
+	Photo string      `json:"photo"`
+	HC    float64     `json:"hc"`
+	Items []LeaveItem `json:"items"`
+}
+
+// ElsewhereView is a member of the shift who is assigned only to machines of another process. The person has a task, so
+// they are not in the list of people without one, and they are on no machine card of this page.
+type ElsewhereView struct {
+	EE    string   `json:"ee"`
+	Name  string   `json:"name"`
+	Photo string   `json:"photo"`
+	HC    float64  `json:"hc"`
+	Where []string `json:"where"` // "<process> / <machine>" of every share of the day that is elsewhere
+}
+
+// Totals are the counters of the page header. The first four describe the people of the shift in HC, the way the Daily
+// Attn Summary of the Python application does; the others describe the draft.
 type Totals struct {
-	Expected        int `json:"expected"`         // roster members expected on the shift
-	ExpectedScanned int `json:"expected_scanned"` // of them, how many scanned
-	Scanned         int `json:"scanned"`          // everybody who scanned in this session
-	Saved           int `json:"saved"`
-	Pending         int `json:"pending"`
-	Assigned        int `json:"assigned"`
-	Unassigned      int `json:"unassigned"`
-	Warnings        int `json:"warnings"`
+	Scheduled  int     `json:"scheduled"`    // members who belong to the shift
+	PlacedHC   float64 `json:"placed_hc"`    // HC of them on a machine: saved records and pending lines
+	LeaveHC    float64 `json:"leave_hc"`     // HC of them on leave, all kinds together
+	ToAssignHC float64 `json:"to_assign_hc"` // HC of them still without a task
+	Scanned    int     `json:"scanned"`      // everybody who scanned in this session
+	Saved      int     `json:"saved"`
+	Pending    int     `json:"pending"`
+	Assigned   int     `json:"assigned"` // pending lines that Confirm would write: they have a machine and no record yet
+	Unassigned int     `json:"unassigned"`
+	Warnings   int     `json:"warnings"`
 }
 
 // MTRInfo tells how fresh the proficiency data is.
@@ -94,16 +127,18 @@ type MTRInfo struct {
 
 // BoardView is the whole state of a scanning session.
 type BoardView struct {
-	Process    string        `json:"process"`
-	Date       string        `json:"date"`
-	Shift      string        `json:"shift"`
-	ServerTime time.Time     `json:"server_time"`
-	Locked     bool          `json:"locked"` // the month is locked, nothing can be saved
-	Machines   []MachineView `json:"machines"`
-	Entries    []EntryView   `json:"entries"`
-	NotScanned []PersonView  `json:"not_scanned"`
-	Totals     Totals        `json:"totals"`
-	MTR        MTRInfo       `json:"mtr"`
+	Process     string          `json:"process"`
+	Date        string          `json:"date"`
+	Shift       string          `json:"shift"`
+	ServerTime  time.Time       `json:"server_time"`
+	Locked      bool            `json:"locked"` // the month is locked, nothing can be saved
+	Machines    []MachineView   `json:"machines"`
+	Entries     []EntryView     `json:"entries"`
+	NotAssigned []PersonView    `json:"not_assigned"`
+	Leave       []LeaveView     `json:"leave"`
+	Elsewhere   []ElsewhereView `json:"elsewhere"`
+	Totals      Totals          `json:"totals"`
+	MTR         MTRInfo         `json:"mtr"`
 }
 
 // ScanResult answers POST api/scan.

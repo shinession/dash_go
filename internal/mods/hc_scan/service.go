@@ -293,6 +293,48 @@ func (d *dayData) nameOf(ee string) string {
 	return ee
 }
 
+// personProcess is the member process of the employee on the date, or "" when the directory does not know them.
+func (d *dayData) personProcess(ee string) string {
+	if p, ok := d.dir.Lookup(ee); ok {
+		return p.Process
+	}
+	return ""
+}
+
+// entryHere reports whether a work entry of a record is on a machine of the page process. t_daily_attn_data holds
+// the records of every process, and machine names repeat between processes ("Group Leader" is in nine of them,
+// "Training" in eight, and the production lines are named "T20" in some and "Taping T20" or "T20 : Can Assy P2" in
+// others), so the name alone says nothing: the entry names the process of its machine. An entry of another process
+// is not on this page, whoever the person is. An entry without a process of its own (empty or "All Process") belongs
+// to the process of the person.
+func (d *dayData) entryHere(h HCEntry, personProcess string) bool {
+	here := RosterProcesses(d.key.Process)
+	if p := strings.TrimSpace(h.Process); p != "" && !strings.EqualFold(p, AllProcess) {
+		return inProcesses(here, p)
+	}
+	return inProcesses(here, personProcess)
+}
+
+// resolve finds the machine card of a work entry of a person of the given process, or false when the entry is not on
+// this page or names no machine of the process.
+func (d *dayData) resolve(h HCEntry, personProcess string) (Machine, bool) {
+	if !d.entryHere(h, personProcess) {
+		return Machine{}, false
+	}
+	return d.machines.Resolve(h.Machine)
+}
+
+// foreign is the process to show next to a person on a machine card when they are not a member of the page
+// process (somebody who supports from another process). It is "" for a member and for somebody the directory does
+// not know.
+func (d *dayData) foreign(process string) string {
+	process = strings.TrimSpace(process)
+	if process == "" || inProcesses(RosterProcesses(d.key.Process), process) {
+		return ""
+	}
+	return process
+}
+
 func (s *Service) isLeave(name string) bool { return contains(s.LeaveList, name) }
 
 // splitEntries separates the leave options from the machines of a record and sums the leave HC.
@@ -320,8 +362,10 @@ func availHC(leaveHC float64) float64 {
 	return round2(1 - leaveHC)
 }
 
-// usage sums the HC on every machine: the saved records of the same session plus the pending draft lines.
-// A pending line replaces the saved record of the same person.
+// usage sums the HC on every machine of the process: the saved records of the same session plus the pending draft
+// lines. A pending line replaces the saved record of the same person. Entries of other processes do not count, even
+// when a machine of this process has the same name (see entryHere); somebody from another process who works on a
+// machine of this process does count, because the seat is taken.
 func (s *Service) usage(d *dayData, pending map[string]Entry) map[string]float64 {
 	used := map[string]float64{}
 	for _, r := range d.records {
@@ -332,8 +376,9 @@ func (s *Service) usage(d *dayData, pending map[string]Entry) map[string]float64
 			continue
 		}
 		work, _, _ := s.splitEntries(r.Entries)
+		process := d.personProcess(r.EE)
 		for _, h := range work {
-			if m, ok := d.machines.Resolve(h.Machine); ok {
+			if m, ok := d.resolve(h, process); ok {
 				used[m.ID] += h.HC
 			}
 		}
@@ -346,14 +391,15 @@ func (s *Service) usage(d *dayData, pending map[string]Entry) map[string]float64
 	return used
 }
 
-// recentDays counts, per machine, the days of the history the person worked on it.
-func (s *Service) recentDays(d *dayData, history []DayRecord) map[string]int {
+// recentDays counts, per machine of the process, the days of the history the person (a member of personProcess) worked
+// on it. An entry of another process is not a day on a machine of this one, whatever its name.
+func (s *Service) recentDays(d *dayData, history []DayRecord, personProcess string) map[string]int {
 	out := map[string]int{}
 	for _, r := range history {
 		seen := map[string]bool{}
 		work, _, _ := s.splitEntries(r.Entries)
 		for _, h := range work {
-			if m, ok := d.machines.Resolve(h.Machine); ok {
+			if m, ok := d.resolve(h, personProcess); ok {
 				seen[m.ID] = true
 			}
 		}

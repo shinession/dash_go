@@ -1,10 +1,12 @@
 # English
 
-**Updated:** 2026-11-20 (module version 0.1.3). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (module version 0.1.4). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Version 0.1.4 fixed the board, which showed the people of other processes on its cards, and changed what the page says about the people of the shift: leave is shown, and somebody who already has a task is no longer listed as "not scanned" (sections 2.1 and 11). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
 HC Scan Assign lets a shift leader scan the badges of the employees at the start of a shift. Every scan assigns the person to a machine or activity of the selected process, automatically, from the person's MTR (training record) levels. The result is only a draft. The shift leader checks it, changes what is wrong and presses **Confirm**, which is the only moment anything is written to the database.
+
+The scan is a quick way to assign, not a duty: a person whom the shift leader has already assigned on another page of the Python application (HC Input, Area Assign) needs no scan. The page shows that person on their machine, and scanning them only shows the task (nothing is drafted for the database).
 
 It is the badge driven relative of the HC Allocation > Area Assign page of the Python application: the same tables, the same budget head counts and the same write rules, but one person at a time instead of one batch for a whole area.
 
@@ -22,16 +24,39 @@ Scope:
 3. The page asks `api/me` for the processes the user may work on (answered by the Python backend, section 8). The leader **chooses the process first**; scanning is not possible before that. The production date (now minus 7 hours, like `get_shift_today`) and the shift (AM from 07:00 to 19:00, otherwise PM) are preset and can be changed.
 4. The scan box always has the focus. A barcode scanner types the employee ID; the page does not depend on the scanner pressing Enter. It looks for an employee ID in what was typed (pattern `employee_id_pattern`) after a 90 ms pause, so prefix or suffix characters of the barcode and lower case are tolerated. A manual entry works with Enter.
 5. Every scan is sent to `api/scan`. The answer is shown at once in a large card (name, machine, MTR level, reason, warnings) with a sound: one beep for a clean assignment, two for a yellow one, a low tone for an error.
-6. The page shows the draft (the "Scanned" list), the machines with assigned / budget head count, and who is expected on the shift but has not scanned yet. It refreshes every 3 seconds, so several terminals of the same process, date and shift see the same draft.
-7. The leader can change the machine of a line with its list, remove a line (the person counts as not scanned again) or clear the draft.
+6. The page shows the draft (the "Scanned" list), the machine cards with used / budget head count, the people on leave, and the people who still have no task ("Not assigned yet"); section 2.1 says what each of them holds. It refreshes every 3 seconds, so several terminals of the same process, date and shift see the same draft, and a task that the shift leader enters on another page appears within seconds.
+7. The leader can change the machine of a line with its list, remove a line (the person has no task again, unless the database has one) or clear the draft.
 8. **Confirm** writes the lines that have a machine. Lines with a yellow warning are listed first and are only written after the leader acknowledges them ("Submit anyway").
+
+### 2.1 What the board shows
+
+**Which entries count for a process.** `t_daily_attn_data` holds the records of every process, and machine names repeat between processes: `Group Leader` is a row of nine processes, `Training` of eight, and a production line is written `T20` by Winder, `Taping T20` by Taping and `T20 : Can Assy P2(OP1)` by HSL. Every entry of `machine_hc_json` names the process of its machine, so since 0.1.4 a machine card, its used head count (and with it the budget check of the automatic assignment) and the days that rank the machines (section 3) count only the entries whose `process` is the process of the page. CSV and NWC are one: the page of either takes the entries of `CSV`, `NWC` and `CSV & NWC`. An entry without a process of its own (empty, or `All Process`) belongs to the process of the person. Names are compared with every run of spaces counted as one space, because the machine table has `Fix-Shipment/ Logistic  - 4pax` with two spaces where the records have one.
+
+**Support.** Somebody who is not a member of the process but works on one of its machines (for example the "Others" group, or a person the shift leader placed with the yellow `NOT_IN_ROSTER` warning) is on the card of that machine, with the process of the person next to the name (for example `LSL`). The seat counts for the head count and the budget. They are not HC of the shift: the counters below leave them out.
+
+**The people of the shift** are the members of the roster (Direct and Shift Leader of the process on the date) who belong to the shift. A person with a machine belongs to the shift of their record, or of their pending line; everybody else belongs to the shift the calendar gives them. The counters of the page bar are in HC and follow the Daily Attn Summary popup of the Python application:
+
+| Counter | Meaning | Daily Attn Summary |
+|---|---|---|
+| Scheduled | The people who belong to the shift. | Schedule HC |
+| Assigned | HC of them on machines: saved records and pending lines. | Actual HC |
+| Leave | HC of them on leave, all kinds together. | MC HC and Other Leave HC |
+| To assign | HC of them that still has no task. | To Be Recorded HC |
+
+Pending, Saved, No machine and Warnings describe the draft. When every person has exactly one day of HC, Scheduled is Assigned plus Leave plus To assign. The popup counts a person in the shift of the calendar; the page counts a person who has a task in the shift of their record, because that is where the scan put them. The two differ only for a swap (scheduled AM, recorded PM) and for overtime on a day off (day type `R`, recorded AM), see section 13.
+
+**Lists.**
+
+- **Not assigned yet:** the people who have no task: no machine in the database, no pending line with a machine, and less than a whole day of leave. The HC is shown in brackets when a part-day leave leaves less than a whole day. A person whose pending line has no machine is in it as well, because they still have no task. Somebody who already has a task, entered on another page or saved by this one, is never in it: they need no scan.
+- **Leave:** the people on leave, whatever the kind, with the code and the HC of each leave (`MCL`, `ANL 0.5`). A part-day leave also leaves the person on their machine, or in "Not assigned yet", for the rest of the day. A full-day leave that the shift leader overrides with a pending line is not leave any more (Confirm drops it).
+- **Elsewhere:** the people of the process whose task is on none of the cards: it is on a machine of another process, or its name is in no machine list of the process (a name that was written wrongly in the record is shown as it is).
 
 ## 3. Assignment rules
 
 For one scanned person on the selected process, date and shift:
 
 1. **Who is it.** The employee ID is looked up like the HC Input grid does: the membership range of `t_daily_attn_member` valid on the date overrides the MES snapshot `t_mes_ee` (process from the cost center, direct type, shift code). An ID that is in neither is rejected ("not found"), because no record can be built without a shift code.
-2. **Already assigned.** If the person already has a record on that date with a machine, nothing is assigned. The line is shown as "existing" and counts on its machine. The leader can still change it by hand.
+2. **Already assigned.** If the person already has a record on that date with a machine, nothing is assigned. The line is shown as "existing" and counts on its machine. The leader can still change it by hand. Such a line has nothing to save, so it does not switch on the Confirm button. When the machine of the record belongs to another process, the result names it and the line is on no card (section 2.1).
 3. **HC to place.** 1 minus the HC of leave options in the record. A part-day leave leaves the rest (for example 0.5). A full-day leave is treated as 1 and flagged (section 4).
 4. **Leaders.** A leader is placed on the "Group Leader" row of the process (the non-routine row named in `leader_activity_names`), not by MTR level. A person is a leader when the direct type of the date is `Shift Leader` (maintained with HC Input > Tools > Member; this is the target) or, until that is maintained for everybody (`leader_by_history`, on by default), when the most recent record of the person in the last 7 days that has a machine is on that row ("same as last time": a leave day is skipped, and somebody who covered the row once and went back to a machine is not a leader). The budget of the row applies: when it is full the line stays without machine and the shift leader decides. A process without a Group Leader row ranks everybody by MTR. Switch `leader_by_history` off when the direct types are maintained.
 5. **Eligible machines.** A machine is eligible only when all of these are true:
@@ -41,7 +66,7 @@ For one scanned person on the selected process, date and shift:
    - the budget head count left on it (`budget_head_count` minus the HC already on it, in the database and in the draft) is at least the HC to place, so an automatic assignment never creates an over-budget line.
 6. **Order.** The machines are ranked by:
    1. MTR level, 3 before 2 before 1;
-   2. the number of the last 7 days (`recent_days`) on which the person worked on that machine (records of `t_daily_attn_data`, any writer); more days first;
+   2. the number of the last 7 days (`recent_days`) on which the person worked on that machine (records of `t_daily_attn_data`, any writer; entries of this process only, section 2.1); more days first;
    3. the larger remaining budget;
    4. the display order (`display_seq`) and the machine id.
 
@@ -106,7 +131,7 @@ All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: n
 | Request | Purpose |
 |---|---|
 | `GET api/me` | User, permitted processes, client settings. |
-| `GET api/board?process=&date=&shift=` | The whole session: machines, draft lines, expected people not scanned yet, counters, month lock, MTR freshness. |
+| `GET api/board?process=&date=&shift=` | The whole session: machines, draft lines, the people without a task (`not_assigned`), on leave (`leave`) and elsewhere (`elsewhere`), the counters (`totals`: `scheduled`, `placed_hc`, `leave_hc`, `to_assign_hc`, and for the draft `pending`, `saved`, `assigned`, `unassigned`, `warnings`), month lock, MTR freshness. |
 | `POST api/scan` `{process, date, shift, input}` | One scan. Statuses `assigned`, `unassigned`, `existing`, `duplicate`, `saved`. |
 | `POST api/assign` `{process, date, shift, ee, machine_id}` | Change the machine of a pending line (empty `machine_id` removes it). |
 | `POST api/remove` `{process, date, shift, ee}` | Remove a pending line. |
@@ -114,6 +139,8 @@ All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: n
 | `POST api/confirm` `{process, date, shift, ack}` | Save. Answer 409 with `code` `needs_ack` and the lines with warnings when `ack` is false; 409 `month_locked`; 409 `nothing_to_save`. |
 
 POST requests need the header `X-Requested-With: dash_go` and are refused when the browser marks them cross-site. The date must be between the first day of the previous month and tomorrow's production date.
+
+Version 0.1.4 renamed the list `not_scanned` to `not_assigned` and replaced `totals.expected` and `totals.expected_scanned` by `scheduled`, `placed_hc`, `leave_hc` and `to_assign_hc`; `totals.assigned` now counts only the pending lines that Confirm would write. The page of the module is the only client of this API.
 
 ## 8. Login and permissions
 
@@ -183,6 +210,13 @@ Run one instance only: the lock that keeps two terminals from taking the last se
 - **"The login link from Dash has expired / was already used".** The login page of dash_go shows this since 0.1.1 (before, a plain error page): sign in there, or open **Scan Assign** from Dash again.
 - **"No permission" after signing in.** The account is valid, but the Python backend lists no HC process for it (HeadCount groups, `HeadCount-All`, `MQPD_AUTH_LIST`): ask the HeadCount group admin for access. In 0.1.0 this case showed a blank page because the list of processes was `null`; 0.1.1 sends an empty list and the page says so (found by the browser test of 0.1.1).
 - **A person is flagged yellow although everything looks right.** The reason is written on the line. Roster and shift follow `t_daily_attn_member`, `t_mes_ee` and `t_daily_attn_calendar`, exactly like the HC Input page.
+- **A card shows people who are not on that machine, or its budget is used up by people who are not there.** Found on 2026-11-20 on the Slitter page; it was in every version from 0.1.0 to 0.1.3 and is fixed in 0.1.4.
+  - *Symptoms:* the board of a process shows people of other processes on its cards. The Group Leader row of Slitter had 10 people where the Daily Attn Summary popup counts 1. On the development copy, the cards of Slitter AM of 2026-11-17 held 25 people, 17 of them from other processes (Group Leader 7, Others 6, Training 3, QC 1), and on HSL PM all 31 were. The used head counts are too high, rows look full or over budget, and the automatic assignment says that all machines are full.
+  - *Root cause:* `DayRecords` returns the records of every process of the day, and the cards matched an entry to a machine by name only (`machineIndex.Resolve`, a port of `resolve_mqpd_hc_machine_id`: exact id, exact name, then the loose rule "the machine name contains the recorded name"). Machine names repeat between processes: 19 names are in the rows of more than one process of `t_mqpd_hc_table` (`Group Leader` in 9, `Training` in 8, then `Others`, `QC`, `OJT`, `Maintenance`, ...). Winder records its lines as `T20`, which `Taping T20` and `T20 : Can Assy P2(OP1)` contain. The use of the machines (`usage`), which the budget check of the automatic assignment reads, matched the same way.
+  - *Rule:* first decide whether an entry is on this process (`dayData.entryHere`: the `process` of the entry; an entry without one belongs to the process of the person), then look at the name. Never match a name against the machines of a process before that. Whatever else reads `t_daily_attn_data` for one process must do the same.
+  - *How to confirm:* `TestDevCopyBoardAgreesWithTheDailyAttnSummary` (section 12) on a copy of the database. With the matching of 0.1.3 it counted 458 people of other processes on the cards of one day; with the matching of 0.1.4 it counts none.
+  - *Ruled out:* the budgets in `t_mqpd_hc_table`, the MTR data, and the date or the shift of the records (the records shown were of the right day and shift).
+- **People of the process are on no card although they have a task.** Found on 2026-11-20 with the same copy. The machine table has names with two spaces (`CSV-10/13 Set2  (SV#9/10|SD#12/13/15|TCW#12/13/14/18)`, `Fix-Shipment/ Logistic  - 4pax ( AM Shift only)`, `Fix-Tapyrus preparation  2 pax (HSL) - AM Shift (7 days)`) where the records have one, so the names did not match. Since 0.1.4 names are compared with every run of spaces counted as one (`normName`). What still does not match is shown in the "Elsewhere" card with the name of the record: on the copy it is `Rework - Sorting (Cell)` of Packing, whose records before 2026-11-12 hold the text `â€“` in place of the dash (an encoding error of whatever wrote them; the machine row was changed on 2026-11-12). Correct the name in the machine table or in the record, not in this module.
 - **Where to look.** `logs\dash_go-<date>.log` (requests without query strings, failures with the step that failed). The log lines in `DailyAttnData.log` are marked `dash_go hc_scan`.
 - **Resetting a session.** Delete the Redis keys `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`, or press "Clear draft". Get approval before touching a production Redis.
 
@@ -199,6 +233,11 @@ Done (2026-11-19):
 - 0.1.1 (2026-11-20): the module was moved into the shell and every text into the catalogs. The old tests still pass; new tests cover the catalogs (`catalog_test.go`: both languages complete, every key and value the code uses, no unused text) and the languages (`language_test.go`: page, API errors, a draft read in both languages, drafts of 0.1.0). The real binary was run again with the scratch database and a stand-in for the Python backend, and the page was driven in headless Chrome in both themes and both languages: details in [shell_and_login.md](shell_and_login.md), section 12.
 - 0.1.2 (2026-11-20): the cause of the failure in section 11 was found with the real binary on the development machine (scratch configuration, the real local Python API and Redis): with the API taken from the patch file (`api_server` = `prod_eng`) `api/me` answered 502 and the log named the API and status 204; with `dash_api_url` set to `http://localhost/api` it answered 200 with the 10 processes of the account. New unit tests: the status 204 and the address in the error messages (`internal/core/dashapi/client_test.go`), where the API address comes from (`internal/core/config/config_test.go`). The Windows sign-in checks of 0.1.2, and the test of the nginx chain s1 → s2 → dash_go, are in [shell_and_login.md](shell_and_login.md), section 12. The page itself was not driven in a browser again.
 - 0.1.3 (2026-11-20): the page itself is unchanged; the module version follows the version of the program. The change of the header (a more visible module name and the Back button) is in [shell_and_login.md](shell_and_login.md), sections 2 and 12; the automatic update is in [auto_update.md](auto_update.md). An update restarts the service: the drafts are in Redis (the default of `draft_store`) and survive, with `draft_store` `memory` they are lost. An update is only installed when nobody is clicking or submitting, so a scan that is going on is not cut off. The page was not driven again with real data under the new header (only the header of the module page and the "Cannot start" notice were looked at).
+- 0.1.4 (2026-11-20): the board and the counters changed (section 2.1) and were tested:
+  - Unit tests (`board_scope_test.go`): a machine with the name of another process; a short name that a machine of another process contains; support from another process (shown with its process, takes the seat for the budget); entries of `All Process` and without a process; a member whose task is on another process (Elsewhere); leave of a whole day and of part of a day; the counters adding up (Scheduled = Assigned + Leave + To assign); somebody already assigned (never "not assigned"; scanning shows the task and leaves the Confirm button off); a pending line replacing a saved record; a person belonging to the shift of their record; the days that rank the machines; runs of spaces in a machine name; the JSON of the board; and that the script reads only keys the board has. With the matching of 0.1.3 put back (`entryHere` answering true), four of them fail.
+  - On the development copy of the real database (read-only session, `TestDevCopyBoardAgreesWithTheDailyAttnSummary`): 13 days from 2026-11-02 to 2026-11-18, 20 boards each (10 processes, AM and PM), 260 boards. On none of them is there a person on a card who is not a member of the process, unless an entry of their record names the process (a supporter), and the counters equal the logic of the Daily Attn Summary (`cal_daily_summary`) written again from the raw rows: exactly on every board without swapped or overtime people, and where there are such people the Scheduled count differs by exactly their number: minus those scheduled for the shift but recorded in the other one, plus those recorded in the shift but not scheduled for it (section 13). The comparison is with that logic, not with the popup of a running Python application.
+  - The page was driven in headless Chrome against the same copy, through a temporary copy of the service that was not kept (the real handlers and page, drafts in memory, a read-only database session): the boards of Slitter, HSL, CSV and Packing, in English and Chinese, in the light and the dark theme; the Leave card, the "Elsewhere" card, the process tag of a supporter and the people of "Not assigned yet"; a scan of somebody without a task (Assigned 0 to 1, To assign 22 to 21, Pending 1, Confirm on) and of somebody who was already assigned (counters unchanged, the task shown, Confirm stays off). No JavaScript error.
+  - The PostgreSQL tests (`repo_pg_test.go`) ran again on a throw-away PostgreSQL 18; `go vet ./...` and `go test ./...` pass.
 
 **Not verified:**
 
@@ -207,6 +246,7 @@ Done (2026-11-19):
 - The call `hc_user_processes` against the Python backend on s2 itself (in 0.1.2 it was tried against the backend of the development machine, and through `prod_eng`, which answered 204: the function is not deployed behind it), and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
 - The nginx of s1 and s2 as deployed (their files were tested with isolated instances, [shell_and_login.md](shell_and_login.md), section 12) and the port on s2.
 - The Chinese wording has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
+- 0.1.4: the real binary and the real database. The page was driven through a temporary service on the copy. The day of the screenshot that led to 0.1.4 (2026-11-20) is not in the copy (5 records), so the defect was reproduced on 2026-11-17, which has the same pattern. Confirm itself did not change in 0.1.4 (only the condition that switches its button on); it was not run against a real database again. The Chinese texts of the new cards and counters have not been reviewed by the users.
 
 ## 13. Decisions and known limits
 
@@ -219,16 +259,23 @@ Done (2026-11-19):
 - The order of the scans influences who gets which seat (greedy, no rebalance).
 - One service instance, one shared draft per process, date and shift.
 - Texts live in the catalogs (`internal/mods/hc_scan/i18n/{en,zh}.json`); a draft stores messages, not sentences, so it reads in the language of whoever looks at it.
+- A person with a task belongs to the shift of their record; the Daily Attn Summary of the Python application counts a person in the shift of the calendar. They are the same except for a swap (scheduled AM, recorded PM) and for overtime on a day off (day type `R`, recorded AM): the popup counts the swapped person in AM and the overtime in the actual shift as OT HC, the page counts both in the shift where they work, which is where the scan put them. The Scheduled of the page therefore also counts people who are not scheduled: on the development copy of 2026-11-17 it was higher by 1 to 5 on six of the 20 boards.
+- The roster has the Direct and the Shift Leader members; the popup counts Direct only. A process that has Shift Leader members shows more people than the popup.
+- A part-day leave without a task leaves the rest of the day in "Not assigned yet" and in To assign; the popup does not call such a person "to be recorded".
+- Support from another process is shown on the card and takes the seat, but it is not in the counters.
+- A task whose name is in no machine list (or which belongs to another process) is only shown in the "Elsewhere" card: its head count is in no used / budget number.
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-20（模块版本 0.1.3）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（模块版本 0.1.4）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。0.1.4 版修复了看板（它的卡片上出现了其他 process 的人），并改变了页面对本班人员的说明：显示请假，已经有任务的人不再被列为“未扫描”（第 2.1 节和第 11 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
 HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都会根据此人的 MTR（培训记录）等级，自动把他分派到所选 process 的某个 machine 或 activity。结果只是草稿，领班检查并修改后按 **Confirm**，这是唯一会写数据库的时刻。
+
+扫描只是快速分派的一种方式，并不是义务：领班已经在 Python 应用的其他页面（HC Input、Area Assign）分派过的人不需要扫描。页面会把这个人显示在他的 machine 上，扫描他只会显示这个任务（不会为数据库生成任何草稿）。
 
 它是 Python 应用中 HC Allocation > Area Assign 页面的“工牌驱动版”：使用相同的表、相同的 budget head count 和相同的写入规则，但一次处理一个人，而不是对整个 area 批量处理。
 
@@ -246,16 +293,39 @@ HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都�
 3. 页面通过 `api/me` 获取用户可操作的 process（由 Python 后端回答，见第 8 节）。领班**必须先选择 process**，之前无法扫描。生产日期（当前时间减 7 小时，与 `get_shift_today` 相同）和班次（07:00 到 19:00 为 AM，其余为 PM）有默认值，可以修改。
 4. 扫描框始终保持焦点。扫码枪输入员工 ID；页面不依赖扫码枪是否发送 Enter。输入停顿 90 毫秒后，页面在输入内容中查找员工 ID（规则 `employee_id_pattern`），所以条码的前后缀字符和小写都可以容忍。手动输入按 Enter。
 5. 每次扫描都发送到 `api/scan`。结果立即以大卡片显示（姓名、machine、MTR 等级、原因、警告）并伴有声音：正常分派一声，黄色警告两声，错误一个低音。
-6. 页面显示草稿（“Scanned”列表）、各 machine 的已分/预算 head count，以及本班应到但尚未扫描的人员。每 3 秒刷新一次，所以同一 process、日期、班次的多个终端看到同一份草稿。
-7. 领班可以用下拉列表修改某一行的 machine，删除某一行（此人重新算作未扫描），或清空草稿。
+6. 页面显示草稿（“Scanned”列表）、各 machine 卡片上的已用/预算 head count、请假的人，以及仍然没有任务的人（“Not assigned yet”）；它们各自包含什么见第 2.1 节。每 3 秒刷新一次，所以同一 process、日期、班次的多个终端看到同一份草稿，领班在其他页面录入的任务也会在几秒内出现。
+7. 领班可以用下拉列表修改某一行的 machine，删除某一行（此人重新变为没有任务，数据库里已有任务的除外），或清空草稿。
 8. **Confirm** 写入有 machine 的行。带黄色警告的行会先列出来，领班确认后（“Submit anyway”）才会写入。
+
+### 2.1 看板显示什么
+
+**哪些 entry 算在某个 process 上。** `t_daily_attn_data` 存放所有 process 的记录，而 machine 名称在不同 process 之间会重复：`Group Leader` 是九个 process 都有的行，`Training` 有八个，一条生产线在 Winder 写作 `T20`，在 Taping 写作 `Taping T20`，在 HSL 写作 `T20 : Can Assy P2(OP1)`。`machine_hc_json` 的每个 entry 都写明它的 machine 属于哪个 process，所以自 0.1.4 起，machine 卡片、它的已用 head count（自动分派的预算检查也用它），以及用于 machine 排序的天数（第 3 节），都只计算 `process` 是页面所属 process 的 entry。CSV 和 NWC 算作一个：任何一个的页面都接受 `CSV`、`NWC` 和 `CSV & NWC` 的 entry。没有自己 process 的 entry（空，或 `All Process`）归此人所在的 process。比较名称时，连续的空格按一个空格计算，因为 machine 表里的 `Fix-Shipment/ Logistic  - 4pax` 有两个空格，而记录里只有一个。
+
+**支援。** 不是本 process 的成员、却在本 process 的某台 machine 上工作的人（例如 “Others” 组，或者领班带着黄色 `NOT_IN_ROSTER` 警告安排的人），会显示在那台 machine 的卡片上，姓名旁边写着此人所在的 process（例如 `LSL`）。这个位置计入 head count 和预算。他们不是本班的 HC：下面的计数不包括他们。
+
+**本班的人** 是名册（该日期该 process 的 Direct 和 Shift Leader 成员）中属于本班的人。有 machine 的人属于他的记录所在的班次，或他的待确认行所在的班次；其他人属于日历给他的班次。页面栏的计数以 HC 计，对应 Python 应用的 Daily Attn Summary 弹窗：
+
+| 计数 | 含义 | Daily Attn Summary |
+|---|---|---|
+| Scheduled | 属于本班的人。 | Schedule HC |
+| Assigned | 其中在 machine 上的 HC：已保存的记录和待确认行。 | Actual HC |
+| Leave | 其中请假的 HC，所有假别合在一起。 | MC HC 和 Other Leave HC |
+| To assign | 其中仍然没有任务的 HC。 | To Be Recorded HC |
+
+Pending、Saved、No machine 和 Warnings 描述的是草稿。每个人恰好有一天的 HC 时，Scheduled 等于 Assigned 加 Leave 加 To assign。弹窗把一个人算在日历所给的班次；页面把有任务的人算在他记录所在的班次，因为扫描就是把他放在那里。两者只在换班（排 AM、记录为 PM）和休息日加班（日类型 `R`，记录为 AM）时不同，见第 13 节。
+
+**列表。**
+
+- **Not assigned yet（尚未分派）：** 没有任务的人：数据库里没有 machine，没有带 machine 的待确认行，请假不足一整天。半天假留下不足一天时，括号里会显示 HC。待确认行没有 machine 的人也在其中，因为他仍然没有任务。已经有任务的人（在其他页面录入的，或由本页保存的）永远不在其中：他们不需要扫描。
+- **Leave（请假）：** 请假的人，不分假别，显示每种假的代码和 HC（`MCL`、`ANL 0.5`）。半天假会让此人剩余的时间仍然在他的 machine 上，或在 “Not assigned yet” 中。被领班用待确认行覆盖的全天假不再算请假（Confirm 会去掉它）。
+- **Elsewhere（其他去向）：** 本 process 中任务不在任何卡片上的人：任务在其他 process 的 machine 上，或者名称不在该 process 的任何 machine 列表中（记录里写错的名称会原样显示）。
 
 ## 3. 分派规则
 
 对所选 process、日期和班次下扫描的一个人：
 
 1. **他是谁。** 员工 ID 的查找方式与 HC Input 网格相同：日期当天有效的 `t_daily_attn_member` 归属时间段覆盖 MES 快照 `t_mes_ee`（process 由 cost center 得出，还有 direct type 和班次代码）。两处都没有的 ID 会被拒绝（“not found”），因为没有班次代码就无法生成记录。
-2. **已经分派。** 如果此人当天已经有带 machine 的记录，就不再分派。该行显示为 “existing”，并计入其 machine 的占用。领班仍可手动修改。
+2. **已经分派。** 如果此人当天已经有带 machine 的记录，就不再分派。该行显示为 “existing”，并计入其 machine 的占用。领班仍可手动修改。这样的行没有东西可保存，所以不会让 Confirm 按钮亮起来。如果记录里的 machine 属于其他 process，结果里会写出它的名称，该行不在任何卡片上（第 2.1 节）。
 3. **要安排的 HC。** 1 减去记录中请假选项的 HC。半天假会留下剩余部分（例如 0.5）。全天假按 1 处理并标记警告（第 4 节）。
 4. **Leader。** leader 被安排到该 process 的 “Group Leader” 行（`leader_activity_names` 中指定名称的非 routine 行），不按 MTR 等级。满足以下任一条件的人是 leader：当天的 direct type 是 `Shift Leader`（用 HC Input > Tools > Member 维护，这是目标做法）；或者在所有人的 direct type 都维护好之前（`leader_by_history`，默认开启），此人最近 7 天内最近一条带 machine 的记录就在该行上（“和上次一样”：请假日会被跳过，只顶替过一次该行又回到 machine 的人不算 leader）。该行的预算同样适用：满了的话该行保持无 machine，由领班决定。没有 Group Leader 行的 process，所有人都按 MTR 排序。direct type 维护好之后请把 `leader_by_history` 关掉。
 5. **可选 machine。** 只有同时满足以下条件的 machine 才可选：
@@ -265,7 +335,7 @@ HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都�
    - 该 machine 剩余的 budget head count（`budget_head_count` 减去数据库和草稿中已占用的 HC）不少于要安排的 HC，因此自动分派不会产生超编的行。
 6. **排序。** 按以下顺序对 machine 排序：
    1. MTR 等级，3 级优先于 2 级优先于 1 级；
-   2. 最近 7 天中此人在该 machine 工作的天数（`recent_days`，来自 `t_daily_attn_data`，不论由谁写入）；天数多的优先；
+   2. 最近 7 天中此人在该 machine 工作的天数（`recent_days`，来自 `t_daily_attn_data`，不论由谁写入；只算本 process 的 entry，见第 2.1 节）；天数多的优先；
    3. 剩余预算较大的优先；
    4. 显示顺序（`display_seq`）和 machine id。
 
@@ -330,7 +400,7 @@ Confirm 对每一行按 `uid = <ee_code>_<yyyymmdd>` 做一次 upsert 写入 `t_
 | 请求 | 用途 |
 |---|---|
 | `GET api/me` | 用户、允许的 process、客户端设置。 |
-| `GET api/board?process=&date=&shift=` | 整个会话：machine、草稿行、尚未扫描的应到人员、计数、月份锁定、MTR 新鲜度。 |
+| `GET api/board?process=&date=&shift=` | 整个会话：machine、草稿行、没有任务的人（`not_assigned`）、请假的人（`leave`）和任务在别处的人（`elsewhere`）、计数（`totals`：`scheduled`、`placed_hc`、`leave_hc`、`to_assign_hc`，以及草稿的 `pending`、`saved`、`assigned`、`unassigned`、`warnings`）、月份锁定、MTR 新鲜度。 |
 | `POST api/scan` `{process, date, shift, input}` | 一次扫描。状态有 `assigned`、`unassigned`、`existing`、`duplicate`、`saved`。 |
 | `POST api/assign` `{process, date, shift, ee, machine_id}` | 修改待保存行的 machine（`machine_id` 为空表示取消分派）。 |
 | `POST api/remove` `{process, date, shift, ee}` | 删除一条待保存的行。 |
@@ -338,6 +408,8 @@ Confirm 对每一行按 `uid = <ee_code>_<yyyymmdd>` 做一次 upsert 写入 `t_
 | `POST api/confirm` `{process, date, shift, ack}` | 保存。`ack` 为 false 且有警告行时返回 409，`code` 为 `needs_ack` 并附带这些行；还有 409 `month_locked` 和 409 `nothing_to_save`。 |
 
 POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨站的请求会被拒绝。日期必须在上个月第一天到明天的生产日期之间。
+
+0.1.4 版把列表 `not_scanned` 改名为 `not_assigned`，并用 `scheduled`、`placed_hc`、`leave_hc` 和 `to_assign_hc` 取代了 `totals.expected` 和 `totals.expected_scanned`；`totals.assigned` 现在只统计 Confirm 会写入的待确认行。模块自己的页面是这个 API 唯一的客户端。
 
 ## 8. 登录与权限
 
@@ -407,6 +479,13 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - **“The login link from Dash has expired / was already used”。** 自 0.1.1 起由 dash_go 的登录页显示（以前是一个纯错误页）：在那里登录，或重新从 Dash 打开 **Scan Assign**。
 - **登录后提示“没有权限”。** 账号有效，但 Python 后端没有给它列出任何 HC process（HeadCount 组、`HeadCount-All`、`MQPD_AUTH_LIST`）：请联系 HeadCount 组的管理员申请权限。0.1.0 中这种情况会显示空白页，因为 process 列表是 `null`；0.1.1 返回空列表，页面会说明情况（由 0.1.1 的浏览器测试发现）。
 - **某人明明正常却被标黄。** 原因写在该行上。名单和班次与 HC Input 页面一样，来自 `t_daily_attn_member`、`t_mes_ee` 和 `t_daily_attn_calendar`。
+- **某张卡片上出现了不在那台 machine 上的人，或者它的预算被不在那里的人占满。** 2026-11-20 在 Slitter 页面上发现；0.1.0 到 0.1.3 的每个版本都有这个问题，已在 0.1.4 修复。
+  - *现象：* 某个 process 的看板在它的卡片上显示了其他 process 的人。Slitter 的 Group Leader 行有 10 个人，而 Daily Attn Summary 弹窗只算 1 个。在开发库副本上，2026-11-17 Slitter AM 的卡片上有 25 个人，其中 17 个来自其他 process（Group Leader 7、Others 6、Training 3、QC 1），HSL PM 的 31 个人则全部是外来的。已用 head count 偏高，行看起来是满的或超预算，自动分派提示所有 machine 都已满。
+  - *根因：* `DayRecords` 返回当天所有 process 的记录，而卡片只按名称把 entry 匹配到 machine（`machineIndex.Resolve`，是 `resolve_mqpd_hc_machine_id` 的移植：精确 id、精确名称，然后是宽松规则“machine 名称包含记录里的名称”）。machine 名称在不同 process 之间会重复：`t_mqpd_hc_table` 中有 19 个名称出现在多个 process 的行里（`Group Leader` 有 9 个，`Training` 有 8 个，然后是 `Others`、`QC`、`OJT`、`Maintenance` 等）。Winder 把生产线记录为 `T20`，而 `Taping T20` 和 `T20 : Can Assy P2(OP1)` 都包含它。machine 的占用（`usage`，自动分派的预算检查读取它）也用同样的方式匹配。
+  - *规则：* 先判断 entry 是否属于这个 process（`dayData.entryHere`：看 entry 的 `process`；没有 process 的 entry 归此人所在的 process），再看名称。在此之前绝不要用名称去匹配某个 process 的 machine。凡是为某一个 process 读取 `t_daily_attn_data` 的代码都要这样做。
+  - *如何确认：* 在数据库副本上运行 `TestDevCopyBoardAgreesWithTheDailyAttnSummary`（第 12 节）。用 0.1.3 的匹配方式，它在一天的卡片上数出 458 个其他 process 的人；用 0.1.4 的匹配方式，一个也没有。
+  - *已排除：* `t_mqpd_hc_table` 中的预算、MTR 数据，以及记录的日期和班次（显示出来的记录是正确的日期和班次）。
+- **本 process 的人有任务，却不在任何卡片上。** 2026-11-20 用同一份副本发现。machine 表里有些名称含两个空格（`CSV-10/13 Set2  (SV#9/10|SD#12/13/15|TCW#12/13/14/18)`、`Fix-Shipment/ Logistic  - 4pax ( AM Shift only)`、`Fix-Tapyrus preparation  2 pax (HSL) - AM Shift (7 days)`），而记录里只有一个，所以名称对不上。自 0.1.4 起，比较名称时连续的空格按一个计算（`normName`）。仍然对不上的会在 “Elsewhere” 卡片中按记录里的名称显示：在副本上是 Packing 的 `Rework - Sorting (Cell)`，它在 2026-11-12 之前的记录里把短横线写成了 `â€“`（写入这些记录的程序的编码错误；该 machine 行在 2026-11-12 被修改过）。请在 machine 表或记录里更正名称，而不是在本模块里。
 - **去哪里看。** `logs\dash_go-<date>.log`（请求不含查询字符串，失败记录包含失败的步骤）。`DailyAttnData.log` 中的日志行带有 `dash_go hc_scan` 标记。
 - **重置会话。** 删除 Redis key `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`，或者按 “Clear draft”。操作生产环境 Redis 之前先取得批准。
 
@@ -423,6 +502,11 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 0.1.1（2026-11-20）：模块被移入 shell，所有文字被移入词条文件。原有的测试仍然通过；新的测试覆盖词条（`catalog_test.go`：两种语言完整、代码用到的每个键和值、没有未使用的文字）和语言（`language_test.go`：页面、API 错误、一份草稿在两种语言下阅读、0.1.0 的草稿）。真实的可执行文件配合临时数据库和一个 Python 后端的替身再次运行，页面在两种主题和两种语言下用无头 Chrome 操作过：详情见 [shell_and_login.md](shell_and_login.md) 第 12 节。
 - 0.1.2（2026-11-20）：第 11 节中那次失败的原因，是用真实的可执行文件在开发机上找到的（临时配置、真实的本地 Python API 和 Redis）：API 取自 patch 文件时（`api_server` = `prod_eng`），`api/me` 回答 502，日志写出了 API 的地址和状态 204；把 `dash_api_url` 设为 `http://localhost/api` 后，它回答 200 以及该账号的 10 个 process。新的单元测试：状态 204 和错误消息中的地址（`internal/core/dashapi/client_test.go`），API 地址来自哪里（`internal/core/config/config_test.go`）。0.1.2 的 Windows 登录检查，以及 nginx 链路 s1 → s2 → dash_go 的测试，见 [shell_and_login.md](shell_and_login.md) 第 12 节。页面本身没有再用浏览器操作过。
 - 0.1.3（2026-11-20）：页面本身没有改动，模块版本跟随程序版本。顶栏的变化（更醒目的模块名称和返回按钮）见 [shell_and_login.md](shell_and_login.md) 第 2 节和第 12 节；自动更新见 [auto_update.md](auto_update.md)。更新会重启服务：草稿在 Redis（`draft_store` 默认值）中，会保留；`draft_store` 为 `memory` 时会丢失。更新只在没有人在点击或提交时安装，所以不会打断正在进行的扫描。模块页面在带有返回按钮的新顶栏下没有用真实数据再操作过（只在顶栏上看了模块页面和“Cannot start”的提示）。
+- 0.1.4（2026-11-20）：看板和计数发生了变化（第 2.1 节），并做了测试：
+  - 单元测试（`board_scope_test.go`）：与其他 process 同名的 machine；其他 process 的 machine 名称所包含的短名称；其他 process 的支援（带着它的 process 显示，并为预算占用位置）；`All Process` 和没有 process 的 entry；任务在其他 process 的成员（Elsewhere）；全天和部分时间的请假；计数相加一致（Scheduled = Assigned + Leave + To assign）；已经分派的人（永远不在 “not assigned” 中；扫描只显示任务，并让 Confirm 按钮保持关闭）；待确认行替换已保存的记录；人属于其记录所在的班次；用于 machine 排序的天数；machine 名称中的连续空格；看板的 JSON；以及脚本只读取看板里有的键。把 0.1.3 的匹配方式放回去（`entryHere` 一律回答 true）时，其中四个会失败。
+  - 在真实数据库的开发副本上（只读会话，`TestDevCopyBoardAgreesWithTheDailyAttnSummary`）：2026-11-02 到 2026-11-18 的 13 天，每天 20 个看板（10 个 process、AM 和 PM），共 260 个看板。在任何一个看板上，卡片上都没有“不是本 process 成员、记录里又没有 entry 写明本 process”的人（有这样 entry 的是支援人员），并且计数与按原始行重新写出的 Daily Attn Summary 逻辑（`cal_daily_summary`）一致：没有换班或加班的人的看板完全一致，有这类人的看板，Scheduled 的差正好等于他们的人数：减去排了本班却记录在另一班的人，加上记录在本班却没有排本班的人（第 13 节）。对比的是这套逻辑，而不是一个运行中的 Python 应用的弹窗。
+  - 页面在无头 Chrome 中对同一份副本做了操作，经过一个没有保留的临时服务副本（真实的处理函数和页面、草稿在内存中、只读数据库会话）：Slitter、HSL、CSV 和 Packing 的看板，英文和中文，浅色和深色主题；Leave 卡片、“Elsewhere” 卡片、支援人员的 process 标签以及 “Not assigned yet” 中的人；扫描一个没有任务的人（Assigned 0 变 1，To assign 22 变 21，Pending 1，Confirm 亮起）和一个已经分派的人（计数不变，显示他的任务，Confirm 保持关闭）。没有 JavaScript 报错。
+  - PostgreSQL 测试（`repo_pg_test.go`）在一个临时的 PostgreSQL 18 上再次运行；`go vet ./...` 和 `go test ./...` 通过。
 
 **没有验证：**
 
@@ -431,6 +515,7 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 针对 s2 本身的 Python 后端调用 `hc_user_processes`（0.1.2 中它是对开发机的后端试的，以及通过 `prod_eng` 试的，后者回答 204：该函数没有部署到它后面），以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
 - 已部署的 s1 和 s2 上的 nginx（它们的文件用隔离实例测试过，[shell_and_login.md](shell_and_login.md) 第 12 节）以及 s2 上的端口。
 - 使用者对中文措辞的审阅；人员的头像（页面只在没有头像的情况下试过）。
+- 0.1.4：真实的可执行文件和真实的数据库。页面是通过副本上的一个临时服务操作的。导致 0.1.4 的那张截图所在的日期（2026-11-20）不在副本里（只有 5 条记录），所以缺陷是在 2026-11-17 复现的，那一天是同样的情形。Confirm 本身在 0.1.4 中没有改动（只改了让它的按钮亮起的条件）；没有再对真实数据库运行过。新卡片和新计数的中文文字没有经过使用者审阅。
 
 ## 13. 决定与已知限制
 
@@ -443,3 +528,8 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 扫描顺序会影响谁得到哪个位置（贪心，没有重新平衡）。
 - 只有一个服务实例；每个 process、日期、班次共用一份草稿。
 - 文字在词条文件中（`internal/mods/hc_scan/i18n/{en,zh}.json`）；草稿保存的是消息而不是句子，所以它按查看者的语言显示。
+- 有任务的人属于他记录所在的班次；Python 应用的 Daily Attn Summary 把人算在日历所给的班次。两者相同，只有换班（排 AM、记录为 PM）和休息日加班（日类型 `R`，记录为 AM）例外：弹窗把换班的人算在 AM，把加班算在实际班次的 OT HC 里，页面把两者都算在他们工作的班次，也就是扫描把他们放进去的那个班次。所以页面的 Scheduled 也会包含没有排班的人：在 2026-11-17 的开发库副本上，20 个看板中有 6 个比弹窗多 1 到 5。
+- 名册包含 Direct 和 Shift Leader 成员；弹窗只算 Direct。有 Shift Leader 成员的 process，页面显示的人比弹窗多。
+- 部分时间请假而没有任务的人，剩余的时间留在 “Not assigned yet” 和 To assign 中；弹窗不会把这样的人叫作“待记录”。
+- 其他 process 的支援显示在卡片上并占用位置，但不计入计数。
+- 名称不在任何 machine 列表中（或属于其他 process）的任务，只显示在 “Elsewhere” 卡片中：它的 head count 不在任何已用/预算数字里。

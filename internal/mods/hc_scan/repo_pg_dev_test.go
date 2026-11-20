@@ -82,7 +82,7 @@ func TestDevCopyReadOnly(t *testing.T) {
 		statuses := map[string]int{}
 		scanned, leaders := 0, 0
 		scanStarted := time.Now()
-		for _, p := range board.NotScanned {
+		for _, p := range board.NotAssigned {
 			if scanned >= 15 {
 				break
 			}
@@ -134,8 +134,8 @@ func TestDevCopyReadOnly(t *testing.T) {
 		if scanned > 0 {
 			perScan = scanTime / time.Duration(scanned)
 		}
-		t.Logf("%-8s machines=%d routine=%d mtr_mapped=%d expected=%d scanned_now=%d statuses=%v leaders_on_leader_row=%d mtr_employees=%d first_board=%dms per_scan=%dms",
-			process, len(board.Machines), routine, mapped, board.Totals.Expected, scanned, statuses, leaders, board.MTR.Employees, boardTime.Milliseconds(), perScan.Milliseconds())
+		t.Logf("%-8s machines=%d routine=%d mtr_mapped=%d scheduled=%d scanned_now=%d statuses=%v leaders_on_leader_row=%d mtr_employees=%d first_board=%dms per_scan=%dms",
+			process, len(board.Machines), routine, mapped, board.Totals.Scheduled, scanned, statuses, leaders, board.MTR.Employees, boardTime.Milliseconds(), perScan.Milliseconds())
 		for status := range statuses {
 			if strings.Contains(status, "internal") || status == "error" {
 				t.Errorf("%s: a scan failed with %q", process, status)

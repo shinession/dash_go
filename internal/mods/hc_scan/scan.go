@@ -121,18 +121,24 @@ func (s *Service) baseEntry(u auth.User, d *dayData, p Person, rec *DayRecord, n
 	return e, nil
 }
 
-// useExisting shows the machine of an existing record.
+// useExisting shows the machine of an existing record: the biggest share of the day on a machine of this process, or,
+// when the person works only on machines of other processes, the name of the biggest share.
 func (s *Service) useExisting(d *dayData, e *Entry) {
-	var best HCEntry
+	var best, bestHere HCEntry
+	var hereMachine Machine
+	haveHere := false
 	for _, h := range e.Existing {
 		e.HC += h.HC
 		if h.HC > best.HC {
 			best = h
 		}
+		if m, ok := d.resolve(h, e.Process); ok && (!haveHere || h.HC > bestHere.HC) {
+			bestHere, hereMachine, haveHere = h, m, true
+		}
 	}
 	e.HC = round2(e.HC)
-	if m, ok := d.machines.Resolve(best.Machine); ok {
-		e.MachineID, e.MachineName, e.Level = m.ID, m.Name, d.levelOn(e.EE, m)
+	if haveHere {
+		e.MachineID, e.MachineName, e.Level = hereMachine.ID, hereMachine.Name, d.levelOn(e.EE, hereMachine)
 	} else {
 		e.MachineName = best.Machine // a machine outside this process
 	}
@@ -145,7 +151,7 @@ func (s *Service) autoAssign(ctx context.Context, d *dayData, e *Entry, p Person
 	if err != nil {
 		return err
 	}
-	recent := s.recentDays(d, history)
+	recent := s.recentDays(d, history, p.Process)
 	if row, why, isLeader := s.leaderPlacement(d, p, history); isLeader {
 		return s.placeLeader(d, e, row, why, recent, used)
 	}
@@ -254,7 +260,7 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 			return nil, s.internal("read assignment history", err)
 		}
 		e.Source, e.MachineID, e.MachineName, e.HC = SourceManual, m.ID, m.Name, availHC(e.LeaveHC)
-		e.Level, e.RecentDays = d.levelOn(e.EE, m), s.recentDays(d, history)[m.ID]
+		e.Level, e.RecentDays = d.levelOn(e.EE, m), s.recentDays(d, history, e.Process)[m.ID]
 		e.ReasonMsg = msg("hc.reason.chosen", "name", u.Name)
 	}
 	if err := s.Drafts.PutEntry(ctx, k, e); err != nil {
@@ -265,7 +271,8 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 	return &v, nil
 }
 
-// Remove deletes a pending line and forgets the scan, so the person shows as not scanned again.
+// Remove deletes a pending line and forgets the scan, so the person is not assigned again (unless the database has a
+// task for them).
 func (s *Service) Remove(ctx context.Context, u auth.User, k Key, ee string) error {
 	if err := s.check(ctx, u, k, false); err != nil {
 		return err

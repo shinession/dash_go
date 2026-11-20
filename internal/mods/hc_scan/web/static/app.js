@@ -255,10 +255,14 @@
     }
     const totals = b.totals;
     const entryList = list(b.entries);
-    const missingList = list(b.not_scanned);
+    const missingList = list(b.not_assigned);
     const counter = (label, value, warn) => el('span', { class: 'counter' + (warn ? ' warn' : '') }, label + ' ', el('b', { text: value }));
+    // the first four are the people of the shift in HC, like the Daily Attn Summary of the Dash application; the rest is the draft
     counters.replaceChildren(...[
-      counter(t('hc.ui.counter_scanned'), `${totals.expected_scanned} / ${totals.expected}`),
+      counter(t('hc.ui.counter_scheduled'), totals.scheduled),
+      counter(t('hc.ui.counter_assigned'), fmt(totals.placed_hc)),
+      counter(t('hc.ui.counter_leave'), fmt(totals.leave_hc)),
+      counter(t('hc.ui.counter_to_assign'), fmt(totals.to_assign_hc)),
       counter(t('hc.ui.counter_pending'), totals.pending),
       counter(t('hc.ui.counter_saved'), totals.saved),
       totals.unassigned ? counter(t('hc.ui.counter_no_machine'), totals.unassigned, true) : null,
@@ -273,8 +277,11 @@
       + (b.mtr.unmapped_machines ? ' | ' + t('hc.ui.mtr_unmapped', { n: b.mtr.unmapped_machines }) : '');
 
     entries.replaceChildren(...(entryList.length ? entryList.map(renderEntry) : [el('div', { class: 'empty', text: t('hc.ui.no_entries') })]));
-    $('machines').replaceChildren(...list(b.machines).map(renderMachine));
-    $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_scanned') })]));
+    const cards = list(b.machines).map(renderMachine);
+    if (list(b.leave).length) cards.push(renderLeave(list(b.leave), totals.leave_hc));
+    if (list(b.elsewhere).length) cards.push(renderElsewhere(list(b.elsewhere)));
+    $('machines').replaceChildren(...cards);
+    $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_assigned') })]));
   }
 
   function machineLabel(m, level) {
@@ -314,18 +321,43 @@
       el('div', { class: 'members' }, list(m.members).map((p) => el('div', { class: 'member' + (p.saved ? '' : ' pending'), title: p.saved ? t('hc.ui.member_saved_title') : t('hc.ui.member_pending_title') },
         avatar(p.name, p.photo, 'xs'),
         el('span', { class: 'member-name', text: p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name }),
+        // somebody from another process who works on a machine of this one: the seat is taken, so they are shown
+        p.from ? el('span', { class: 'tag from', title: t('hc.ui.from_process_title', { process: p.from }), text: p.from }) : null,
         m.routine ? lvBadge(p.level) : null,
         p.saved ? el('span', { class: 'saved-mark', text: t('hc.ui.saved') }) : null,
       ))),
     );
   }
 
+  // The people on leave, all kinds together. A part-day leave leaves the person on their machine for the rest of the day.
+  function renderLeave(people, hc) {
+    return el('div', { class: 'machine leave' },
+      el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_leave') }), el('span', { class: 'machine-count', text: fmt(hc) })),
+      el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member' },
+        avatar(p.name, p.photo, 'xs'),
+        el('span', { class: 'member-name', text: p.name, title: p.name }),
+        list(p.items).map((i) => el('span', { class: 'tag leave-code', title: i.name, text: i.hc === 1 ? i.code : `${i.code} ${fmt(i.hc)}` })),
+      ))),
+    );
+  }
+
+  // People of this process whose task is on a machine of another process, or on a name that is not in the machine list:
+  // they have a task, but no card here has them.
+  function renderElsewhere(people) {
+    return el('div', { class: 'machine away', title: t('hc.ui.card_elsewhere_title') },
+      el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_elsewhere') }), el('span', { class: 'machine-count', text: fmt(people.reduce((sum, p) => sum + p.hc, 0)) })),
+      el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member away-member' },
+        avatar(p.name, p.photo, 'xs'),
+        el('span', { class: 'member-name', text: p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name, title: p.name }),
+        el('span', { class: 'away-where', text: list(p.where).join(', '), title: list(p.where).join(', ') }),
+      ))),
+    );
+  }
+
+  // somebody who has no task yet; the HC is only shown when a part-day leave leaves less than a whole day
   function renderMissing(p) {
-    const title = p.assigned
-      ? t('hc.ui.assigned_to', { machine: p.assigned })
-      : [p.ee, t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
-    return el('span', { class: 'chip' + (p.assigned ? ' assigned' : ''), title },
-      avatar(p.name, p.photo, 'xs'), p.name, p.assigned ? el('span', { class: 'saved-mark', text: p.assigned }) : null);
+    const title = [p.ee, t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
+    return el('span', { class: 'chip', title }, avatar(p.name, p.photo, 'xs'), p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name);
   }
 
   // ---- scanning ------------------------------------------------------------------------------------------------

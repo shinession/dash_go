@@ -24,7 +24,7 @@ The shell lives in `internal/core`, so every module (and the landing page `/dash
 
 ```text
 [logo CIM EDGE]  | HC Scan Assign  [<- Back]          (sun/moon)  [EN|中文]  (picture) Name  [sign out]     <- shell, every page
- Winder  [date] [AM|PM] [Change process]                            Scanned 3/20  Pending 2 ...          <- page bar of the module
+ Winder  [date] [AM|PM] [Change process]                 Scheduled 20  Assigned 14  Leave 3  To assign 3  Pending 2 ...   <- page bar of the module
 ```
 
 - The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page). Since 0.1.3 it is in the accent colour of the theme (`--accent`: `#0b63c5` in the light theme, `#4da3ff` in the dark one), 1.3 rem and weight 600; before it was the muted grey, which was too dim on the dark header. The contrast of the accent on the header is covered by `palette_test.go`.
@@ -230,7 +230,7 @@ shell 放在 `internal/core` 中，所以每个模块（以及首页 `/dash_go/`
 
 ```text
 [logo CIM EDGE]  | HC 扫码分派  [<- 返回]               (太阳/月亮)  [EN|中文]  (头像) 姓名  [退出]     <- shell，每个页面都有
- Winder  [日期] [AM|PM] [切换工序]                                  已扫描 3/20  待确认 2 ...          <- 模块自己的页面栏
+ Winder  [日期] [AM|PM] [切换工序]                       排班 20  已分派 14  请假 3  待分派 3  待确认 2 ...   <- 模块自己的页面栏
 ```
 
 - logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`）。自 0.1.3 起它使用主题的强调色（`--accent`：浅色主题 `#0b63c5`，深色主题 `#4da3ff`），1.3 rem，字重 600；之前它是暗淡的灰色，在深色顶栏上太不显眼。强调色在顶栏上的对比度由 `palette_test.go` 覆盖。

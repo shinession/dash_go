@@ -27,7 +27,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | Document | Covers |
 |---|---|
-| [hc_scan_page.md](hc_scan_page.md) | `hc_scan`: the HC Scan Assign page (`/dash_go/hc_scan/`). A shift leader scans employee badges, every scan assigns a machine or activity by the MTR level of the person (at least Lv1, Lv3 before Lv2 before Lv1, the last 7 days second; leaders go to the Group Leader row), the result is a draft that is saved to `t_daily_attn_data` only when the leader confirms. Warnings, write rules, login hand-over from Dash, configuration, deployment on s2, troubleshooting and verification status |
+| [hc_scan_page.md](hc_scan_page.md) | `hc_scan`: the HC Scan Assign page (`/dash_go/hc_scan/`). A shift leader scans employee badges, every scan assigns a machine or activity by the MTR level of the person (at least Lv1, Lv3 before Lv2 before Lv1, the last 7 days second; leaders go to the Group Leader row), the result is a draft that is saved to `t_daily_attn_data` only when the leader confirms. The board (which entries count for a process, support from other processes, the counters Scheduled / Assigned / Leave / To assign, the Leave and Elsewhere cards), warnings, write rules, login hand-over from Dash, configuration, deployment on s2, troubleshooting and verification status |
 
 ---
 
@@ -60,4 +60,4 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | 文档 | 内容 |
 |---|---|
-| [hc_scan_page.md](hc_scan_page.md) | `hc_scan`：HC Scan Assign 页面（`/dash_go/hc_scan/`）。领班扫描员工工牌，每次扫描根据此人的 MTR 等级分派 machine 或 activity（至少 Lv1，Lv3 优先于 Lv2 优先于 Lv1，其次是最近 7 天；leader 去 Group Leader 行），结果是草稿，只有领班确认后才保存到 `t_daily_attn_data`。包括警告、写入规则、从 Dash 的登录交接、配置、s2 上的部署、故障排查和验证状态 |
+| [hc_scan_page.md](hc_scan_page.md) | `hc_scan`：HC Scan Assign 页面（`/dash_go/hc_scan/`）。领班扫描员工工牌，每次扫描根据此人的 MTR 等级分派 machine 或 activity（至少 Lv1，Lv3 优先于 Lv2 优先于 Lv1，其次是最近 7 天；leader 去 Group Leader 行），结果是草稿，只有领班确认后才保存到 `t_daily_attn_data`。包括看板（哪些 entry 算在某个 process 上、其他 process 的支援、Scheduled / Assigned / Leave / To assign 计数、Leave 和 Elsewhere 卡片）、警告、写入规则、从 Dash 的登录交接、配置、s2 上的部署、故障排查和验证状态 |
