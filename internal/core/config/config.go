@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,7 +33,12 @@ const (
 	EnvPGPassword    = "DASH_GO_PG_PASSWORD"
 	EnvRedisPassword = "DASH_GO_REDIS_PASSWORD"
 	EnvAPISalt       = "DASH_GO_API_SALT"
+	EnvAPISalt2      = "DASH_GO_API_SALT_2"
 )
+
+// DefaultPhotoURLTemplate is where the employee pictures are, below the site that serves dash_go (the /api location
+// of the Python application). {ee_code} is replaced by the employee code.
+const DefaultPhotoURLTemplate = "/api/static/hr/{ee_code}.webp"
 
 // Options controls where Load looks for files. Zero values fall back to environment variables and defaults.
 type Options struct {
@@ -63,10 +69,25 @@ type Dash struct {
 	Postgres      Postgres
 	Redis         Redis
 	APISalt       string   // api.salt_3, the secret used by the Python /api/user endpoint
+	APISalt2      string   // api.salt_2, the secret of the Python sign-on result endpoint (needed for the Windows sign-in only)
 	APIServer     string   // api_server, host name of the Python API
+	SSOServer     string   // sso_server, host of the Windows single sign-on service; empty switches that sign-in off
 	CDNDataFolder string   // cdn_data_folder, second copy of the change log files
 	HCProcessList []string // HC_PROCESS_LIST
 	LeaveList     []string // keys of SHIFT_LEAVE_PATTERN from the third one on (same rule as the Python code)
+}
+
+// Login holds the settings of the sign-in of dash_go itself (the login page).
+type Login struct {
+	// Password lets the login page ask for an account and a password (login_password, default true).
+	Password bool
+	// SSORequireSameIP makes the Windows sign-in refuse a result that the sign-on service recorded for another
+	// address than the one that started the sign-in (sso_require_same_ip, default true). It is what stops a sign-in
+	// being forced on a victim, so it only goes off for a proxy that cannot pass the address of the browser.
+	SSORequireSameIP bool
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For header is believed (trusted_proxies, default the
+	// loopback addresses: the nginx on the same computer).
+	TrustedProxies []netip.Prefix
 }
 
 // Config is the effective configuration of the service.
@@ -77,8 +98,14 @@ type Config struct {
 	DashHome string // URL of the Dash application, shown when a page is opened without a login
 	// SessionHours is how long a login stays valid (the session cookie of the sso hand-over).
 	SessionHours int
-	Dash         Dash
-	Sources      []string // configuration files that were loaded (paths only)
+	// PhotoURLTemplate is where the employee pictures are; {ee_code} stands for the employee code.
+	PhotoURLTemplate string
+	// DashAPIURL is the root of the Python API including /api (dash_api_url, default http://<api_server>/api); empty
+	// when neither is set. The login and the permission checks ask it.
+	DashAPIURL string
+	Login      Login
+	Dash       Dash
+	Sources    []string // configuration files that were loaded (paths only)
 
 	modules map[string]json.RawMessage
 }
@@ -118,13 +145,18 @@ func Load(opts Options) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Listen:       firstNonEmpty(getenv(EnvListen), rawString(merged["listen"]), ":8750"),
-		BasePath:     normalizeBasePath(firstNonEmpty(rawString(merged["base_path"]), "/dash_go")),
-		LogDir:       firstNonEmpty(rawString(merged["log_dir"]), "logs"),
-		DashHome:     firstNonEmpty(rawString(merged["dash_home"]), "/ie/"),
-		SessionHours: 12,
-		Sources:      sources,
-		modules:      map[string]json.RawMessage{},
+		Listen:           firstNonEmpty(getenv(EnvListen), rawString(merged["listen"]), ":8750"),
+		BasePath:         normalizeBasePath(firstNonEmpty(rawString(merged["base_path"]), "/dash_go")),
+		LogDir:           firstNonEmpty(rawString(merged["log_dir"]), "logs"),
+		DashHome:         firstNonEmpty(rawString(merged["dash_home"]), "/ie/"),
+		SessionHours:     12,
+		PhotoURLTemplate: firstNonEmpty(rawString(merged["photo_url_template"]), DefaultPhotoURLTemplate),
+		Login:            Login{Password: true, SSORequireSameIP: true},
+		Sources:          sources,
+		modules:          map[string]json.RawMessage{},
+	}
+	if err := loadLogin(merged, &cfg.Login); err != nil {
+		return nil, err
 	}
 	if raw, ok := merged["session_hours"]; ok {
 		var h int
@@ -158,6 +190,7 @@ func Load(opts Options) (*Config, error) {
 		return nil, err
 	}
 	var api struct {
+		Salt2 string `json:"salt_2"`
 		Salt3 string `json:"salt_3"`
 	}
 	if err := decodeKey(merged, "api", &api); err != nil {
@@ -167,8 +200,14 @@ func Load(opts Options) (*Config, error) {
 		Postgres:      Postgres{Host: pg.Host, Port: pg.Port, Username: pg.Username, Password: firstNonEmpty(getenv(EnvPGPassword), pg.Password)},
 		Redis:         Redis{Host: rd.Host, Port: rd.Port, DB: rd.DB, Password: firstNonEmpty(getenv(EnvRedisPassword), rd.Password)},
 		APISalt:       firstNonEmpty(getenv(EnvAPISalt), api.Salt3),
+		APISalt2:      firstNonEmpty(getenv(EnvAPISalt2), api.Salt2),
 		APIServer:     rawString(merged["api_server"]),
+		SSOServer:     strings.TrimSpace(rawString(merged["sso_server"])),
 		CDNDataFolder: rawString(merged["cdn_data_folder"]),
+	}
+	cfg.DashAPIURL = strings.TrimSpace(rawString(merged["dash_api_url"]))
+	if cfg.DashAPIURL == "" && cfg.Dash.APIServer != "" {
+		cfg.DashAPIURL = "http://" + cfg.Dash.APIServer + "/api"
 	}
 	if cfg.Dash.Postgres.Port == 0 {
 		cfg.Dash.Postgres.Port = 5432
@@ -202,6 +241,49 @@ func (c *Config) Module(name string, out any) error {
 		return fmt.Errorf("config modules.%s: %w", name, err)
 	}
 	return nil
+}
+
+// loadLogin reads login_password, sso_require_same_ip and trusted_proxies. The defaults are in l already.
+func loadLogin(merged map[string]json.RawMessage, l *Login) error {
+	for key, dst := range map[string]*bool{"login_password": &l.Password, "sso_require_same_ip": &l.SSORequireSameIP} {
+		if err := decodeKey(merged, key, dst); err != nil {
+			return fmt.Errorf("%w (true or false)", err)
+		}
+	}
+	var proxies []string
+	if err := decodeKey(merged, "trusted_proxies", &proxies); err != nil {
+		return fmt.Errorf("%w (a list of addresses or CIDR ranges)", err)
+	}
+	if _, set := merged["trusted_proxies"]; !set {
+		proxies = []string{"127.0.0.1", "::1"}
+	}
+	for _, p := range proxies {
+		prefix, err := parseProxy(p)
+		if err != nil {
+			return fmt.Errorf("config key trusted_proxies: %w", err)
+		}
+		l.TrustedProxies = append(l.TrustedProxies, prefix)
+	}
+	return nil
+}
+
+// parseProxy reads an address (10.0.0.5, ::1) or a range (10.0.0.0/8). An IPv4 address that is mapped into IPv6
+// counts as the IPv4 address.
+func parseProxy(text string) (netip.Prefix, error) {
+	text = strings.TrimSpace(text)
+	if strings.Contains(text, "/") {
+		p, err := netip.ParsePrefix(text)
+		if err != nil {
+			return netip.Prefix{}, fmt.Errorf("%q is not an address range", text)
+		}
+		return p.Masked(), nil
+	}
+	a, err := netip.ParseAddr(text)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("%q is not an address", text)
+	}
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), nil
 }
 
 func loadLayered(dir, base, patch string, optional bool, sources *[]string) (map[string]json.RawMessage, error) {

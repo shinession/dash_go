@@ -12,8 +12,15 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 - Write the lessons learned from a real defect of the module in a Troubleshooting section of its file: symptoms, root cause, rule, how to confirm, and what was ruled out.
 - A module lists its documents in the `docs` field of its `manifest.json`; `scripts/build.ps1` copies them into the package.
 - Add every new document to the index below, in both languages.
+- A document about the frame shared by all modules (header, theme, language, sign-in) goes to the "Core" table; a document about one module goes to the "Modules" table.
 
 ## Index
+
+### Core (every module)
+
+| Document | Covers |
+|---|---|
+| [shell_and_login.md](shell_and_login.md) | The frame of every page (`/dash_go/_shell/`): the header with the CIM EDGE logo, the light / dark theme, English / Chinese (catalogs, how a module adds texts), the user box and the pictures of people, and the sign-in of dash_go itself (link from Dash, account and password, Windows sign-in, limits, configuration, deployment behind proxies, troubleshooting, verification status) |
 
 ### Modules
 
@@ -37,8 +44,15 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 - 该模块在真实缺陷中得到的经验，写在它自己文件的“故障排查”部分：现象、根因、规则、如何确认，以及已排除的方向。
 - 模块在自己的 `manifest.json` 的 `docs` 字段中列出文档；`scripts/build.ps1` 会把它们复制到发布包里。
 - 新增文档时，在下面的索引中同时补充英文和中文两个版本。
+- 所有模块共用的外框（顶栏、主题、语言、登录）的文档放入“核心”表；单个模块的文档放入“模块”表。
 
 ## 索引
+
+### 核心（所有模块）
+
+| 文档 | 内容 |
+|---|---|
+| [shell_and_login.md](shell_and_login.md) | 每个页面的外框（`/dash_go/_shell/`）：带 CIM EDGE logo 的顶栏、浅色 / 深色主题、中英文（词条文件、模块如何添加文字）、用户框和人员头像，以及 dash_go 自己的登录（Dash 的链接、账号密码、Windows 登录、限流、配置、代理之后的部署、故障排查、验证状态） |
 
 ### 模块
 

@@ -207,7 +207,14 @@ func (e *testEnv) scan(t *testing.T, id string) *ScanResult {
 	return res
 }
 
-func hasCode(flags []Flag, code string) bool { return hasFlag(flags, code) }
+func hasCode(flags []FlagView, code string) bool {
+	for _, f := range flags {
+		if f.Code == code {
+			return true
+		}
+	}
+	return false
+}
 
 func wantErr(t *testing.T, err error, status int, code string) {
 	t.Helper()

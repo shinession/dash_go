@@ -1,8 +1,13 @@
-// Package auth signs and verifies the short lived tokens dash_go uses for login.
+// Package auth is the sign-in of dash_go. There are three ways in, and all of them end in the same signed session
+// cookie:
 //
-// The Dash application (IE.py) knows who is logged in, the Go service does not. Dash therefore opens
-// {base}/auth/sso?t=<token> with an "sso" token signed with the shared api.salt_3 secret. The service verifies
-// the signature, consumes the one-time nonce and answers with its own signed "session" cookie.
+//   - The link of the Dash application. Dash (IE.py) knows who is logged in, the Go service does not. Dash therefore
+//     opens {base}/auth/sso?t=<token> with an "sso" token signed with the shared api.salt_3 secret. The service
+//     verifies the signature, consumes the one-time nonce and answers with its own signed "session" cookie
+//     (service.go).
+//   - An account and a password, which the Python backend checks (login.go, directory.go).
+//   - The Windows single sign-on, a flow with a token that this server issues and a result that the sign-on service
+//     records (ssoflow.go).
 //
 // Token format: base64url(JSON claims) + "." + base64url(HMAC-SHA256(key, base64url(JSON claims))), where
 // key = HMAC-SHA256(secret, "dash_go/<kind>/v1"). The Python side (LocalListV3.build_dash_go_sso_url) produces the

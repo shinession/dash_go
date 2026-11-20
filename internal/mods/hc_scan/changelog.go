@@ -12,6 +12,10 @@ import (
 // changeLogName is the file the Python readers watch (read_daily_attn_data compares its modification time).
 const changeLogName = "DailyAttnData.log"
 
+// ErrNoChangeLogFolder means neither dash_data_dir nor cdn_data_folder is set: the data is saved, but the Python pages
+// will not notice the change before their next refresh.
+var ErrNoChangeLogFolder = errors.New("no change log folder is configured (dash_data_dir, cdn_data_folder)")
+
 type fileChangeLog struct {
 	dirs []string
 }
@@ -38,7 +42,7 @@ type changeLine struct {
 
 func (c *fileChangeLog) Append(user string, rows []DayRecord) error {
 	if len(c.dirs) == 0 {
-		return errors.New("no change log folder is configured (dash_data_dir, cdn_data_folder): the Python pages will not notice the change before their next refresh")
+		return ErrNoChangeLogFolder
 	}
 	lines := make([]changeLine, 0, len(rows))
 	for _, r := range rows {

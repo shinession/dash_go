@@ -44,7 +44,7 @@ func TestLeaderByDirectTypePlacedOnTheLeaderRow(t *testing.T) {
 	if res.Status != "assigned" || e.MachineID != "Winder_9001" || e.Source != SourceAuto || e.Level != -1 || e.HC != 1 || !strings.Contains(e.Reason, "Shift Leader (direct type)") {
 		t.Fatalf("a Shift Leader goes to the Group Leader row: %s %+v", res.Status, e)
 	}
-	if hasWarn(e.Flags) {
+	if hasWarnFlags(e.Flags) {
 		t.Fatalf("a Shift Leader of the process is on the roster and needs no warning: %+v", e.Flags)
 	}
 }

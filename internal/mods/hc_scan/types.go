@@ -27,9 +27,48 @@ type Machine struct {
 // Routine reports whether the machine needs an MTR proficiency record. Non-routine activities do not.
 func (m Machine) Routine() bool { return !strings.EqualFold(strings.TrimSpace(m.Type), "Non-routine") }
 
+// Msg is a message that people read in their own language: the key of a text of the catalog and the values of its
+// {placeholders}. Drafts store a Msg instead of a sentence, so a line that was scanned while the page was English
+// reads right when the page is Chinese.
+type Msg struct {
+	Key  string            `json:"key,omitempty"`
+	Args map[string]string `json:"args,omitempty"`
+}
+
+// msg builds a Msg from the key and name/value pairs of the placeholders.
+func msg(key string, kv ...string) Msg {
+	m := Msg{Key: key}
+	if len(kv) > 1 {
+		m.Args = make(map[string]string, len(kv)/2)
+		for i := 0; i+1 < len(kv); i += 2 {
+			m.Args[kv[i]] = kv[i+1]
+		}
+	}
+	return m
+}
+
+// with returns a copy of the message with one more value.
+func (m Msg) with(name, value string) Msg {
+	args := make(map[string]string, len(m.Args)+1)
+	for k, v := range m.Args {
+		args[k] = v
+	}
+	args[name] = value
+	return Msg{Key: m.Key, Args: args}
+}
+
 // Flag is a message about an entry. Severity "warn" is shown in yellow and must be acknowledged before the
 // entry is written; "info" is only shown.
 type Flag struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Msg
+	// Text is the English sentence that drafts of version 0.1.0 stored. A flag made since then has a message.
+	Text string `json:"text,omitempty"`
+}
+
+// FlagView is a flag as the page gets it: the sentence is in the language of the request.
+type FlagView struct {
 	Code     string `json:"code"`
 	Severity string `json:"severity"`
 	Text     string `json:"text"`
@@ -70,23 +109,26 @@ type HCEntry struct {
 
 // Entry is the draft line of one scanned person. It is stored as JSON in the draft store.
 type Entry struct {
-	EE          string    `json:"ee"`
-	Name        string    `json:"name"`
-	Process     string    `json:"process"` // member process on the date
-	Source      string    `json:"source"`
-	MachineID   string    `json:"machine_id"`
-	MachineName string    `json:"machine_name"`
-	HC          float64   `json:"hc"` // HC the person puts on the machine (1 minus part-day leave)
-	Level       int       `json:"level"`
-	RecentDays  int       `json:"recent_days"`
-	Reason      string    `json:"reason"`
-	Shift       string    `json:"shift"`    // shift code of the member, for example PA
-	Schedule    string    `json:"schedule"` // day type from the calendar, for example W
-	Existing    []HCEntry `json:"existing,omitempty"`
-	LeaveHC     float64   `json:"leave_hc"`
-	Flags       []Flag    `json:"flags"` // facts found at scan time (roster, shift, leave)
-	ScannedAt   time.Time `json:"scanned_at"`
-	ScannedBy   string    `json:"scanned_by"`
+	EE          string  `json:"ee"`
+	Name        string  `json:"name"`
+	Process     string  `json:"process"` // member process on the date
+	Source      string  `json:"source"`
+	MachineID   string  `json:"machine_id"`
+	MachineName string  `json:"machine_name"`
+	HC          float64 `json:"hc"` // HC the person puts on the machine (1 minus part-day leave)
+	Level       int     `json:"level"`
+	RecentDays  int     `json:"recent_days"`
+	// Reason says why the line was placed or left without a machine. ReasonMsg is the message of a line made since
+	// version 0.1.1; Reason is the English sentence that drafts of version 0.1.0 stored.
+	Reason    string    `json:"reason,omitempty"`
+	ReasonMsg Msg       `json:"reason_msg,omitzero"`
+	Shift     string    `json:"shift"`    // shift code of the member, for example PA
+	Schedule  string    `json:"schedule"` // day type from the calendar, for example W
+	Existing  []HCEntry `json:"existing,omitempty"`
+	LeaveHC   float64   `json:"leave_hc"`
+	Flags     []Flag    `json:"flags"` // facts found at scan time (roster, shift, leave)
+	ScannedAt time.Time `json:"scanned_at"`
+	ScannedBy string    `json:"scanned_by"`
 }
 
 // ScanRecord remembers that a person scanned in a session, also after the entry was saved.

@@ -14,7 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/config"
 	"dash_go/internal/core/server"
+	"dash_go/internal/core/shell"
+	"dash_go/internal/version"
 )
 
 // TestDevServer is a development tool, not a test: it starts the module on a scratch PostgreSQL with demo data so
@@ -37,7 +40,7 @@ func TestDevServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	authSvc := auth.NewService(signer, auth.NewMemoryNonces(), auth.Settings{BasePath: "/dash_go", Log: log, DashHome: "/ie/"})
+	authSvc := auth.NewService(signer, auth.NewMemoryNonces(), auth.Settings{BasePath: "/dash_go", Log: log})
 	svc, err := NewService(Deps{
 		Repo: NewPGRepository(pool), Drafts: NewMemoryDrafts(), ChangeLog: NewFileChangeLog(t.TempDir()),
 		Perms: &fakePerms{procs: []string{"Slitter", "Winder"}}, Settings: DefaultSettings(),
@@ -46,9 +49,14 @@ func TestDevServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sh, err := shell.New(shell.Options{Base: "/dash_go", Version: version.Version, PhotoURLTemplate: config.DefaultPhotoURLTemplate, DashHome: "/ie/", Auth: authSvc, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	authSvc.Mount(mux)
-	if err := svc.Routes(mux, "/dash_go/hc_scan", authSvc.Require); err != nil {
+	sh.Mount(mux)
+	if err := svc.Routes(mux, "/dash_go/hc_scan", authSvc.Require, sh); err != nil {
 		t.Fatal(err)
 	}
 	mux.HandleFunc("GET /dev/login", func(w http.ResponseWriter, r *http.Request) {

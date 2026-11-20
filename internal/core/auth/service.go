@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -79,15 +79,30 @@ type Settings struct {
 	CookieName string
 	SessionTTL time.Duration
 	Log        *slog.Logger
-	DashHome   string
 	Now        func() time.Time // tests only
+
+	// Directory checks the accounts of the Dash application. Without it neither the password sign-in nor the
+	// Windows sign-in works, and the login page only tells people to open the page from Dash.
+	Directory Directory
+	// PasswordLogin lets the login page ask for an account and a password (needs Directory).
+	PasswordLogin bool
+	// SSO is the Windows single sign-on service; nil switches that sign-in off (needs Directory).
+	SSO SSOSource
+	// SSORequireSameIP refuses a Windows sign-in whose result was recorded for another address than the one that
+	// started it. It is what stops a sign-in being forced on a victim.
+	SSORequireSameIP bool
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For header is believed.
+	TrustedProxies []netip.Prefix
 }
 
-// Service handles the sso hand-over, the session cookie and the request guard.
+// Service handles the sign-in (the hand-over from Dash, the password and the Windows sign-in), the session cookie
+// and the request guard.
 type Service struct {
 	signer *Signer
 	nonces NonceStore
 	set    Settings
+	limits *throttles
+	flows  ssoFlows
 }
 
 // NewService returns a Service. Defaults: cookie dash_go_session, 12 hour sessions.
@@ -104,48 +119,86 @@ func NewService(signer *Signer, nonces NonceStore, set Settings) *Service {
 	if set.Now == nil {
 		set.Now = time.Now
 	}
-	return &Service{signer: signer, nonces: nonces, set: set}
+	return &Service{signer: signer, nonces: nonces, set: set, limits: newThrottles(set.Now)}
 }
 
-// Mount registers {base}/auth/sso and {base}/auth/logout.
+// Mount registers the sign-in routes below {base}/auth.
 func (s *Service) Mount(mux *http.ServeMux) {
-	mux.HandleFunc("GET "+s.set.BasePath+"/auth/sso", s.handleSSO)
-	mux.HandleFunc("POST "+s.set.BasePath+"/auth/logout", s.handleLogout)
+	base := s.set.BasePath + "/auth"
+	mux.HandleFunc("GET "+base+"/sso", s.handleHandover)
+	mux.HandleFunc("POST "+base+"/logout", s.handleLogout)
+	mux.HandleFunc("POST "+base+"/login", s.handleLogin)
+	mux.HandleFunc("POST "+base+"/sso/start", s.handleSSOStart)
+	mux.HandleFunc("POST "+base+"/sso/poll", s.handleSSOPoll)
 }
 
-func (s *Service) handleSSO(w http.ResponseWriter, r *http.Request) {
+// PasswordEnabled reports whether the login page asks for an account and a password.
+func (s *Service) PasswordEnabled() bool { return s.set.Directory != nil && s.set.PasswordLogin }
+
+// SSOEnabled reports whether the login page offers the Windows sign-in.
+func (s *Service) SSOEnabled() bool { return s.set.Directory != nil && s.set.SSO != nil }
+
+// LoginPath is the address of the login page, with the page to come back to.
+func (s *Service) LoginPath(next string) string {
+	p := s.set.BasePath + "/login"
+	if next != "" {
+		p += "?next=" + url.QueryEscape(next)
+	}
+	return p
+}
+
+// ClientIP is the address of the browser (see clientIP).
+func (s *Service) ClientIP(r *http.Request) string { return clientIP(r, s.set.TrustedProxies) }
+
+// handleHandover takes the one-time link the Dash application builds (Scan Assign button). A link that does not
+// work leads to the login page with the reason, where the person can sign in directly.
+func (s *Service) handleHandover(w http.ResponseWriter, r *http.Request) {
 	now := s.set.Now()
+	next := s.SafeNext(r.URL.Query().Get("next"))
+	refuse := func(code string) {
+		http.Redirect(w, r, s.LoginPath(next)+"&error="+code, http.StatusSeeOther)
+	}
 	claims, err := s.signer.Parse(r.URL.Query().Get("t"), KindSSO, now)
 	if err != nil {
-		msg := "The login link is not valid."
-		if errors.Is(err, ErrExpired) {
-			msg = "The login link has expired."
+		code := "link_invalid"
+		if err == ErrExpired {
+			code = "link_expired"
 		}
 		s.set.Log.Warn("sso rejected", "reason", err.Error())
-		s.fail(w, http.StatusUnauthorized, msg)
+		refuse(code)
 		return
 	}
 	if claims.N == "" {
 		s.set.Log.Warn("sso rejected", "reason", "missing nonce")
-		s.fail(w, http.StatusUnauthorized, "The login link is not valid.")
+		refuse("link_invalid")
 		return
 	}
 	fresh, err := s.nonces.Consume(r.Context(), claims.N, 10*time.Minute)
 	if err != nil {
 		s.set.Log.Error("sso nonce store failed", "error", err)
-		s.fail(w, http.StatusServiceUnavailable, "The login service is temporarily unavailable.")
+		refuse("unavailable")
 		return
 	}
 	if !fresh {
 		s.set.Log.Warn("sso rejected", "reason", "link already used", "ee", claims.EE)
-		s.fail(w, http.StatusUnauthorized, "The login link was already used.")
+		refuse("link_used")
 		return
 	}
-	token, err := s.signer.Sign(Claims{K: KindSession, EE: claims.EE, Name: claims.Name, Iat: now.Unix(), Exp: now.Add(s.set.SessionTTL).Unix()})
-	if err != nil {
+	if err := s.startSession(w, r, Identity{EE: claims.EE, Name: claims.Name}); err != nil {
 		s.set.Log.Error("session signing failed", "error", err)
-		s.fail(w, http.StatusInternalServerError, "Internal error.")
+		refuse("unavailable")
 		return
+	}
+	s.set.Log.Info("login", "method", "dash_link", "ee", claims.EE)
+	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+// startSession sets a fresh session cookie for the person.
+func (s *Service) startSession(w http.ResponseWriter, r *http.Request, id Identity) error {
+	now := s.set.Now()
+	token, err := s.signer.Sign(Claims{K: KindSession, EE: id.EE, Name: id.Name, Iat: now.Unix(), Exp: now.Add(s.set.SessionTTL).Unix()})
+	if err != nil {
+		return err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.set.CookieName,
@@ -156,13 +209,34 @@ func (s *Service) handleSSO(w http.ResponseWriter, r *http.Request) {
 		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-	s.set.Log.Info("login", "ee", claims.EE)
-	http.Redirect(w, r, s.safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
+	return nil
 }
 
+// handleLogout ends the session of dash_go only: the login of the Dash application in the browser is a different
+// thing and stays as it is.
 func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
 	http.SetCookie(w, &http.Cookie{Name: s.set.CookieName, Value: "", Path: s.cookiePath(), MaxAge: -1, HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode})
+	if u, ok := s.Session(r); ok {
+		s.set.Log.Info("logout", "ee", u.EE)
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Session returns the person of the session cookie of the request, if the cookie is valid. It checks nothing else;
+// the pages use it to show who is signed in, Require guards the API.
+func (s *Service) Session(r *http.Request) (User, bool) {
+	cookie, err := r.Cookie(s.set.CookieName)
+	if err != nil {
+		return User{}, false
+	}
+	claims, err := s.signer.Parse(cookie.Value, KindSession, s.set.Now())
+	if err != nil {
+		return User{}, false
+	}
+	return User{EE: claims.EE, Name: claims.Name}, true
 }
 
 // Require rejects requests without a valid session and stores the user in the request context. Unsafe methods
@@ -170,25 +244,20 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 // marked cross-site by the browser.
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(s.set.CookieName)
-		if err != nil {
-			writeJSONError(w, http.StatusUnauthorized, "login required")
-			return
-		}
-		claims, err := s.signer.Parse(cookie.Value, KindSession, s.set.Now())
-		if err != nil {
-			writeJSONError(w, http.StatusUnauthorized, "login required")
+		u, ok := s.Session(r)
+		if !ok {
+			s.apiError(w, r, http.StatusUnauthorized, "login_required", "err.login_required")
 			return
 		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
 			if r.Header.Get("X-Requested-With") != "dash_go" || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-				writeJSONError(w, http.StatusForbidden, "forbidden")
+				s.apiError(w, r, http.StatusForbidden, "forbidden", "err.forbidden")
 				return
 			}
 		}
-		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), User{EE: claims.EE, Name: claims.Name})))
+		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
 	})
 }
 
@@ -199,8 +268,9 @@ func (s *Service) cookiePath() string {
 	return s.set.BasePath + "/"
 }
 
-// safeNext only accepts local paths below the base path, so the sso link cannot be used as an open redirect.
-func (s *Service) safeNext(next string) string {
+// SafeNext only accepts local paths below the base path, so a link with a next parameter cannot be used as an open
+// redirect. Anything else becomes the start page of the service.
+func (s *Service) SafeNext(next string) string {
 	def := s.set.BasePath + "/"
 	if next == "" || !strings.HasPrefix(next, def) || strings.Contains(next, "//") || strings.Contains(next, "..") || strings.Contains(next, "\\") || strings.ContainsAny(next, "\r\n") {
 		return def
@@ -209,20 +279,6 @@ func (s *Service) safeNext(next string) string {
 		return def
 	}
 	return next
-}
-
-func (s *Service) fail(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	home := s.set.DashHome
-	if home == "" {
-		home = "/"
-	}
-	_, _ = w.Write([]byte("<!doctype html><meta charset=utf-8><title>Login</title>" +
-		"<body style=\"font-family:sans-serif;background:#111;color:#eee;padding:2rem\"><h2>" + htmlEscape(msg) + "</h2>" +
-		"<p>Open the page again from the Dash application: MQPD &gt; Head Count &gt; Scan Assign.</p>" +
-		"<p><a style=\"color:#7cc4ff\" href=\"" + htmlEscape(home) + "\">Go to Dash</a></p></body>"))
 }
 
 // NewNonce returns a random one-time nonce (used by tests; production nonces come from the Dash side).
@@ -234,15 +290,4 @@ func NewNonce() string {
 
 func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
-}
-
-func htmlEscape(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&#39;").Replace(s)
 }

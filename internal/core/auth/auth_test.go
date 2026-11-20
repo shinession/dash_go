@@ -103,7 +103,7 @@ func TestNewSignerRequiresSecret(t *testing.T) {
 
 func newTestService(t *testing.T, now time.Time) (*Service, *http.ServeMux) {
 	t.Helper()
-	svc := NewService(mustSigner(t), NewMemoryNonces(), Settings{BasePath: "/dash_go", Now: func() time.Time { return now }, DashHome: "/ie/"})
+	svc := NewService(mustSigner(t), NewMemoryNonces(), Settings{BasePath: "/dash_go", Now: func() time.Time { return now }})
 	mux := http.NewServeMux()
 	svc.Mount(mux)
 	mux.Handle("GET /dash_go/hc_scan/api/me", svc.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,23 +146,28 @@ func TestSSOLoginSetsSessionAndIsOneTime(t *testing.T) {
 	}
 
 	again := ssoRequest(t, mux, pythonToken, "")
-	if again.Code != http.StatusUnauthorized || len(again.Result().Cookies()) != 0 {
-		t.Fatalf("the link works once: status %d", again.Code)
+	if len(again.Result().Cookies()) != 0 || again.Header().Get("Location") != "/dash_go/login?next=%2Fdash_go%2F&error=link_used" {
+		t.Fatalf("the link works once: status %d location %q", again.Code, again.Header().Get("Location"))
 	}
 }
 
-func TestSSORejectsBadLinks(t *testing.T) {
+// A link that does not work is not a dead end: the person lands on the login page with the reason, where signing in
+// directly is possible, and the page they wanted is remembered.
+func TestSSOBadLinksLeadToTheLoginPageWithTheReason(t *testing.T) {
 	_, mux := newTestService(t, tokenNow.Add(10*time.Minute))
-	if rec := ssoRequest(t, mux, pythonToken, ""); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "expired") {
-		t.Fatalf("expired link: %d %s", rec.Code, rec.Body.String())
-	}
-	if rec := ssoRequest(t, mux, "junk", ""); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("junk link: %d", rec.Code)
-	}
 	s := mustSigner(t)
 	noNonce := mustSign(t, s, Claims{K: KindSSO, EE: "AB12C34", Iat: tokenNow.Add(10 * time.Minute).Unix(), Exp: tokenNow.Add(15 * time.Minute).Unix()})
-	if rec := ssoRequest(t, mux, noNonce, ""); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("a link without nonce must be refused: %d", rec.Code)
+	cases := []struct{ name, token, want string }{
+		{"expired link", pythonToken, "link_expired"},
+		{"junk link", "junk", "link_invalid"},
+		{"a link without nonce", noNonce, "link_invalid"},
+	}
+	for _, c := range cases {
+		rec := ssoRequest(t, mux, c.token, "/dash_go/hc_scan/")
+		want := "/dash_go/login?next=%2Fdash_go%2Fhc_scan%2F&error=" + c.want
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != want || len(rec.Result().Cookies()) != 0 {
+			t.Errorf("%s: status %d location %q, want %q and no cookie", c.name, rec.Code, rec.Header().Get("Location"), want)
+		}
 	}
 }
 
@@ -185,7 +190,7 @@ func TestRequireGuardsTheAPI(t *testing.T) {
 	svc, mux := newTestService(t, tokenNow)
 	if rec := httptest.NewRecorder(); true {
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/dash_go/hc_scan/api/me", nil))
-		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "login required") {
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"code":"login_required"`) || !strings.Contains(rec.Body.String(), "Login required.") {
 			t.Fatalf("no cookie: %d %s", rec.Code, rec.Body.String())
 		}
 	}

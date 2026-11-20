@@ -1,0 +1,12 @@
+{{define "content"}}
+<main class="dg-main">
+<section class="dg-landing">
+  <h1>{{.T "ui.landing_title"}} <small class="muted">{{.T "ui.landing_version" "version" .Data.Version}}</small></h1>
+  <p class="muted">{{.T "ui.landing_modules"}}</p>
+  <ul class="dg-modules">
+    {{range .Data.Modules}}<li><a class="dg-module" href="{{.Href}}"><strong>{{.Title}}</strong><span>{{.Description}} · v{{.Version}}</span></a></li>
+    {{end}}
+  </ul>
+</section>
+</main>
+{{end}}

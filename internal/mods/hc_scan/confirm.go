@@ -2,10 +2,12 @@ package hcscan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/i18n"
 )
 
 // Confirm saves the pending lines to t_daily_attn_data. It is the only place where the module writes to the
@@ -20,7 +22,7 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 	}
 	today := ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
 	if MonthLocked(k.Date, today) {
-		return nil, newError(409, "month_locked", "After the 7th of each month, previous month daily attendance data cannot be modified!")
+		return nil, newError(409, "month_locked")
 	}
 	unlock := s.locks.lock(k.id())
 	defer unlock()
@@ -48,10 +50,10 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 	}
 	sort.Slice(toWrite, func(i, j int) bool { return toWrite[i].EE < toWrite[j].EE })
 	if len(toWrite) == 0 {
-		return nil, newError(409, "nothing_to_save", "There is nothing to save: no pending line has a machine.")
+		return nil, newError(409, "nothing_to_save")
 	}
 	for _, e := range toWrite {
-		v := s.entryView(d, e, used)
+		v := s.entryView(ctx, d, e, used)
 		if v.Warn {
 			res.NeedsAck = append(res.NeedsAck, AckView{EE: e.EE, Name: e.Name, Machine: e.MachineName, Flags: warnOnly(v.Flags)})
 		}
@@ -71,8 +73,8 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 		var out []DayRecord
 		for _, e := range toWrite {
 			row, why := s.buildRow(d, k, e, current)
-			if why != "" {
-				skipped[e.EE] = why
+			if why.Key != "" {
+				skipped[e.EE] = say(ctx, why, "")
 				continue
 			}
 			out = append(out, row)
@@ -81,7 +83,7 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 	})
 	if err != nil {
 		s.Log.Error("hc_scan save failed", "process", k.Process, "date", k.Date.Format("2006-01-02"), "shift", k.Shift, "lines", len(toWrite), "error", err)
-		return nil, newError(500, "save_failed", "Submit to database failed! Nothing was saved. Please contact admin.")
+		return nil, newError(500, "save_failed")
 	}
 	for _, r := range rows {
 		written[r.EE] = r
@@ -101,7 +103,11 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 		if err := s.ChangeLog.Append(u.Name, rows); err != nil {
 			// the rows are committed; only the Python caches may show the change late
 			s.Log.Warn("hc_scan change log failed", "error", err)
-			res.LogWarning = "The data is saved, but the Python pages may show it late: " + err.Error()
+			detail := err.Error()
+			if errors.Is(err, ErrNoChangeLogFolder) {
+				detail = i18n.T(ctx, "hc.msg.log_no_folder", nil)
+			}
+			res.LogWarning = i18n.T(ctx, "hc.msg.log_warning", i18n.P{"detail": detail})
 		}
 	}
 	scans, _ := s.Drafts.Scans(ctx, k)
@@ -123,11 +129,11 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 }
 
 // buildRow creates the t_daily_attn_data row of one pending line from the freshly locked database state. It
-// returns a reason instead of a row when the line must not be saved.
-func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRecord) (DayRecord, string) {
+// returns a reason (a message of the catalog) instead of a row when the line must not be saved.
+func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRecord) (DayRecord, Msg) {
 	m, ok := d.machines.byID[e.MachineID]
 	if !ok {
-		return DayRecord{}, "the machine is not in the machine list any more"
+		return DayRecord{}, msg("hc.skip.machine_gone")
 	}
 	cur, hasCur := current[e.EE]
 	var work, leave []HCEntry
@@ -136,12 +142,12 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		work, leave, leaveHC = s.splitEntries(cur.Entries)
 	}
 	if e.Source == SourceAuto && len(work) > 0 {
-		return DayRecord{}, fmt.Sprintf("changed since the scan: the record now has %s. Scan the badge again.", work[0].Machine)
+		return DayRecord{}, msg("hc.skip.changed_record", "machine", work[0].Machine)
 	}
 	workHC := availHC(leaveHC)
 	if leaveHC >= 1-eps {
 		if !hasFlag(e.Flags, FlagFullDayLeave) {
-			return DayRecord{}, "changed since the scan: the record is now a full-day leave. Scan the badge again."
+			return DayRecord{}, msg("hc.skip.changed_leave")
 		}
 		leave = nil // the shift leader confirmed that the person is working
 	}
@@ -160,7 +166,7 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		schedule = cur.Schedule
 	}
 	if shift == "" || schedule == "" {
-		return DayRecord{}, "the shift code or the calendar day type is unknown"
+		return DayRecord{}, msg("hc.skip.no_shift")
 	}
 
 	entries := make([]HCEntry, 0, len(leave)+1)
@@ -175,7 +181,7 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 	}
 	row.BuildIn = CalBuildInOT(shift, schedule, workHC)
 	row.TotalOT = round2(row.BuildIn + row.AddtOT)
-	return row, ""
+	return row, Msg{}
 }
 
 func workHC(r DayRecord, s *Service) float64 {
@@ -187,8 +193,8 @@ func workHC(r DayRecord, s *Service) float64 {
 	return round2(sum)
 }
 
-func warnOnly(flags []Flag) []Flag {
-	out := []Flag{}
+func warnOnly(flags []FlagView) []FlagView {
+	out := []FlagView{}
 	for _, f := range flags {
 		if f.Severity == SeverityWarn {
 			out = append(out, f)

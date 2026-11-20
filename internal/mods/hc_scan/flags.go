@@ -1,54 +1,89 @@
 package hcscan
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"dash_go/internal/core/i18n"
 )
 
+// say turns a message into the sentence of the language of the request. A line that a version 0.1.0 draft stored
+// has no message, only its English sentence, which is shown as it is.
+func say(ctx context.Context, m Msg, legacy string) string {
+	if m.Key == "" {
+		return legacy
+	}
+	p := make(i18n.P, len(m.Args))
+	for k, v := range m.Args {
+		p[k] = v
+	}
+	return i18n.T(ctx, m.Key, p)
+}
+
+// flagViews translates the flags of a line for the page.
+func flagViews(ctx context.Context, flags []Flag) []FlagView {
+	out := make([]FlagView, 0, len(flags))
+	for _, f := range flags {
+		out = append(out, FlagView{Code: f.Code, Severity: f.Severity, Text: say(ctx, f.Msg, f.Text)})
+	}
+	return out
+}
+
 // staticFlags are the facts found when a badge is scanned: the person is not on the roster, is not scheduled for
-// the session, is on leave or already has a record. They are shown in yellow so the shift leader can decide.
+// the session, is on leave or already has a record. They are shown in yellow so the shift leader can decide. The
+// texts are in the catalog (hc.flag.*), so they follow the language of the page.
 func (s *Service) staticFlags(d *dayData, p Person, rec *DayRecord, schedule string, leave []HCEntry, leaveHC float64, work []HCEntry) []Flag {
 	var flags []Flag
+	date := d.key.Date.Format("2006-01-02")
 
 	if ok, why := d.dir.InRoster(p, d.key.Process); !ok {
-		flags = append(flags, Flag{FlagNotInRoster, SeverityWarn, fmt.Sprintf("Not on the %s roster on %s: %s", d.key.Process, d.key.Date.Format("2006-01-02"), why)})
+		flags = append(flags, Flag{Code: FlagNotInRoster, Severity: SeverityWarn, Msg: why.with("process", d.key.Process).with("date", date)})
 	}
 
-	effective, source := schedule, "Scheduled"
+	effective, scheduled := schedule, true
 	if rec != nil && NormShift(rec.Actual) != "" {
-		effective, source = rec.Actual, "Recorded"
+		effective, scheduled = rec.Actual, false
 	}
 	switch norm := NormShift(effective); {
 	case strings.TrimSpace(effective) == "":
-		flags = append(flags, Flag{FlagShiftMismatch, SeverityWarn, fmt.Sprintf("No schedule found in the calendar for shift %s on this date", displayOr(p.Shift, "(unknown)"))})
+		if strings.TrimSpace(p.Shift) == "" {
+			flags = append(flags, Flag{Code: FlagShiftMismatch, Severity: SeverityWarn, Msg: msg("hc.flag.shift_no_schedule_unknown")})
+		} else {
+			flags = append(flags, Flag{Code: FlagShiftMismatch, Severity: SeverityWarn, Msg: msg("hc.flag.shift_no_schedule", "shift", p.Shift)})
+		}
 	case norm == "":
-		flags = append(flags, Flag{FlagShiftMismatch, SeverityWarn, fmt.Sprintf("Not scheduled to work on this date (day type %s)", effective)})
+		flags = append(flags, Flag{Code: FlagShiftMismatch, Severity: SeverityWarn, Msg: msg("hc.flag.shift_not_scheduled", "day_type", effective)})
 	case norm != d.key.Shift:
-		flags = append(flags, Flag{FlagShiftMismatch, SeverityWarn, fmt.Sprintf("%s %s (%s), but scanning in the %s shift", source, norm, effective, d.key.Shift)})
+		key := "hc.flag.shift_recorded"
+		if scheduled {
+			key = "hc.flag.shift_scheduled"
+		}
+		flags = append(flags, Flag{Code: FlagShiftMismatch, Severity: SeverityWarn, Msg: msg(key, "norm", norm, "day_type", effective, "shift", d.key.Shift)})
 	}
 
 	if leaveHC > 0 {
 		names := make([]string, 0, len(leave))
 		for _, h := range leave {
-			names = append(names, fmt.Sprintf("%s %s", shortLeave(h.Machine), trimFloat(h.HC)))
+			names = append(names, shortLeave(h.Machine)+" "+trimFloat(h.HC))
 		}
 		if leaveHC >= 1-eps {
-			flags = append(flags, Flag{FlagFullDayLeave, SeverityWarn, fmt.Sprintf("Full-day leave (%s). Saving replaces the leave record with the machine.", strings.Join(names, ", "))})
+			flags = append(flags, Flag{Code: FlagFullDayLeave, Severity: SeverityWarn, Msg: msg("hc.flag.leave_full", "leave", strings.Join(names, ", "))})
 		} else {
-			flags = append(flags, Flag{FlagPartDayLeave, SeverityInfo, fmt.Sprintf("Part-day leave (%s), %s HC is left for the machine", strings.Join(names, ", "), trimFloat(availHC(leaveHC)))})
+			flags = append(flags, Flag{Code: FlagPartDayLeave, Severity: SeverityInfo, Msg: msg("hc.flag.leave_part", "leave", strings.Join(names, ", "), "hc", trimFloat(availHC(leaveHC)))})
 		}
 	}
 
 	if len(work) > 0 {
 		parts := make([]string, 0, len(work))
 		for _, h := range work {
-			parts = append(parts, fmt.Sprintf("%s %s", h.Machine, trimFloat(h.HC)))
+			parts = append(parts, h.Machine+" "+trimFloat(h.HC))
 		}
 		sev := SeverityInfo
 		if NormShift(rec.Actual) != "" && NormShift(rec.Actual) != d.key.Shift {
 			sev = SeverityWarn
 		}
-		flags = append(flags, Flag{FlagHasRecord, sev, "Already has a record in the database: " + strings.Join(parts, ", ")})
+		flags = append(flags, Flag{Code: FlagHasRecord, Severity: sev, Msg: msg("hc.flag.has_record", "records", strings.Join(parts, ", "))})
 	}
 	return flags
 }
@@ -57,7 +92,11 @@ func (s *Service) staticFlags(d *dayData, p Person, rec *DayRecord, schedule str
 func (s *Service) dynamicFlags(d *dayData, e Entry, used map[string]float64) []Flag {
 	switch {
 	case e.Source == SourceNone || e.MachineID == "":
-		return []Flag{{FlagNoMachine, SeverityWarn, firstNonEmpty(e.Reason, "No machine assigned")}}
+		f := Flag{Code: FlagNoMachine, Severity: SeverityWarn, Msg: e.ReasonMsg, Text: e.Reason}
+		if f.Key == "" && strings.TrimSpace(f.Text) == "" {
+			f.Msg = msg("hc.flag.no_machine")
+		}
+		return []Flag{f}
 	default:
 		m, ok := d.machines.byID[e.MachineID]
 		if !ok {
@@ -67,16 +106,16 @@ func (s *Service) dynamicFlags(d *dayData, e Entry, used map[string]float64) []F
 		if e.Source != SourceExisting {
 			switch {
 			case m.Budget > 0 && used[m.ID] > m.Budget+eps:
-				flags = append(flags, Flag{FlagOverBudget, SeverityWarn, fmt.Sprintf("%s goes over its budget head count: %s / %s HC", m.Name, trimFloat(used[m.ID]), trimFloat(m.Budget))})
+				flags = append(flags, Flag{Code: FlagOverBudget, Severity: SeverityWarn, Msg: msg("hc.flag.over_budget", "machine", m.Name, "used", trimFloat(used[m.ID]), "budget", trimFloat(m.Budget))})
 			case m.Budget <= 0:
-				flags = append(flags, Flag{FlagOverBudget, SeverityInfo, fmt.Sprintf("No budget head count is maintained for %s", m.Name)})
+				flags = append(flags, Flag{Code: FlagOverBudget, Severity: SeverityInfo, Msg: msg("hc.flag.no_budget", "machine", m.Name)})
 			}
 		}
 		if e.Source == SourceManual && m.Routine() {
 			if m.CIMID == "" {
-				flags = append(flags, Flag{FlagNoMTR, SeverityWarn, fmt.Sprintf("%s has no MTR mapping, so the skill level cannot be checked", m.Name)})
+				flags = append(flags, Flag{Code: FlagNoMTR, Severity: SeverityWarn, Msg: msg("hc.flag.no_mtr_mapping", "machine", m.Name)})
 			} else if d.levelOn(e.EE, m) < 1 {
-				flags = append(flags, Flag{FlagNoMTR, SeverityWarn, fmt.Sprintf("No MTR record (Lv1 or higher) of %s on %s", e.Name, m.Name)})
+				flags = append(flags, Flag{Code: FlagNoMTR, Severity: SeverityWarn, Msg: msg("hc.flag.no_mtr_record", "name", e.Name, "machine", m.Name)})
 			}
 		}
 		return flags
@@ -91,8 +130,7 @@ func shortLeave(name string) string {
 }
 
 func trimFloat(v float64) string {
-	s := fmt.Sprintf("%.2f", v)
-	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	s := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 	if s == "" {
 		return "0"
 	}

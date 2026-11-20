@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-19 (module version 0.1.0). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Section 12 says what was verified and what was not.
+**Updated:** 2026-11-20 (module version 0.1.1). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -12,12 +12,12 @@ Entry point: IE dashboard > MQPD > Head Count > **Scan Assign** (button `mqpd-hc
 
 Scope:
 
-- In scope: scanning, the automatic assignment, the draft and its editing, Confirm, the login hand-over from Dash.
-- Out of scope in 0.1.0: the HC Allocation matrix (areas and OP positions are not shown, the machines of the process are listed flat), clock attendance (`t_mqpd_hc_attend`), budget editing, any other HC page.
+- In scope: scanning, the automatic assignment, the draft and its editing, Confirm, the login hand-over from Dash, the login page, English and Chinese, light and dark theme.
+- Out of scope (0.1.0 and 0.1.1): the HC Allocation matrix (areas and OP positions are not shown, the machines of the process are listed flat), clock attendance (`t_mqpd_hc_attend`), budget editing, any other HC page.
 
 ## 2. How it works
 
-1. The leader opens **Scan Assign** in Dash. `mqpd_hc_scan_assign_onclick` checks the login and that the user has at least one HeadCount permission, builds a signed one-time link (`build_dash_go_sso_url`) and navigates the browser to it.
+1. The leader opens **Scan Assign** in Dash. `mqpd_hc_scan_assign_onclick` checks the login and that the user has at least one HeadCount permission, builds a signed one-time link (`build_dash_go_sso_url`) and navigates the browser to it. (Since 0.1.1 the page can also be opened directly, for example from a bookmark on the scanning computer: without a session it leads to the login page of dash_go, see [shell_and_login.md](shell_and_login.md), section 7.)
 2. The Go service verifies the signature, consumes the one-time nonce, sets its own session cookie and redirects to the page.
 3. The page asks `api/me` for the processes the user may work on (answered by the Python backend, section 8). The leader **chooses the process first**; scanning is not possible before that. The production date (now minus 7 hours, like `get_shift_today`) and the shift (AM from 07:00 to 19:00, otherwise PM) are preset and can be changed.
 4. The scan box always has the focus. A barcode scanner types the employee ID; the page does not depend on the scanner pressing Enter. It looks for an employee ID in what was typed (pattern `employee_id_pattern`) after a 90 ms pause, so prefix or suffix characters of the barcode and lower case are tolerated. A manual entry works with Enter.
@@ -80,7 +80,7 @@ Tables of the `Auth` database (names and columns are the ones the Python code us
 | `t_daily_attn_calendar` | Day type of every shift column for the date. Read. |
 | `t_daily_attn_data` | Attendance and machine records. Read for the day and for the previous 7 days; **written** by Confirm. |
 
-Redis (JSON, written and read only by this module): the draft of a session `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries` (pending lines) and `...:scans` (who scanned, also after saving), 48 hour TTL; the one-time login nonces `dash_go:sso:nonce:<nonce>`.
+Redis (JSON, written and read only by this module): the draft of a session `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries` (pending lines) and `...:scans` (who scanned, also after saving), 48 hour TTL; the one-time login nonces `dash_go:sso:nonce:<nonce>`. Since 0.1.1 a line keeps its warnings (`flags[]`) and its reason (`reason_msg`) as a message, a catalog key and the values of its placeholders (`{"key": "hc.flag.over_budget", "args": {"machine": "...", "used": "2", "budget": "1"}}`), not as an English sentence; the sentence is made when the board is read, in the language of the request. Lines that version 0.1.0 stored (`reason`, `flags[].text`) are still shown, in English.
 
 In memory (60 seconds, 5 minutes for the calendar): machines, MTR matrix, calendar and the employee directory. When the database does not answer, the last cached values are used.
 
@@ -101,7 +101,7 @@ After saving, the lines leave the draft and the people count as scanned. A perso
 
 ## 7. HTTP API
 
-All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: no-store`. Errors are `{"error": "<message>", "code": "<code>"}`; technical details are only written to the log.
+All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: no-store`. Errors are `{"error": "<message>", "code": "<code>"}`; technical details are only written to the log. Every sentence in an answer (`error`, `message`, `reason`, `flags[].text`, the reasons of skipped lines, `log_warning`) is in the language of the request (cookie `dash_go_lang`, then `Accept-Language`, then English); the `code` values do not change with the language. The page itself (`GET /dash_go/hc_scan/`) is rendered by the shell and sends a visitor without a session to `/dash_go/login?next=...`.
 
 | Request | Purpose |
 |---|---|
@@ -120,7 +120,7 @@ POST requests need the header `X-Requested-With: dash_go` and are refused when t
 - Dash cannot give the Go service its browser login, so the link carries a token signed with `api.salt_3` (HMAC-SHA256, key derived with the label `dash_go/sso/v1`, valid 5 minutes, one use). The Python builder is `build_dash_go_sso_url` in `LocalListV3.py`; the Go verifier is `internal/core/auth`. A test vector fixes the format on both sides.
 - The service answers with a session cookie `dash_go_session` (HttpOnly, SameSite Lax, `Secure` behind https, `session_hours`, default 12). The link is only accepted for a local `next` path below `/dash_go/`.
 - Permissions are not copied to Go. The service asks the Python backend: `POST /api/user/hc_scan` with `{"func": "hc_user_processes", "user": "<ee_code>"}` and the header `Authorization` = md5 of `<salt_3>_<yymmddHH>` (the rule of the existing `/api/user` endpoint). The backend (`api_user_mgmt` in `appV2.py`) answers the display name and the processes returned by `check_daily_attn_permission` (HeadCount groups, `HeadCount-All`, `MQPD_AUTH_LIST`). The answer is cached for 60 seconds, except before saving.
-- Without a valid session every API call answers 401 and the page tells the user to open it again from Dash.
+- Without a valid session every API call answers 401. The page then shows "Session expired" with a button to the login page (until 0.1.0 it told the user to open the page again from Dash). The password and the Windows sign-in of 0.1.1 give the same session cookie; see [shell_and_login.md](shell_and_login.md).
 
 ## 9. Configuration
 
@@ -129,7 +129,7 @@ Two layers of JSON files are read, with the patch convention of the Python appli
 1. The config folder of the Python application (`config.json` + `patch_<hostname>.json`), given by `DASH_GO_DASH_CONFIG_DIR` or `dash_config_dir`. Used keys: `postgresql`, `redis`, `api.salt_3`, `api_server`, `cdn_data_folder`, `HC_PROCESS_LIST`, `SHIFT_LEAVE_PATTERN` (the leave options are its keys from the third on, in file order).
 2. `dash_go.json` + `dash_go_patch_<hostname>.json` in `DASH_GO_CONFIG_DIR` (default `./config`). It may override any key of layer 1. Example: `config/dash_go.example.json`.
 
-Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`.
+Service keys (top level of `dash_go.json`): `listen` (default `:8750`), `base_path` (`/dash_go`), `log_dir` (`logs`), `dash_home` (`/ie/`), `session_hours` (12), `dash_config_dir`, and since 0.1.1 `photo_url_template`, `dash_api_url`, `login_password`, `sso_require_same_ip`, `trusted_proxies` (see [shell_and_login.md](shell_and_login.md), section 8; the Windows sign-in also needs `sso_server` and `api.salt_2` in the Python configuration).
 
 Module keys (`modules.hc_scan`):
 
@@ -141,14 +141,14 @@ Module keys (`modules.hc_scan`):
 | `recent_days` | 7 | Days of history that rank machines and that are searched for the last record of a leader. |
 | `leader_activity_names` | `["Group Leader"]` | Names of the non-routine rows leaders are placed on (case and spaces are ignored). |
 | `leader_by_history` | `true` | Recognise leaders by their most recent record until their direct type is `Shift Leader`. Set `false` once the direct types are maintained. |
-| `photo_url_template` | `/api/static/hr/{ee_code}.webp` | Photo of the employee; initials are shown when it is missing. |
-| `dash_api_url` | `http://<api_server>/api` | Root of the Python API. |
+| `photo_url_template` | the service setting of the same name (`/api/static/hr/{ee_code}.webp`) | Photo of the employee; initials are shown when it is missing. Set it here only to override the service setting. |
+| `dash_api_url` | the service setting of the same name (`http://<api_server>/api`) | Root of the Python API. Set it here only to override the service setting. |
 | `dash_data_dir` | none | Data folder of the Python application that holds `DailyAttnData.log`. Set it on every host where Python pages cache the data. |
 | `production_day_offset_hours` | 7 | The production day starts at 07:00. |
 | `am_from_hour`, `pm_from_hour` | 7, 19 | Default shift by the clock. |
 | `poll_ms` | 3000 | Refresh rate of the page. |
 
-Environment variables: `DASH_GO_CONFIG_DIR`, `DASH_GO_DASH_CONFIG_DIR`, `DASH_GO_LISTEN`, and for secrets `DASH_GO_PG_PASSWORD`, `DASH_GO_REDIS_PASSWORD`, `DASH_GO_API_SALT`, which win over the files. Secrets are never logged.
+Environment variables: `DASH_GO_CONFIG_DIR`, `DASH_GO_DASH_CONFIG_DIR`, `DASH_GO_LISTEN`, and for secrets `DASH_GO_PG_PASSWORD`, `DASH_GO_REDIS_PASSWORD`, `DASH_GO_API_SALT`, `DASH_GO_API_SALT_2`, which win over the files. Secrets are never logged.
 
 Python side: the optional key `dash_go_url` of `config.json` (default `/dash_go/`; an absolute URL when the service runs on another host than the Dash application).
 
@@ -170,7 +170,8 @@ Run one instance only: the lock that keeps two terminals from taking the last se
 - **MTR changes are not seen.** `MTR data:` on the page is the newest `updated_at` of `t_mtr_checkpoint`. The Python application refreshes the table from LMS when its pages read the MTR data, so it can be stale when nobody opened them. Cached for 60 seconds.
 - **Saved data is not shown on the Python pages.** The save answered "The data is saved, but the Python pages may show it late": the change log folder cannot be written (`dash_data_dir`, `cdn_data_folder`). Fix the permission; touching `DailyAttnData.log` refreshes the pages.
 - **"Your permission could not be verified".** The Python API does not answer or rejects the signature: check `api_server` or `dash_api_url`, that `api.salt_3` is the same on both sides, and that the clocks and time zones of both hosts agree (the signature contains the hour).
-- **"The login link has expired / was already used".** Open **Scan Assign** from Dash again.
+- **"The login link from Dash has expired / was already used".** The login page of dash_go shows this since 0.1.1 (before, a plain error page): sign in there, or open **Scan Assign** from Dash again.
+- **"No permission" after signing in.** The account is valid, but the Python backend lists no HC process for it (HeadCount groups, `HeadCount-All`, `MQPD_AUTH_LIST`): ask the HeadCount group admin for access. In 0.1.0 this case showed a blank page because the list of processes was `null`; 0.1.1 sends an empty list and the page says so (found by the browser test of 0.1.1).
 - **A person is flagged yellow although everything looks right.** The reason is written on the line. Roster and shift follow `t_daily_attn_member`, `t_mes_ee` and `t_daily_attn_calendar`, exactly like the HC Input page.
 - **Where to look.** `logs\dash_go-<date>.log` (requests without query strings, failures with the step that failed). The log lines in `DailyAttnData.log` are marked `dash_go hc_scan`.
 - **Resetting a session.** Delete the Redis keys `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`, or press "Clear draft". Get approval before touching a production Redis.
@@ -185,6 +186,7 @@ Done (2026-11-19):
 - The real binary was run with a Python configuration folder, a fake `/api/user` endpoint and the scratch database: login with a link made by the real `build_dash_go_sso_url`, the process list, scans, Confirm, rows in `t_daily_attn_data`, change log lines in both folders, a replayed link refused, the page without login.
 - The page was driven in headless Chrome against that database (scan with and without Enter, barcode wrapper, duplicate, unknown ID, every warning, manual change, removal, acknowledgement dialog, saving, scan after saving). No JavaScript error was reported.
 - The Python additions have unit tests (`tests/test_dash_go_link.py`); `tests/test_callback_registration.py` still passes.
+- 0.1.1 (2026-11-20): the module was moved into the shell and every text into the catalogs. The old tests still pass; new tests cover the catalogs (`catalog_test.go`: both languages complete, every key and value the code uses, no unused text) and the languages (`language_test.go`: page, API errors, a draft read in both languages, drafts of 0.1.0). The real binary was run again with the scratch database and a stand-in for the Python backend, and the page was driven in headless Chrome in both themes and both languages: details in [shell_and_login.md](shell_and_login.md), section 12.
 
 **Not verified:**
 
@@ -192,6 +194,7 @@ Done (2026-11-19):
 - Real photos, a real barcode scanner (whether it presses Enter, which characters it adds), and a real Redis server (the Redis store was tested with an in-process Redis).
 - The call `hc_user_processes` against a running Python backend, and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
 - The nginx location and the port on s2.
+- The Chinese wording has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
 
 ## 13. Decisions and known limits
 
@@ -203,12 +206,13 @@ Done (2026-11-19):
 - Clock attendance is not used, and the HC Allocation areas are not shown.
 - The order of the scans influences who gets which seat (greedy, no rebalance).
 - One service instance, one shared draft per process, date and shift.
+- Texts live in the catalogs (`internal/mods/hc_scan/i18n/{en,zh}.json`); a draft stores messages, not sentences, so it reads in the language of whoever looks at it.
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-19（模块版本 0.1.0）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-20（模块版本 0.1.1）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -220,12 +224,12 @@ HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都�
 
 范围：
 
-- 包含：扫描、自动分派、草稿及其编辑、Confirm、从 Dash 跳转时的登录交接。
-- 0.1.0 不包含：HC Allocation 矩阵（不显示 area 和 OP 位置，process 的 machine 平铺列出）、打卡考勤（`t_mqpd_hc_attend`）、预算编辑以及其他 HC 页面。
+- 包含：扫描、自动分派、草稿及其编辑、Confirm、从 Dash 跳转时的登录交接、登录页、中英文、浅色和深色主题。
+- 不包含（0.1.0 和 0.1.1）：HC Allocation 矩阵（不显示 area 和 OP 位置，process 的 machine 平铺列出）、打卡考勤（`t_mqpd_hc_attend`）、预算编辑以及其他 HC 页面。
 
 ## 2. 工作流程
 
-1. 领班在 Dash 中点击 **Scan Assign**。`mqpd_hc_scan_assign_onclick` 检查登录状态和用户至少拥有一个 HeadCount 权限，生成带签名的一次性链接（`build_dash_go_sso_url`），并让浏览器跳转过去。
+1. 领班在 Dash 中点击 **Scan Assign**。`mqpd_hc_scan_assign_onclick` 检查登录状态和用户至少拥有一个 HeadCount 权限，生成带签名的一次性链接（`build_dash_go_sso_url`），并让浏览器跳转过去。（自 0.1.1 起也可以直接打开页面，例如扫描用电脑上的书签：没有会话时会跳到 dash_go 的登录页，见 [shell_and_login.md](shell_and_login.md) 第 7 节。）
 2. Go 服务验证签名，消耗一次性 nonce，设置自己的 session cookie，并重定向到页面。
 3. 页面通过 `api/me` 获取用户可操作的 process（由 Python 后端回答，见第 8 节）。领班**必须先选择 process**，之前无法扫描。生产日期（当前时间减 7 小时，与 `get_shift_today` 相同）和班次（07:00 到 19:00 为 AM，其余为 PM）有默认值，可以修改。
 4. 扫描框始终保持焦点。扫码枪输入员工 ID；页面不依赖扫码枪是否发送 Enter。输入停顿 90 毫秒后，页面在输入内容中查找员工 ID（规则 `employee_id_pattern`），所以条码的前后缀字符和小写都可以容忍。手动输入按 Enter。
@@ -288,7 +292,7 @@ HC Scan Assign 让领班在班次开始时扫描员工工牌。每次扫描都�
 | `t_daily_attn_calendar` | 当天各班次列的 day type。读取。 |
 | `t_daily_attn_data` | 考勤和 machine 记录。读取当天和前 7 天；由 Confirm **写入**。 |
 
-Redis（JSON，仅由本模块写入和读取）：会话草稿 `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries`（待保存的行）和 `...:scans`（谁扫描过，保存之后也保留），TTL 48 小时；一次性登录 nonce `dash_go:sso:nonce:<nonce>`。
+Redis（JSON，仅由本模块写入和读取）：会话草稿 `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<AM|PM>:entries`（待保存的行）和 `...:scans`（谁扫描过，保存之后也保留），TTL 48 小时；一次性登录 nonce `dash_go:sso:nonce:<nonce>`。自 0.1.1 起，一行的警告（`flags[]`）和原因（`reason_msg`）保存为消息，即词条键加上占位符的值（`{"key": "hc.flag.over_budget", "args": {"machine": "...", "used": "2", "budget": "1"}}`），而不是英文句子；句子在读取看板时按请求的语言生成。0.1.0 版保存的行（`reason`、`flags[].text`）仍会显示，为英文。
 
 内存缓存（60 秒，日历为 5 分钟）：machine、MTR 矩阵、日历和员工目录。数据库不响应时使用最近一次的缓存值。
 
@@ -309,7 +313,7 @@ Confirm 对每一行按 `uid = <ee_code>_<yyyymmdd>` 做一次 upsert 写入 `t_
 
 ## 7. HTTP 接口
 
-所有路径都在 `/dash_go/hc_scan/` 之下。响应为 JSON，带 `Cache-Control: no-store`。错误格式为 `{"error": "<message>", "code": "<code>"}`；技术细节只写入日志。
+所有路径都在 `/dash_go/hc_scan/` 之下。响应为 JSON，带 `Cache-Control: no-store`。错误格式为 `{"error": "<message>", "code": "<code>"}`；技术细节只写入日志。响应中的每个句子（`error`、`message`、`reason`、`flags[].text`、被跳过的行的原因、`log_warning`）都使用请求的语言（先看 cookie `dash_go_lang`，再看 `Accept-Language`，最后用英文）；`code` 的值不随语言变化。页面本身（`GET /dash_go/hc_scan/`）由 shell 渲染，没有会话的访问者会被带到 `/dash_go/login?next=...`。
 
 | 请求 | 用途 |
 |---|---|
@@ -328,7 +332,7 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 - Dash 无法把浏览器的登录状态交给 Go 服务，所以链接中带有用 `api.salt_3` 签名的 token（HMAC-SHA256，密钥由标签 `dash_go/sso/v1` 派生，有效期 5 分钟，只能使用一次）。Python 端的生成函数是 `LocalListV3.py` 中的 `build_dash_go_sso_url`；Go 端的验证在 `internal/core/auth`。一个测试向量在两端固定了格式。
 - 服务返回 session cookie `dash_go_session`（HttpOnly、SameSite Lax、https 下带 `Secure`、有效期 `session_hours`，默认 12 小时）。链接只接受 `/dash_go/` 之下的本地 `next` 路径。
 - 权限不复制到 Go。服务向 Python 后端查询：`POST /api/user/hc_scan`，内容为 `{"func": "hc_user_processes", "user": "<ee_code>"}`，请求头 `Authorization` 为 `<salt_3>_<yymmddHH>` 的 md5（沿用现有 `/api/user` 接口的规则）。后端（`appV2.py` 中的 `api_user_mgmt`）返回显示姓名以及 `check_daily_attn_permission` 得出的 process 列表（HeadCount 组、`HeadCount-All`、`MQPD_AUTH_LIST`）。结果缓存 60 秒，保存之前除外。
-- 没有有效 session 时，所有 API 调用返回 401，页面提示用户重新从 Dash 打开。
+- 没有有效 session 时，所有 API 调用返回 401。页面随后显示“登录已过期”和一个去登录页的按钮（0.1.0 为止，它会提示用户重新从 Dash 打开页面）。0.1.1 的密码登录和 Windows 登录得到的是同一个 session cookie；见 [shell_and_login.md](shell_and_login.md)。
 
 ## 9. 配置
 
@@ -337,7 +341,7 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 1. Python 应用的配置文件夹（`config.json` + `patch_<hostname>.json`），由 `DASH_GO_DASH_CONFIG_DIR` 或 `dash_config_dir` 指定。使用的 key：`postgresql`、`redis`、`api.salt_3`、`api_server`、`cdn_data_folder`、`HC_PROCESS_LIST`、`SHIFT_LEAVE_PATTERN`（请假选项是它从第三个 key 起的各个 key，按文件中的顺序）。
 2. `DASH_GO_CONFIG_DIR`（默认 `./config`）中的 `dash_go.json` + `dash_go_patch_<hostname>.json`。它可以覆盖第 1 层的任何 key。示例见 `config/dash_go.example.json`。
 
-服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`。
+服务 key（`dash_go.json` 顶层）：`listen`（默认 `:8750`）、`base_path`（`/dash_go`）、`log_dir`（`logs`）、`dash_home`（`/ie/`）、`session_hours`（12）、`dash_config_dir`，以及自 0.1.1 起的 `photo_url_template`、`dash_api_url`、`login_password`、`sso_require_same_ip`、`trusted_proxies`（见 [shell_and_login.md](shell_and_login.md) 第 8 节；Windows 登录还需要 Python 配置中的 `sso_server` 和 `api.salt_2`）。
 
 模块 key（`modules.hc_scan`）：
 
@@ -349,14 +353,14 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 | `recent_days` | 7 | 用于 machine 排序的历史天数，也是查找 leader 最近一条记录的范围。 |
 | `leader_activity_names` | `["Group Leader"]` | leader 被安排到的非 routine 行的名称（忽略大小写和空格）。 |
 | `leader_by_history` | `true` | 在 direct type 变成 `Shift Leader` 之前，用最近一条记录来识别 leader。direct type 维护好之后设为 `false`。 |
-| `photo_url_template` | `/api/static/hr/{ee_code}.webp` | 员工照片；缺失时显示姓名首字母。 |
-| `dash_api_url` | `http://<api_server>/api` | Python API 的根地址。 |
+| `photo_url_template` | 同名的服务设置（`/api/static/hr/{ee_code}.webp`） | 员工照片；缺失时显示姓名首字母。只有想覆盖服务设置时才在这里设置。 |
+| `dash_api_url` | 同名的服务设置（`http://<api_server>/api`） | Python API 的根地址。只有想覆盖服务设置时才在这里设置。 |
 | `dash_data_dir` | 无 | 存放 `DailyAttnData.log` 的 Python 应用 data 文件夹。在每台由 Python 页面缓存数据的主机上都要设置。 |
 | `production_day_offset_hours` | 7 | 生产日从 07:00 开始。 |
 | `am_from_hour`、`pm_from_hour` | 7、19 | 按时钟决定的默认班次。 |
 | `poll_ms` | 3000 | 页面刷新间隔。 |
 
-环境变量：`DASH_GO_CONFIG_DIR`、`DASH_GO_DASH_CONFIG_DIR`、`DASH_GO_LISTEN`，以及用于机密信息的 `DASH_GO_PG_PASSWORD`、`DASH_GO_REDIS_PASSWORD`、`DASH_GO_API_SALT`，它们优先于文件。机密信息不会写入日志。
+环境变量：`DASH_GO_CONFIG_DIR`、`DASH_GO_DASH_CONFIG_DIR`、`DASH_GO_LISTEN`，以及用于机密信息的 `DASH_GO_PG_PASSWORD`、`DASH_GO_REDIS_PASSWORD`、`DASH_GO_API_SALT`、`DASH_GO_API_SALT_2`，它们优先于文件。机密信息不会写入日志。
 
 Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`；当服务运行在与 Dash 应用不同的主机上时填写绝对 URL）。
 
@@ -378,7 +382,8 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - **看不到 MTR 的变更。** 页面上的 `MTR data:` 是 `t_mtr_checkpoint` 最新的 `updated_at`。Python 应用在它的页面读取 MTR 数据时才从 LMS 刷新该表，所以没人打开那些页面时可能是旧的。缓存 60 秒。
 - **Python 页面看不到已保存的数据。** 保存时提示 “The data is saved, but the Python pages may show it late”：变更日志文件夹无法写入（`dash_data_dir`、`cdn_data_folder`）。修复权限；对 `DailyAttnData.log` 做一次追加或 touch 即可刷新页面。
 - **“Your permission could not be verified”。** Python API 没有响应或拒绝了签名：检查 `api_server` 或 `dash_api_url`，两边的 `api.salt_3` 是否相同，以及两台主机的时钟和时区是否一致（签名包含小时）。
-- **“The login link has expired / was already used”。** 请重新从 Dash 打开 **Scan Assign**。
+- **“The login link from Dash has expired / was already used”。** 自 0.1.1 起由 dash_go 的登录页显示（以前是一个纯错误页）：在那里登录，或重新从 Dash 打开 **Scan Assign**。
+- **登录后提示“没有权限”。** 账号有效，但 Python 后端没有给它列出任何 HC process（HeadCount 组、`HeadCount-All`、`MQPD_AUTH_LIST`）：请联系 HeadCount 组的管理员申请权限。0.1.0 中这种情况会显示空白页，因为 process 列表是 `null`；0.1.1 返回空列表，页面会说明情况（由 0.1.1 的浏览器测试发现）。
 - **某人明明正常却被标黄。** 原因写在该行上。名单和班次与 HC Input 页面一样，来自 `t_daily_attn_member`、`t_mes_ee` 和 `t_daily_attn_calendar`。
 - **去哪里看。** `logs\dash_go-<date>.log`（请求不含查询字符串，失败记录包含失败的步骤）。`DailyAttnData.log` 中的日志行带有 `dash_go hc_scan` 标记。
 - **重置会话。** 删除 Redis key `dash_go:hc_scan:v1:<process>:<yyyymmdd>:<shift>:*`，或者按 “Clear draft”。操作生产环境 Redis 之前先取得批准。
@@ -393,6 +398,7 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 真实的可执行文件用 Python 配置文件夹、模拟的 `/api/user` 接口和临时数据库运行过：用真实的 `build_dash_go_sso_url` 生成的链接登录、process 列表、扫描、Confirm、`t_daily_attn_data` 中的行、两个文件夹中的变更日志行、重复使用的链接被拒绝、未登录的页面。
 - 页面在无头 Chrome 中对该数据库做了操作（带和不带 Enter 的扫描、条码前后缀、重复扫描、未知 ID、每一种警告、手动修改、删除、确认对话框、保存、保存后再次扫描）。没有 JavaScript 报错。
 - Python 新增部分有单元测试（`tests/test_dash_go_link.py`）；`tests/test_callback_registration.py` 仍然通过。
+- 0.1.1（2026-11-20）：模块被移入 shell，所有文字被移入词条文件。原有的测试仍然通过；新的测试覆盖词条（`catalog_test.go`：两种语言完整、代码用到的每个键和值、没有未使用的文字）和语言（`language_test.go`：页面、API 错误、一份草稿在两种语言下阅读、0.1.0 的草稿）。真实的可执行文件配合临时数据库和一个 Python 后端的替身再次运行，页面在两种主题和两种语言下用无头 Chrome 操作过：详情见 [shell_and_login.md](shell_and_login.md) 第 12 节。
 
 **没有验证：**
 
@@ -400,6 +406,7 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 真实的照片、真实的扫码枪（是否发送 Enter、会加哪些字符）以及真实的 Redis 服务器（Redis 存储只用进程内的 Redis 测试过）。
 - 针对运行中的 Python 后端调用 `hc_user_processes`，以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
 - s2 上的 nginx location 和端口。
+- 使用者对中文措辞的审阅；人员的头像（页面只在没有头像的情况下试过）。
 
 ## 13. 决定与已知限制
 
@@ -411,3 +418,4 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 不使用打卡考勤，也不显示 HC Allocation 的 area。
 - 扫描顺序会影响谁得到哪个位置（贪心，没有重新平衡）。
 - 只有一个服务实例；每个 process、日期、班次共用一份草稿。
+- 文字在词条文件中（`internal/mods/hc_scan/i18n/{en,zh}.json`）；草稿保存的是消息而不是句子，所以它按查看者的语言显示。

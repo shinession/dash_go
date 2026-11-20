@@ -20,14 +20,18 @@ import (
 
 	"dash_go/internal/core/auth"
 	"dash_go/internal/core/config"
+	"dash_go/internal/core/shell"
 )
 
-// Info describes a module in the landing page and in the logs.
+// Info describes a module in the landing page and in the logs. The Key fields are message keys of the catalog the
+// module registered; the landing page shows the translated text and falls back to Title and Description.
 type Info struct {
-	Name        string
-	Title       string
-	Version     string
-	Description string
+	Name           string
+	Title          string
+	TitleKey       string
+	Version        string
+	Description    string
+	DescriptionKey string
 }
 
 // Module is implemented by every module.
@@ -83,10 +87,11 @@ func New(name string) (Module, error) {
 // Env is the shared infrastructure the server gives to each module. The database and Redis connections are
 // opened on first use, so a binary that only contains modules without a database does not need either.
 type Env struct {
-	Cfg  *config.Config
-	Log  *slog.Logger
-	Auth *auth.Service
-	Base string // URL prefix without trailing slash, for example /dash_go
+	Cfg   *config.Config
+	Log   *slog.Logger
+	Auth  *auth.Service
+	Shell *shell.Shell // the frame of the pages: a module gives it the content of its page
+	Base  string       // URL prefix without trailing slash, for example /dash_go
 
 	pgOnce sync.Once
 	pg     *pgxpool.Pool

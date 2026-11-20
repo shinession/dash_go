@@ -2,11 +2,12 @@ package hcscan
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/i18n"
 )
 
 // Scan handles one badge read: it finds the employee, assigns a machine by the MTR rules and stores the result in
@@ -17,7 +18,7 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 	}
 	ee, ok := s.ids.Extract(input)
 	if !ok {
-		return nil, newError(400, "invalid_id", "%q is not a valid employee ID", clip(strings.TrimSpace(input), 40))
+		return nil, newError(400, "invalid_id", i18n.P{"input": clip(strings.TrimSpace(input), 40)})
 	}
 	unlock := s.locks.lock(k.id())
 	defer unlock()
@@ -37,7 +38,7 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 	used := s.usage(d, pending)
 
 	if e, ok := pending[ee]; ok {
-		return &ScanResult{Status: "duplicate", Message: fmt.Sprintf("%s already scanned at %s", e.Name, e.ScannedAt.Local().Format("15:04")), Entry: s.entryView(d, e, used)}, nil
+		return &ScanResult{Status: "duplicate", Message: i18n.T(ctx, "hc.msg.scan_duplicate", i18n.P{"name": e.Name, "time": e.ScannedAt.Local().Format("15:04")}), Entry: s.entryView(ctx, d, e, used)}, nil
 	}
 
 	person, found := d.dir.Lookup(ee)
@@ -47,7 +48,7 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 			return nil, s.internal("look up employee", err)
 		}
 		if row == nil {
-			return nil, newError(404, "unknown_employee", "Employee ID %s was not found in the MES employee list or the HC members.", ee)
+			return nil, newError(404, "unknown_employee", i18n.P{"ee": ee})
 		}
 		person, found = MESPerson(*row), true
 	}
@@ -64,11 +65,11 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 	status := "assigned"
 	switch {
 	case scans[ee].ConfirmedAt != nil && len(e.Existing) > 0:
-		e.Source, e.Reason = SourceExisting, fmt.Sprintf("Scanned and saved at %s", scans[ee].ConfirmedAt.Local().Format("15:04"))
+		e.Source, e.ReasonMsg = SourceExisting, msg("hc.reason.saved", "time", scans[ee].ConfirmedAt.Local().Format("15:04"))
 		s.useExisting(d, &e)
 		status = "saved"
 	case len(e.Existing) > 0:
-		e.Source, e.Reason = SourceExisting, "Already assigned in the database"
+		e.Source, e.ReasonMsg = SourceExisting, msg("hc.reason.existing")
 		s.useExisting(d, &e)
 		status = "existing"
 	default:
@@ -81,7 +82,7 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 	}
 
 	if status == "saved" {
-		return &ScanResult{Status: status, Message: fmt.Sprintf("%s was already scanned and saved", e.Name), Entry: s.entryView(d, e, used)}, nil
+		return &ScanResult{Status: status, Message: i18n.T(ctx, "hc.msg.scan_saved", i18n.P{"name": e.Name}), Entry: s.entryView(ctx, d, e, used)}, nil
 	}
 	if err := s.Drafts.PutEntry(ctx, k, e); err != nil {
 		return nil, s.internal("save draft", err)
@@ -91,7 +92,7 @@ func (s *Service) Scan(ctx context.Context, u auth.User, k Key, input string) (*
 	}
 	pending[ee] = e
 	used = s.usage(d, pending)
-	return &ScanResult{Status: status, Message: s.scanMessage(e, status), Entry: s.entryView(d, e, used)}, nil
+	return &ScanResult{Status: status, Message: s.scanMessage(ctx, e, status), Entry: s.entryView(ctx, d, e, used)}, nil
 }
 
 // baseEntry fills everything about a scanned person that does not depend on the machine choice.
@@ -101,7 +102,7 @@ func (s *Service) baseEntry(u auth.User, d *dayData, p Person, rec *DayRecord, n
 		shiftCode = rec.Shift
 	}
 	if shiftCode == "" {
-		return Entry{}, newError(422, "no_shift", "%s (%s) has no shift code in the MES list or the HC members, so a record cannot be built. Add the member first (HC Input > Tools > Member).", p.Name, p.EE)
+		return Entry{}, newError(422, "no_shift", i18n.P{"name": p.Name, "ee": p.EE})
 	}
 	schedule := d.schedule(shiftCode)
 	if schedule == "" && rec != nil {
@@ -155,31 +156,37 @@ func (s *Service) autoAssign(ctx context.Context, d *dayData, e *Entry, p Person
 	ranked := RankMachines(d.machines.machines, func(m Machine) int { return d.levelOn(e.EE, m) }, recent, remaining, e.HC)
 	if len(ranked) == 0 {
 		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceNone, "", "", 0, 0
-		e.Reason = s.noMachineReason(d, e.EE, e.HC)
+		e.ReasonMsg = s.noMachineReason(d, e.EE, e.HC)
 		return nil
 	}
 	best := ranked[0]
 	e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceAuto, best.Machine.ID, best.Machine.Name, best.Level, best.Recent
-	e.Reason = fmt.Sprintf("Lv%d on %s", best.Level, best.Machine.Name)
+	level := strconv.Itoa(best.Level)
 	if best.Recent > 0 {
-		e.Reason += fmt.Sprintf("; worked there %d of the last %d days", best.Recent, s.Settings.RecentDays)
+		e.ReasonMsg = msg("hc.reason.auto_recent", "level", level, "machine", best.Machine.Name, "days", strconv.Itoa(best.Recent), "window", strconv.Itoa(s.Settings.RecentDays))
+	} else {
+		e.ReasonMsg = msg("hc.reason.auto", "level", level, "machine", best.Machine.Name)
 	}
 	return nil
 }
 
 // placeLeader puts a leader on the leader row, or explains why that is not possible.
-func (s *Service) placeLeader(d *dayData, e *Entry, row Machine, why string, recent map[string]int, used map[string]float64) error {
+func (s *Service) placeLeader(d *dayData, e *Entry, row Machine, why Msg, recent map[string]int, used map[string]float64) error {
 	if row.Budget > 0 && row.Budget-used[row.ID]+eps < e.HC {
 		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceNone, "", "", 0, 0
-		e.Reason = fmt.Sprintf("%s: the %s row is full (%s / %s HC). Assign by hand.", why, row.Name, trimFloat(used[row.ID]), trimFloat(row.Budget))
+		full := Msg{Key: why.Key + "_full", Args: map[string]string{"row": row.Name, "used": trimFloat(used[row.ID]), "budget": trimFloat(row.Budget)}}
+		for k, v := range why.Args {
+			full.Args[k] = v
+		}
+		e.ReasonMsg = full
 		return nil
 	}
 	e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceAuto, row.ID, row.Name, d.levelOn(e.EE, row), recent[row.ID]
-	e.Reason = why
+	e.ReasonMsg = why
 	return nil
 }
 
-func (s *Service) noMachineReason(d *dayData, ee string, need float64) string {
+func (s *Service) noMachineReason(d *dayData, ee string, need float64) Msg {
 	mapped, qualified := 0, 0
 	for _, m := range d.machines.machines {
 		if !m.Routine() || m.CIMID == "" {
@@ -192,22 +199,25 @@ func (s *Service) noMachineReason(d *dayData, ee string, need float64) string {
 	}
 	switch {
 	case mapped == 0:
-		return fmt.Sprintf("No %s machine has an MTR mapping, so nobody can be assigned automatically", d.key.Process)
+		return msg("hc.reason.no_mapping", "process", d.key.Process)
 	case qualified == 0:
-		return fmt.Sprintf("No MTR record (Lv1 or higher) on any %s machine. Assign by hand or update the training record.", d.key.Process)
+		return msg("hc.reason.no_mtr", "process", d.key.Process)
 	default:
-		return fmt.Sprintf("All %d machine(s) with MTR Lv1 or higher are full (no room for %s HC). Assign by hand.", qualified, trimFloat(need))
+		return msg("hc.reason.all_full", "count", strconv.Itoa(qualified), "need", trimFloat(need))
 	}
 }
 
-func (s *Service) scanMessage(e Entry, status string) string {
+func (s *Service) scanMessage(ctx context.Context, e Entry, status string) string {
 	switch status {
 	case "assigned":
-		return fmt.Sprintf("%s -> %s", e.Name, e.MachineName)
+		return i18n.T(ctx, "hc.msg.scan_assigned", i18n.P{"name": e.Name, "machine": e.MachineName})
 	case "existing":
-		return fmt.Sprintf("%s already has %s", e.Name, firstNonEmpty(e.MachineName, "a record"))
+		if strings.TrimSpace(e.MachineName) == "" {
+			return i18n.T(ctx, "hc.msg.scan_existing_record", i18n.P{"name": e.Name})
+		}
+		return i18n.T(ctx, "hc.msg.scan_existing", i18n.P{"name": e.Name, "machine": e.MachineName})
 	default:
-		return fmt.Sprintf("%s: no machine could be assigned", e.Name)
+		return i18n.T(ctx, "hc.msg.scan_unassigned", i18n.P{"name": e.Name})
 	}
 }
 
@@ -225,7 +235,7 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 	}
 	e, ok := pending[ee]
 	if !ok {
-		return nil, newError(404, "not_in_draft", "%s is not in the draft any more. Scan the badge again.", ee)
+		return nil, newError(404, "not_in_draft", i18n.P{"ee": ee})
 	}
 	d, err := s.loadDay(ctx, k)
 	if err != nil {
@@ -233,11 +243,11 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 	}
 	if machineID == "" {
 		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays, e.HC = SourceNone, "", "", 0, 0, availHC(e.LeaveHC)
-		e.Reason = "Assignment removed by the shift leader"
+		e.ReasonMsg = msg("hc.reason.removed")
 	} else {
 		m, ok := d.machines.byID[machineID]
 		if !ok {
-			return nil, newError(400, "bad_machine", "Unknown machine %q for %s", clip(machineID, 40), k.Process)
+			return nil, newError(400, "bad_machine", i18n.P{"machine": clip(machineID, 40), "process": k.Process})
 		}
 		history, err := s.Repo.History(ctx, []string{e.EE}, k.Date.AddDate(0, 0, -s.Settings.RecentDays), k.Date)
 		if err != nil {
@@ -245,13 +255,13 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 		}
 		e.Source, e.MachineID, e.MachineName, e.HC = SourceManual, m.ID, m.Name, availHC(e.LeaveHC)
 		e.Level, e.RecentDays = d.levelOn(e.EE, m), s.recentDays(d, history)[m.ID]
-		e.Reason = "Chosen by " + u.Name
+		e.ReasonMsg = msg("hc.reason.chosen", "name", u.Name)
 	}
 	if err := s.Drafts.PutEntry(ctx, k, e); err != nil {
 		return nil, s.internal("save draft", err)
 	}
 	pending[ee] = e
-	v := s.entryView(d, e, s.usage(d, pending))
+	v := s.entryView(ctx, d, e, s.usage(d, pending))
 	return &v, nil
 }
 
@@ -312,5 +322,11 @@ func (s *Service) Reset(ctx context.Context, u auth.User, k Key) error {
 // internal logs the technical error and returns a message without technical details for the browser.
 func (s *Service) internal(what string, err error) *Error {
 	s.Log.Error("hc_scan failure", "step", what, "error", err)
-	return newError(500, "internal", "The server could not %s. Try again; if it keeps failing, contact the administrator.", what)
+	return newError(500, "internal", i18n.P{"step": stepKey(what)})
+}
+
+// stepKey is the catalog key that names a step of the service ("read draft" is hc.step.read_draft), so the message
+// of a failed request can say what was being done in the language of the page.
+func stepKey(what string) string {
+	return "hc.step." + strings.ReplaceAll(what, " ", "_")
 }

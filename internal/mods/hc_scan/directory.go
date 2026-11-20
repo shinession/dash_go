@@ -128,18 +128,25 @@ func (d *Directory) Resigned(p Person) bool {
 	return p.ResignDate != nil && DateOnly(*p.ResignDate).Before(d.date)
 }
 
-// InRoster reports whether the person belongs to the roster of the process on the date, and if not, why.
-func (d *Directory) InRoster(p Person, process string) (bool, string) {
+// InRoster reports whether the person belongs to the roster of the process on the date, and if not, why. The reason
+// is a message of the catalog (hc.flag.roster_*); the caller adds the process and the date.
+func (d *Directory) InRoster(p Person, process string) (bool, Msg) {
 	if d.Resigned(p) {
-		return false, "resigned on " + p.ResignDate.Format("2006-01-02")
+		return false, msg("hc.flag.roster_resigned", "resign_date", p.ResignDate.Format("2006-01-02"))
 	}
 	if !contains(RosterProcesses(process), p.Process) {
-		return false, "member of " + displayOr(p.Process, "no process") + ", not " + process
+		if strings.TrimSpace(p.Process) == "" {
+			return false, msg("hc.flag.roster_no_process")
+		}
+		return false, msg("hc.flag.roster_other_process", "member_process", p.Process)
 	}
 	if p.Direct != "Direct" && p.Direct != "Shift Leader" {
-		return false, "direct type is " + displayOr(p.Direct, "unknown") + ", not Direct or Shift Leader"
+		if strings.TrimSpace(p.Direct) == "" {
+			return false, msg("hc.flag.roster_direct_unknown")
+		}
+		return false, msg("hc.flag.roster_direct_type", "direct", p.Direct)
 	}
-	return true, ""
+	return true, Msg{}
 }
 
 // Roster lists the Direct and Shift Leader members of the process on the date, sorted by shift and name.
@@ -157,11 +164,4 @@ func (d *Directory) Roster(process string) []Person {
 		return out[i].EE < out[j].EE
 	})
 	return out
-}
-
-func displayOr(s, def string) string {
-	if strings.TrimSpace(s) == "" {
-		return def
-	}
-	return s
 }

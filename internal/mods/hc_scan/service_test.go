@@ -18,7 +18,14 @@ func TestScanAssignsByLevelFirst(t *testing.T) {
 	}
 }
 
-func hasWarnFlags(flags []Flag) bool { return hasWarn(flags) }
+func hasWarnFlags(flags []FlagView) bool {
+	for _, f := range flags {
+		if f.Severity == SeverityWarn {
+			return true
+		}
+	}
+	return false
+}
 
 func TestScanRecentDaysAreShownAndCounted(t *testing.T) {
 	env := newTestEnv(t)
@@ -173,7 +180,7 @@ func TestManualAssignmentFlags(t *testing.T) {
 		t.Fatalf("a manual choice without MTR record is allowed but flagged: %+v", v.Flags)
 	}
 	v, _ = env.svc.Assign(ctx, testUser, testKey, "AB12C03", "Winder_515")
-	if !hasCode(v.Flags, FlagOverBudget) || !hasWarn(v.Flags) {
+	if !hasCode(v.Flags, FlagOverBudget) || !hasWarnFlags(v.Flags) {
 		t.Fatalf("515 would be over its budget: %+v", v.Flags)
 	}
 	v, _ = env.svc.Assign(ctx, testUser, testKey, "AB12C03", "Winder_525")
@@ -181,7 +188,7 @@ func TestManualAssignmentFlags(t *testing.T) {
 		t.Fatalf("a routine machine without MTR mapping is flagged: %+v", v.Flags)
 	}
 	v, _ = env.svc.Assign(ctx, testUser, testKey, "AB12C03", "Winder_9014")
-	if hasCode(v.Flags, FlagNoMTR) || hasWarn(v.Flags) {
+	if hasCode(v.Flags, FlagNoMTR) || hasWarnFlags(v.Flags) {
 		t.Fatalf("an activity needs no MTR record and has no budget warning: %+v", v.Flags)
 	}
 	v, _ = env.svc.Assign(ctx, testUser, testKey, "AB12C03", "")
@@ -255,7 +262,7 @@ func TestMeListsOnlyPermittedProcessesInConfigOrder(t *testing.T) {
 	}
 }
 
-func flagText(flags []Flag, code string) string {
+func flagText(flags []FlagView, code string) string {
 	for _, f := range flags {
 		if f.Code == code {
 			return f.Text

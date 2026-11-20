@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dash_go/internal/core/dashapi"
+	"dash_go/internal/core/i18n"
 	"dash_go/internal/core/module"
 )
 
@@ -20,9 +21,10 @@ import (
 const Name = "hc_scan"
 
 // ModuleVersion is the version of this module.
-const ModuleVersion = "0.1.0"
+const ModuleVersion = "0.1.1"
 
 func init() {
+	i18n.Register(webFS, "i18n") // the texts of the page, the warnings and the messages, in English and Chinese
 	module.Register(Name, func() module.Module { return &Module{} })
 }
 
@@ -34,10 +36,12 @@ type Module struct {
 // Info describes the module.
 func (m *Module) Info() module.Info {
 	return module.Info{
-		Name:        Name,
-		Title:       "HC Scan Assign",
-		Version:     ModuleVersion,
-		Description: "Scan employee badges to assign machines and activities by MTR level",
+		Name:           Name,
+		Title:          "HC Scan Assign",
+		TitleKey:       "hc.title",
+		Version:        ModuleVersion,
+		Description:    "Scan employee badges to assign machines and activities by MTR level",
+		DescriptionKey: "hc.description",
 	}
 }
 
@@ -46,6 +50,12 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 	set := DefaultSettings()
 	if err := env.Cfg.Module(Name, &set); err != nil {
 		return err
+	}
+	if env.Shell == nil {
+		return fmt.Errorf("%s: the page shell is missing", Name)
+	}
+	if set.PhotoURLTemplate == "" {
+		set.PhotoURLTemplate = env.Cfg.PhotoURLTemplate
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -74,10 +84,10 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 
 	apiURL := set.DashAPIURL
 	if apiURL == "" {
-		if env.Cfg.Dash.APIServer == "" {
-			return fmt.Errorf("%s: set modules.hc_scan.dash_api_url or api_server in the Dash config", Name)
-		}
-		apiURL = "http://" + env.Cfg.Dash.APIServer + "/api"
+		apiURL = env.Cfg.DashAPIURL
+	}
+	if apiURL == "" {
+		return fmt.Errorf("%s: set modules.hc_scan.dash_api_url, dash_api_url or api_server in the Dash config", Name)
 	}
 	perms := NewDashPermissions(dashapi.New(apiURL, env.Cfg.Dash.APISalt, 5*time.Second), time.Minute)
 
@@ -101,7 +111,7 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 		env.Log.Warn("hc_scan: neither modules.hc_scan.dash_data_dir nor cdn_data_folder is set; the Python pages will not be told about saved data")
 	}
 	m.svc = svc
-	return svc.Routes(mux, env.Base+"/"+Name, env.Auth.Require)
+	return svc.Routes(mux, env.Base+"/"+Name, env.Auth.Require, env.Shell)
 }
 
 // Close releases the module.

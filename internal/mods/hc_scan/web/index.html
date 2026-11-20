@@ -1,81 +1,67 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HC Scan Assign</title>
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="static/app.css">
-</head>
-<body>
-
+{{define "content"}}
 <section id="screen-message" class="screen hidden">
-  <h1 id="message-title">HC Scan Assign</h1>
+  <h1 id="message-title"></h1>
   <p id="message-text"></p>
+  <p id="message-action" class="hidden"><a id="message-link" class="dg-btn dg-btn-primary" href="#"></a></p>
 </section>
 
 <section id="screen-picker" class="screen hidden">
-  <h1>HC Scan Assign</h1>
-  <p class="muted">Choose the process you are scanning for.</p>
+  <h1>{{.T "hc.title"}}</h1>
+  <p class="muted">{{.T "hc.ui.pick_process"}}</p>
   <div id="process-buttons" class="process-buttons"></div>
   <p class="muted small" id="picker-user"></p>
 </section>
 
 <div id="screen-app" class="hidden">
-  <header class="topbar">
+  <div class="pagebar" id="pagebar">
     <div class="title">
-      <span class="brand">HC Scan Assign</span>
       <span id="process-name" class="process-name"></span>
     </div>
     <div class="controls">
-      <input id="date" type="date" aria-label="Production date">
-      <div class="seg" role="group" aria-label="Shift">
+      <input id="date" type="date" aria-label="{{.T "hc.ui.date_label"}}">
+      <div class="seg" role="group" aria-label="{{.T "hc.ui.shift_label"}}">
         <button id="shift-AM" type="button" class="seg-btn">AM</button>
         <button id="shift-PM" type="button" class="seg-btn">PM</button>
       </div>
-      <button id="change-process" type="button" class="btn ghost">Change process</button>
+      <button id="change-process" type="button" class="btn ghost">{{.T "hc.ui.change_process"}}</button>
     </div>
     <div class="counters" id="counters"></div>
-  </header>
+  </div>
 
-  <div id="locked-banner" class="banner warn hidden">The month of this date is locked: nothing can be saved.</div>
+  <div id="locked-banner" class="banner warn hidden">{{.T "hc.ui.locked"}}</div>
 
   <main class="layout">
     <section class="left">
       <div class="scan-block">
       <div class="scan-panel">
-        <label for="scan" class="scan-label">Scan badge</label>
-        <input id="scan" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Scan an employee badge or type the ID">
+        <label for="scan" class="scan-label">{{.T "hc.ui.scan_label"}}</label>
+        <input id="scan" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="{{.T "hc.ui.scan_placeholder"}}">
       </div>
 
       <div id="result" class="result idle">
-        <div class="result-idle">Ready. Scan the first badge.</div>
+        <div class="result-idle">{{.T "hc.ui.ready"}}</div>
       </div>
       </div>
 
       <div class="panel-head">
-        <h2>Scanned <span id="pending-count" class="pill">0</span></h2>
+        <h2>{{.T "hc.ui.scanned"}} <span id="pending-count" class="pill">0</span></h2>
         <div class="actions">
-          <button id="reset" type="button" class="btn ghost">Clear draft</button>
-          <button id="confirm" type="button" class="btn primary">Confirm</button>
+          <button id="reset" type="button" class="btn ghost">{{.T "hc.ui.clear_draft"}}</button>
+          <button id="confirm" type="button" class="btn primary">{{.T "hc.ui.confirm"}}</button>
         </div>
       </div>
-      <p class="muted small">Nothing is written to the database until you press Confirm. Change a machine with the list, or remove a line with the x.</p>
+      <p class="muted small">{{.T "hc.ui.draft_hint"}}</p>
       <div id="entries" class="entries"></div>
     </section>
 
     <aside class="right">
-      <div class="panel-head"><h2>Machines</h2><span id="mtr-info" class="muted small"></span></div>
+      <div class="panel-head"><h2>{{.T "hc.ui.machines"}}</h2><span id="mtr-info" class="muted small"></span></div>
       <div id="machines" class="machines"></div>
-      <div class="panel-head"><h2>Not scanned yet <span id="missing-count" class="pill">0</span></h2></div>
+      <div class="panel-head"><h2>{{.T "hc.ui.not_scanned"}} <span id="missing-count" class="pill">0</span></h2></div>
       <div id="missing" class="missing"></div>
     </aside>
   </main>
 </div>
 
-<div id="toast" class="toast hidden" role="status"></div>
 <dialog id="dialog"></dialog>
-
-<script src="static/app.js"></script>
-</body>
-</html>
+{{end}}

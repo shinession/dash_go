@@ -1,6 +1,10 @@
 (() => {
   'use strict';
 
+  // The shell (shell.js) comes first: it reads the texts of the page into dashGo.t, and offers the calls to the server,
+  // the toast and the pictures of people.
+  const dg = window.dashGo;
+  const t = dg.t;
   const $ = (id) => document.getElementById(id);
 
   // ---- small helpers -------------------------------------------------------------------------------------------
@@ -28,53 +32,21 @@
     set(k, v) { try { if (v == null) window.sessionStorage.removeItem('hcscan.' + k); else window.sessionStorage.setItem('hcscan.' + k, v); } catch (_) { /* storage may be blocked */ } },
   };
 
-  async function call(method, path, body) {
-    const opt = { method, credentials: 'same-origin', headers: { 'X-Requested-With': 'dash_go' } };
-    if (body !== undefined) {
-      opt.headers['Content-Type'] = 'application/json';
-      opt.body = JSON.stringify(body);
-    }
-    let res;
-    try {
-      res = await fetch(path, opt);
-    } catch (_) {
-      const err = new Error('The server cannot be reached. Check the network and try again.');
-      err.status = 0;
-      throw err;
-    }
-    let data = null;
-    try { data = await res.json(); } catch (_) { /* no body */ }
-    if (!res.ok) {
-      const err = new Error((data && data.error) || `Request failed (${res.status})`);
-      err.status = res.status;
-      err.code = data && data.code;
-      err.data = data;
-      throw err;
-    }
-    return data;
-  }
-
+  const call = (method, path, body) => dg.call(method, path, body);
   const list = (v) => (Array.isArray(v) ? v : []);
   const fmt = (n) => (Math.round(n * 100) / 100).toString();
-  const initials = (name) => (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-
-  function avatar(name, url, size) {
-    const cls = 'avatar' + (size ? ' ' + size : '');
-    const img = el('img', { class: cls, src: url, alt: '', loading: 'lazy' });
-    img.addEventListener('error', () => img.replaceWith(el('span', { class: cls, text: initials(name) })), { once: true });
-    return img;
-  }
+  const avatar = (name, url, size) => dg.avatar(name, url, size);
 
   function lvBadge(level) {
     if (level >= 1) return el('span', { class: `lv lv${Math.min(level, 3)}`, text: `Lv${level}` });
-    if (level === 0) return el('span', { class: 'lv lv0', text: 'No Rec' });
-    return el('span', { class: 'lv lvx', text: 'Activity' });
+    if (level === 0) return el('span', { class: 'lv lv0', text: t('hc.ui.badge_norec') });
+    return el('span', { class: 'lv lvx', text: t('hc.ui.badge_activity') });
   }
 
   function levelText(level) {
     if (level >= 1) return `Lv${level}`;
-    if (level === 0) return 'no MTR record';
-    return 'activity';
+    if (level === 0) return t('hc.ui.level_none');
+    return t('hc.ui.level_activity');
   }
 
   // ---- feedback: sound, toast, dialog --------------------------------------------------------------------------
@@ -84,28 +56,21 @@
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const tones = { ok: [[880, 0.09]], warn: [[520, 0.1], [520, 0.1]], err: [[220, 0.35]] }[kind] || [];
-      let t = audioCtx.currentTime;
+      let at = audioCtx.currentTime;
       for (const [freq, dur] of tones) {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.frequency.value = freq;
         gain.gain.value = 0.08;
         osc.connect(gain).connect(audioCtx.destination);
-        osc.start(t);
-        osc.stop(t + dur);
-        t += dur + 0.06;
+        osc.start(at);
+        osc.stop(at + dur);
+        at += dur + 0.06;
       }
     } catch (_) { /* audio is optional */ }
   }
 
-  let toastTimer = null;
-  function toast(text, kind) {
-    const t = $('toast');
-    t.className = 'toast ' + (kind || '');
-    t.textContent = text;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.add('hidden'), kind === 'err' ? 12000 : 7000);
-  }
+  const toast = (text, kind) => dg.toast(text, kind);
 
   function ask(title, body, okText, cancelText) {
     return new Promise((resolve) => {
@@ -118,7 +83,7 @@
         el('div', { class: 'dlg-body' }, body),
         el('div', { class: 'dlg-actions' },
           cancelText ? el('button', { class: 'btn', type: 'button', text: cancelText, onclick: () => finish(false) }) : null,
-          el('button', { class: 'btn primary', type: 'button', text: okText || 'OK', onclick: () => finish(true) })),
+          el('button', { class: 'btn primary', type: 'button', text: okText || t('ui.ok'), onclick: () => finish(true) })),
       );
       dlg.showModal();
     });
@@ -132,14 +97,35 @@
     for (const id of ['screen-message', 'screen-picker', 'screen-app']) $(id).classList.toggle('hidden', id !== 'screen-' + name);
   }
 
-  function message(title, text) {
+  // message shows a full page note; action is { href, label } for a button below it.
+  function message(title, text, action) {
     $('message-title').textContent = title;
     $('message-text').textContent = text;
+    $('message-action').classList.toggle('hidden', !action);
+    if (action) {
+      $('message-link').href = action.href;
+      $('message-link').textContent = action.label;
+    }
     show('message');
+  }
+
+  // The login ended while the page was open (or the server was restarted with another secret).
+  function sessionExpired() {
+    stopPolling();
+    dg.signedOut();
+    message(t('ui.session_expired_title'), t('ui.session_expired_text'), { href: dg.loginURL(), label: t('ui.sign_in') });
   }
 
   const key = () => ({ process: state.process, date: state.date, shift: state.shift });
   const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open) $('scan').focus({ preventScroll: true }); };
+
+  // The page bar and the scan panel stick below the header and below each other; they need each other's height.
+  function trackBars() {
+    const bar = $('pagebar');
+    const set = () => document.documentElement.style.setProperty('--pagebar-h', bar.offsetHeight + 'px');
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(bar); else window.addEventListener('resize', set);
+  }
 
   // ---- start ---------------------------------------------------------------------------------------------------
 
@@ -149,18 +135,19 @@
       me = await call('GET', 'api/me');
     } catch (err) {
       if (err.status === 401) {
-        message('Login required', 'Open this page from the Dash application: MQPD > Head Count > Scan Assign.');
+        sessionExpired();
       } else {
-        message('Cannot start', err.message);
+        message(t('hc.ui.cannot_start'), err.message);
       }
       return;
     }
+    me.processes = list(me.processes); // a person without permission gets an empty list, never null
     state.me = me;
     state.idRe = new RegExp(me.config.id_pattern, 'i');
     $('date').min = firstOfPreviousMonth(me.config.production_date);
     $('date').max = addDays(me.config.production_date, 1);
     if (me.processes.length === 0) {
-      message('No permission', 'You are not allowed to work on any HC process. Ask the HeadCount group admin for access.');
+      message(t('hc.ui.no_permission_title'), t('hc.ui.no_permission_text'));
       return;
     }
     const remembered = memory.get('process');
@@ -176,7 +163,7 @@
     memory.set('process', null);
     const box = $('process-buttons');
     box.replaceChildren(...state.me.processes.map((p) => el('button', { type: 'button', text: p, onclick: () => startSession(p) })));
-    $('picker-user').textContent = `Signed in as ${state.me.user.name} (${state.me.user.ee})`;
+    $('picker-user').textContent = t('hc.ui.signed_in_as', { name: state.me.user.name, ee: state.me.user.ee });
     show('picker');
   }
 
@@ -191,11 +178,12 @@
     syncShiftButtons();
     renderBoard(null);
     show('app');
+    trackBars();
     refresh();
     startPolling();
     $('scan').value = '';
     $('result').className = 'result idle';
-    $('result').replaceChildren(el('div', { class: 'result-idle', text: 'Ready. Scan the first badge.' }));
+    $('result').replaceChildren(el('div', { class: 'result-idle', text: t('hc.ui.ready') }));
     focusScan();
   }
 
@@ -246,8 +234,7 @@
       renderBoard(board);
     } catch (err) {
       if (err.status === 401) {
-        stopPolling();
-        message('Session expired', 'Open this page again from the Dash application: MQPD > Head Count > Scan Assign.');
+        sessionExpired();
       } else if (!quiet) {
         toast(err.message, 'err');
       }
@@ -259,34 +246,35 @@
     const entries = $('entries');
     if (!b) {
       counters.replaceChildren();
-      entries.replaceChildren(el('div', { class: 'empty', text: 'Loading...' }));
+      entries.replaceChildren(el('div', { class: 'empty', text: t('hc.ui.loading') }));
       $('machines').replaceChildren();
       $('missing').replaceChildren();
       $('pending-count').textContent = '0';
       $('missing-count').textContent = '0';
       return;
     }
-    const t = b.totals;
+    const totals = b.totals;
     const entryList = list(b.entries);
     const missingList = list(b.not_scanned);
     const counter = (label, value, warn) => el('span', { class: 'counter' + (warn ? ' warn' : '') }, label + ' ', el('b', { text: value }));
     counters.replaceChildren(...[
-      counter('Scanned', `${t.expected_scanned} / ${t.expected}`),
-      counter('Pending', t.pending),
-      counter('Saved', t.saved),
-      t.unassigned ? counter('No machine', t.unassigned, true) : null,
-      t.warnings ? counter('Warnings', t.warnings, true) : null,
+      counter(t('hc.ui.counter_scanned'), `${totals.expected_scanned} / ${totals.expected}`),
+      counter(t('hc.ui.counter_pending'), totals.pending),
+      counter(t('hc.ui.counter_saved'), totals.saved),
+      totals.unassigned ? counter(t('hc.ui.counter_no_machine'), totals.unassigned, true) : null,
+      totals.warnings ? counter(t('hc.ui.counter_warnings'), totals.warnings, true) : null,
     ].filter(Boolean)); // replaceChildren turns null into the text "null"
     $('locked-banner').classList.toggle('hidden', !b.locked);
-    $('confirm').disabled = b.locked || t.assigned === 0;
-    $('reset').disabled = t.pending === 0;
-    $('pending-count').textContent = t.pending;
+    $('confirm').disabled = b.locked || totals.assigned === 0;
+    $('reset').disabled = totals.pending === 0;
+    $('pending-count').textContent = totals.pending;
     $('missing-count').textContent = missingList.length;
-    $('mtr-info').textContent = `MTR data: ${b.mtr.data_time || 'unknown'}` + (b.mtr.unmapped_machines ? ` | ${b.mtr.unmapped_machines} machine(s) without MTR mapping` : '');
+    $('mtr-info').textContent = t('hc.ui.mtr_info', { time: b.mtr.data_time || t('hc.ui.unknown') })
+      + (b.mtr.unmapped_machines ? ' | ' + t('hc.ui.mtr_unmapped', { n: b.mtr.unmapped_machines }) : '');
 
-    entries.replaceChildren(...(entryList.length ? entryList.map(renderEntry) : [el('div', { class: 'empty', text: 'No badge scanned yet.' })]));
+    entries.replaceChildren(...(entryList.length ? entryList.map(renderEntry) : [el('div', { class: 'empty', text: t('hc.ui.no_entries') })]));
     $('machines').replaceChildren(...list(b.machines).map(renderMachine));
-    $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: 'Everybody expected has scanned.' })]));
+    $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_scanned') })]));
   }
 
   function machineLabel(m, level) {
@@ -297,18 +285,18 @@
     const cls = ['entry'];
     if (e.warn) cls.push('warn');
     if (!e.machine_id) cls.push('none');
-    const select = el('select', { 'aria-label': `Machine of ${e.name}`, onchange: (ev) => assign(e, ev.target.value) },
-      el('option', { value: '', selected: !e.machine_id }, '- no machine -'),
+    const select = el('select', { 'aria-label': t('hc.ui.machine_of', { name: e.name }), onchange: (ev) => assign(e, ev.target.value) },
+      el('option', { value: '', selected: !e.machine_id }, t('hc.ui.no_machine_option')),
       list(state.board.machines).map((m) => el('option', { value: m.id, selected: m.id === e.machine_id }, machineLabel(m, (e.levels || {})[m.id]))),
     );
     const flags = list(e.flags);
     const reason = flags.some((f) => f.text === e.reason) ? '' : (e.reason || ''); // a warning that says the same is enough
-    const sub = [e.ee, e.shift ? `shift ${e.shift}` : null, e.schedule ? `day ${e.schedule}` : null].filter(Boolean).join(' | ');
+    const sub = [e.ee, e.shift ? t('hc.ui.shift_n', { shift: e.shift }) : null, e.schedule ? t('hc.ui.day_n', { day: e.schedule }) : null].filter(Boolean).join(' | ');
     return el('div', { class: cls.join(' ') },
       avatar(e.name, e.photo, 'sm'),
       el('div', { class: 'entry-main' }, el('div', { class: 'entry-name', text: e.name, title: e.name }), el('div', { class: 'entry-sub', text: sub })),
       el('div', { class: 'entry-main' }, select, el('div', { class: 'entry-sub', text: reason, title: reason })),
-      el('button', { class: 'icon-btn', type: 'button', title: `Remove ${e.name} from the draft`, 'aria-label': `Remove ${e.name}`, text: 'x', onclick: () => remove(e) }),
+      el('button', { class: 'icon-btn', type: 'button', title: t('hc.ui.remove_title', { name: e.name }), 'aria-label': t('hc.ui.remove_aria', { name: e.name }), text: 'x', onclick: () => remove(e) }),
       flags.length ? el('div', { class: 'entry-flags' }, flags.map((f) => el('span', { class: `flag ${f.severity}`, text: f.text }))) : null,
     );
   }
@@ -316,24 +304,27 @@
   function renderMachine(m) {
     const full = m.budget > 0 && m.used >= m.budget && !m.over;
     const tags = [
-      !m.routine ? el('span', { class: 'tag', text: 'activity' }) : null,
-      m.routine && !m.mtr_mapped ? el('span', { class: 'tag warn', text: 'no MTR mapping' }) : null,
-      m.budget <= 0 ? el('span', { class: 'tag', text: 'no budget' }) : null,
+      !m.routine ? el('span', { class: 'tag', text: t('hc.ui.tag_activity') }) : null,
+      m.routine && !m.mtr_mapped ? el('span', { class: 'tag warn', text: t('hc.ui.tag_no_mapping') }) : null,
+      m.budget <= 0 ? el('span', { class: 'tag', text: t('hc.ui.tag_no_budget') }) : null,
     ];
     return el('div', { class: 'machine' + (m.over ? ' over' : '') + (full ? ' full' : '') },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: m.name }), el('span', { class: 'machine-count', text: `${fmt(m.used)} / ${fmt(m.budget)}` })),
       el('div', { class: 'machine-tags' }, tags),
-      el('div', { class: 'members' }, list(m.members).map((p) => el('div', { class: 'member' + (p.saved ? '' : ' pending'), title: p.saved ? 'Saved in the database' : 'Pending: not saved yet' },
+      el('div', { class: 'members' }, list(m.members).map((p) => el('div', { class: 'member' + (p.saved ? '' : ' pending'), title: p.saved ? t('hc.ui.member_saved_title') : t('hc.ui.member_pending_title') },
         avatar(p.name, p.photo, 'xs'),
         el('span', { class: 'member-name', text: p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name }),
         m.routine ? lvBadge(p.level) : null,
-        p.saved ? el('span', { class: 'saved-mark', text: 'saved' }) : null,
+        p.saved ? el('span', { class: 'saved-mark', text: t('hc.ui.saved') }) : null,
       ))),
     );
   }
 
   function renderMissing(p) {
-    return el('span', { class: 'chip' + (p.assigned ? ' assigned' : ''), title: p.assigned ? `Already assigned to ${p.assigned}` : `${p.ee} | shift ${p.shift || '?'} | day ${p.schedule || '?'}` },
+    const title = p.assigned
+      ? t('hc.ui.assigned_to', { machine: p.assigned })
+      : [p.ee, t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
+    return el('span', { class: 'chip' + (p.assigned ? ' assigned' : ''), title },
       avatar(p.name, p.photo, 'xs'), p.name, p.assigned ? el('span', { class: 'saved-mark', text: p.assigned }) : null);
   }
 
@@ -354,7 +345,7 @@
     }
     if (force) {
       input.value = '';
-      showResult({ error: `"${raw}" is not a valid employee ID` });
+      showResult({ error: t('hc.ui.invalid_id', { input: raw }) });
       return;
     }
     clearTimeout(dropTimer); // an incomplete read is dropped after a short while
@@ -375,7 +366,7 @@
       showResult(res);
     } catch (err) {
       if (err.status === 401) {
-        message('Session expired', 'Open this page again from the Dash application: MQPD > Head Count > Scan Assign.');
+        sessionExpired();
         return;
       }
       showResult({ error: err.message });
@@ -389,7 +380,7 @@
     if (res.error) {
       box.className = 'result err';
       box.replaceChildren(el('div', { class: 'result-body' }, el('div', { class: 'result-text' },
-        el('div', { class: 'result-name', text: 'Not accepted' }), el('div', { class: 'result-machine', text: res.error }))));
+        el('div', { class: 'result-name', text: t('hc.ui.not_accepted') }), el('div', { class: 'result-machine', text: res.error }))));
       beep('err');
       return;
     }
@@ -402,8 +393,8 @@
       avatar(e.name, e.photo),
       el('div', { class: 'result-text' },
         el('div', { class: 'result-name', text: e.name }),
-        el('div', { class: 'result-id', text: `${e.ee}${e.shift ? ' | shift ' + e.shift : ''}` }),
-        el('div', { class: 'result-machine', text: assigned ? e.machine_name : 'No machine assigned' }),
+        el('div', { class: 'result-id', text: `${e.ee}${e.shift ? ' | ' + t('hc.ui.shift_n', { shift: e.shift }) : ''}` }),
+        el('div', { class: 'result-machine', text: assigned ? e.machine_name : t('hc.ui.no_machine_assigned') }),
         el('div', { class: 'result-reason', text: res.status === 'duplicate' || res.status === 'saved' ? res.message : (flags.some((f) => f.text === e.reason) ? '' : (e.reason || '')) }),
         flags.length ? el('div', { class: 'entry-flags' }, flags.map((f) => el('span', { class: `flag ${f.severity}`, text: f.text }))) : null,
       ),
@@ -418,6 +409,7 @@
     try {
       await call('POST', 'api/assign', { ...key(), ee: entry.ee, machine_id: machineId });
     } catch (err) {
+      if (err.status === 401) { sessionExpired(); return; }
       toast(err.message, 'err');
     }
     state.board = null;
@@ -429,6 +421,7 @@
     try {
       await call('POST', 'api/remove', { ...key(), ee: entry.ee });
     } catch (err) {
+      if (err.status === 401) { sessionExpired(); return; }
       toast(err.message, 'err');
     }
     state.board = null;
@@ -437,11 +430,12 @@
   }
 
   async function reset() {
-    const ok = await ask('Clear the draft?', el('p', { text: 'All pending lines are removed and those people count as not scanned. Lines that were already saved are not touched.' }), 'Clear draft', 'Cancel');
+    const ok = await ask(t('hc.ui.clear_title'), el('p', { text: t('hc.ui.clear_text') }), t('hc.ui.clear_draft'), t('ui.cancel'));
     if (!ok) return;
     try {
       await call('POST', 'api/reset', key());
     } catch (err) {
+      if (err.status === 401) { sessionExpired(); return; }
       toast(err.message, 'err');
     }
     state.board = null;
@@ -454,12 +448,16 @@
       const res = await call('POST', 'api/confirm', { ...key(), ack: !!ack });
       reportSaved(res);
     } catch (err) {
+      if (err.status === 401) {
+        sessionExpired();
+        return;
+      }
       if (err.code === 'needs_ack' && err.data) {
         const lines = list(err.data.needs_ack);
         const body = el('div', null,
-          el('p', { text: `${lines.length} line(s) have warnings. Check them, then submit anyway or go back and change them.` }),
+          el('p', { text: t('hc.ui.ack_intro', { n: lines.length }) }),
           lines.map((x) => el('div', { class: 'ack-item' }, el('b', { text: `${x.name} (${x.ee}) -> ${x.machine}` }), list(x.flags).map((f) => el('div', { class: 'flag warn', text: f.text })))));
-        const yes = await ask('Submit lines with warnings?', body, 'Submit anyway', 'Go back');
+        const yes = await ask(t('hc.ui.ack_title'), body, t('hc.ui.ack_yes'), t('hc.ui.ack_no'));
         if (yes) {
           await confirm(true);
           return;
@@ -477,9 +475,9 @@
   function reportSaved(res) {
     const written = list(res.written);
     const skipped = list(res.skipped);
-    const lines = [`Submit to database successful! (${written.length} member(s))`];
-    if (skipped.length) lines.push(`Not saved: ${skipped.map((s) => `${s.name}: ${s.reason}`).join('; ')}`);
-    if (res.unassigned) lines.push(`${res.unassigned} scanned line(s) without a machine were not saved.`);
+    const lines = [t('hc.ui.saved_ok', { n: written.length })];
+    if (skipped.length) lines.push(t('hc.ui.not_saved', { list: skipped.map((s) => `${s.name}: ${s.reason}`).join('; ') }));
+    if (res.unassigned) lines.push(t('hc.ui.unassigned_not_saved', { n: res.unassigned }));
     if (res.log_warning) lines.push(res.log_warning);
     toast(lines.join('\n'), skipped.length || res.log_warning ? 'warn' : 'ok');
     beep('ok');
@@ -509,7 +507,7 @@
     }
     $('change-process').addEventListener('click', async () => {
       if (state.board && state.board.totals.pending > 0) {
-        const ok = await ask('Change process?', el('p', { text: 'The pending lines stay in the draft of this process and shift. You can come back to them.' }), 'Change process', 'Stay');
+        const ok = await ask(t('hc.ui.change_title'), el('p', { text: t('hc.ui.change_text') }), t('hc.ui.change_process'), t('hc.ui.change_stay'));
         if (!ok) return;
       }
       renderPicker();

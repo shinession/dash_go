@@ -1,7 +1,6 @@
 package hcscan
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 )
@@ -41,17 +40,18 @@ func (s *Service) leaderRows(d *dayData) []Machine {
 }
 
 // leaderPlacement tells whether the person is a leader and on which row to place them, with the reason shown on the
-// line. history holds the records of the person before the date of the session.
-func (s *Service) leaderPlacement(d *dayData, p Person, history []DayRecord) (Machine, string, bool) {
+// line (a message of the catalog: hc.reason.leader_direct or hc.reason.leader_history, each with a _full variant for
+// a row that has no room). history holds the records of the person before the date of the session.
+func (s *Service) leaderPlacement(d *dayData, p Person, history []DayRecord) (Machine, Msg, bool) {
 	rows := s.leaderRows(d)
 	if len(rows) == 0 {
-		return Machine{}, "", false
+		return Machine{}, Msg{}, false
 	}
 	if p.Direct == "Shift Leader" {
-		return rows[0], "Shift Leader (direct type)", true
+		return rows[0], msg("hc.reason.leader_direct"), true
 	}
 	if !s.Settings.LeaderByHistory {
-		return Machine{}, "", false
+		return Machine{}, Msg{}, false
 	}
 	leaderIDs := make(map[string]Machine, len(rows))
 	for _, r := range rows {
@@ -67,11 +67,11 @@ func (s *Service) leaderPlacement(d *dayData, p Person, history []DayRecord) (Ma
 		for _, h := range work {
 			if m, ok := d.machines.Resolve(h.Machine); ok {
 				if row, isLeader := leaderIDs[m.ID]; isLeader {
-					return row, fmt.Sprintf("%s at the last record (%s)", row.Name, rec.Date.Format("2 Jan")), true
+					return row, msg("hc.reason.leader_history", "row", row.Name, "date", rec.Date.Format("2006-01-02")), true
 				}
 			}
 		}
-		return Machine{}, "", false // the most recent record is a machine: not a leader (any more)
+		return Machine{}, Msg{}, false // the most recent record is a machine: not a leader (any more)
 	}
-	return Machine{}, "", false
+	return Machine{}, Msg{}, false
 }

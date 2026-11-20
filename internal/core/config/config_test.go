@@ -103,6 +103,105 @@ func TestNormalizeBasePath(t *testing.T) {
 	}
 }
 
+func TestLoginAndPhotoDefaults(t *testing.T) {
+	cfg, err := Load(Options{ConfigDir: t.TempDir(), Host: "x", Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PhotoURLTemplate != "/api/static/hr/{ee_code}.webp" {
+		t.Errorf("photo: %q", cfg.PhotoURLTemplate)
+	}
+	if !cfg.Login.Password || !cfg.Login.SSORequireSameIP {
+		t.Errorf("password sign-in and the address check are on by default: %+v", cfg.Login)
+	}
+	want := []string{"127.0.0.1/32", "::1/128"}
+	var got []string
+	for _, p := range cfg.Login.TrustedProxies {
+		got = append(got, p.String())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("only the loopback proxies are trusted by default: %v", got)
+	}
+	if cfg.Dash.SSOServer != "" {
+		t.Errorf("the Windows sign-in is off without sso_server: %q", cfg.Dash.SSOServer)
+	}
+}
+
+func TestLoginAndSSOSettings(t *testing.T) {
+	py, goDir := t.TempDir(), t.TempDir()
+	write(t, py, "config.json", `{"api": {"salt_2": "file-two", "salt_3": "s3"}, "sso_server": " prod_eng.co.murata.local "}`)
+	write(t, goDir, "dash_go.json", `{
+		"photo_url_template": "/pics/{ee_code}.jpg",
+		"login_password": false, "sso_require_same_ip": false,
+		"trusted_proxies": ["10.1.0.0/16", "10.2.3.4", "::ffff:10.9.9.9", "fd00::/8"]
+	}`)
+	cfg, err := Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PhotoURLTemplate != "/pics/{ee_code}.jpg" || cfg.Login.Password || cfg.Login.SSORequireSameIP {
+		t.Errorf("%q %+v", cfg.PhotoURLTemplate, cfg.Login)
+	}
+	if cfg.Dash.SSOServer != "prod_eng.co.murata.local" || cfg.Dash.APISalt2 != "file-two" {
+		t.Errorf("sso: %q %q", cfg.Dash.SSOServer, cfg.Dash.APISalt2)
+	}
+	var got []string
+	for _, p := range cfg.Login.TrustedProxies {
+		got = append(got, p.String())
+	}
+	if want := []string{"10.1.0.0/16", "10.2.3.4/32", "10.9.9.9/32", "fd00::/8"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("proxies: %v", got)
+	}
+
+	// an explicit empty list means no proxy is trusted
+	write(t, goDir, "dash_go.json", `{"trusted_proxies": []}`)
+	cfg, err = Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
+	if err != nil || len(cfg.Login.TrustedProxies) != 0 {
+		t.Errorf("an empty list trusts nobody: %v %v", cfg.Login.TrustedProxies, err)
+	}
+
+	// the secret can come from the environment, so it need not be written to a file
+	env := map[string]string{EnvAPISalt2: "env-two"}
+	cfg, err = Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: func(k string) string { return env[k] }})
+	if err != nil || cfg.Dash.APISalt2 != "env-two" {
+		t.Errorf("environment must win: %q %v", cfg.Dash.APISalt2, err)
+	}
+}
+
+func TestDashAPIURL(t *testing.T) {
+	py, goDir := t.TempDir(), t.TempDir()
+	write(t, py, "config.json", `{"api_server": "api.example.local"}`)
+	cfg, err := Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashAPIURL != "http://api.example.local/api" {
+		t.Errorf("derived from api_server: %q %v", cfg.DashAPIURL, err)
+	}
+	write(t, goDir, "dash_go.json", `{"dash_api_url": " http://127.0.0.1:9999/api "}`)
+	cfg, err = Load(Options{ConfigDir: goDir, DashConfigDir: py, Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashAPIURL != "http://127.0.0.1:9999/api" {
+		t.Errorf("explicit: %q %v", cfg.DashAPIURL, err)
+	}
+	cfg, err = Load(Options{ConfigDir: t.TempDir(), Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashAPIURL != "" {
+		t.Errorf("none: %q %v", cfg.DashAPIURL, err)
+	}
+}
+
+func TestLoginSettingsErrors(t *testing.T) {
+	dir := t.TempDir()
+	for _, bad := range []string{
+		`{"login_password": "yes"}`,
+		`{"sso_require_same_ip": 1}`,
+		`{"trusted_proxies": "10.0.0.1"}`,
+		`{"trusted_proxies": ["not-an-address"]}`,
+		`{"trusted_proxies": ["10.0.0.0/99"]}`,
+	} {
+		write(t, dir, "dash_go.json", bad)
+		if _, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv}); err == nil {
+			t.Errorf("%s must be refused", bad)
+		}
+	}
+}
+
 func TestSessionHours(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})

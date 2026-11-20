@@ -21,8 +21,9 @@ import (
 
 // Errors returned by the client.
 var (
-	ErrUnauthorized = errors.New("dash api rejected the request signature")
-	ErrNotAllowed   = errors.New("user is unknown or deactivated")
+	ErrUnauthorized   = errors.New("dash api rejected the request signature")
+	ErrNotAllowed     = errors.New("user is unknown or deactivated")
+	ErrBadCredentials = errors.New("account or password is wrong, or the account is deactivated")
 )
 
 // Profile is the answer of the hc_user_processes function.
@@ -58,11 +59,56 @@ func Signature(salt string, t time.Time) string {
 // HCProfile returns the display name and the HC processes the user may work on. The user is an employee code
 // or a name.
 func (c *Client) HCProfile(ctx context.Context, user string) (Profile, error) {
+	var p Profile
+	err := withRetry(ctx, func() (bool, error) {
+		status, raw, retry, err := c.post(ctx, map[string]string{"func": "hc_user_processes", "user": user})
+		if err != nil {
+			return retry, err
+		}
+		switch status {
+		case http.StatusOK:
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return false, fmt.Errorf("dash api answer is not valid JSON: %w", err)
+			}
+			return false, nil
+		case http.StatusAccepted:
+			return false, ErrNotAllowed
+		default:
+			return c.refusal(status)
+		}
+	})
+	return p, err
+}
+
+// VerifyUser checks an account and its password with the backend (func verify_user): nil when they are right and
+// the account is active. The backend answers 202 for an unknown account, a wrong password and a deactivated
+// account alike, so ErrBadCredentials does not tell which one it was. The user is an employee code, a name or an
+// e-mail address. Neither the user nor the password is logged here or kept.
+func (c *Client) VerifyUser(ctx context.Context, user, password string) error {
+	return withRetry(ctx, func() (bool, error) {
+		status, _, retry, err := c.post(ctx, map[string]string{"func": "verify_user", "user": user, "password": password})
+		if err != nil {
+			return retry, err
+		}
+		switch status {
+		case http.StatusOK:
+			return false, nil
+		case http.StatusAccepted:
+			return false, ErrBadCredentials
+		default:
+			return c.refusal(status)
+		}
+	})
+}
+
+// withRetry runs one request of the API. The second attempt covers a signature that expired at the hour change or
+// a burst limit; a definite answer is never repeated.
+func withRetry(ctx context.Context, attempt func() (retry bool, err error)) error {
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ { // the second attempt covers a signature that expired at the hour change or a burst limit
-		p, retry, err := c.hcProfileOnce(ctx, user)
+	for i := 0; i < 2; i++ {
+		retry, err := attempt()
 		if err == nil {
-			return p, nil
+			return nil
 		}
 		lastErr = err
 		if !retry {
@@ -70,41 +116,39 @@ func (c *Client) HCProfile(ctx context.Context, user string) (Profile, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return Profile{}, ctx.Err()
+			return ctx.Err()
 		case <-time.After(150 * time.Millisecond):
 		}
 	}
-	return Profile{}, lastErr
+	return lastErr
 }
 
-func (c *Client) hcProfileOnce(ctx context.Context, user string) (Profile, bool, error) {
-	body, _ := json.Marshal(map[string]string{"func": "hc_user_processes", "user": user})
+// post sends one JSON request to /user/hc_scan. retry is true for a failure that may be gone a moment later.
+func (c *Client) post(ctx context.Context, payload map[string]string) (status int, raw []byte, retry bool, err error) {
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/user/hc_scan", bytes.NewReader(body))
 	if err != nil {
-		return Profile{}, false, err
+		return 0, nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", Signature(c.salt, c.now()))
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return Profile{}, true, fmt.Errorf("dash api request failed: %w", err)
+		return 0, nil, true, fmt.Errorf("dash api request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var p Profile
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return Profile{}, false, fmt.Errorf("dash api answer is not valid JSON: %w", err)
-		}
-		return p, false, nil
-	case http.StatusAccepted:
-		return Profile{}, false, ErrNotAllowed
+	raw, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, raw, false, nil
+}
+
+// refusal maps a status that is neither success nor the definite "no" of the function to an error.
+func (c *Client) refusal(status int) (bool, error) {
+	switch status {
 	case http.StatusUnauthorized:
-		return Profile{}, true, ErrUnauthorized
+		return true, ErrUnauthorized
 	case http.StatusForbidden: // "Too many requests": the endpoint refuses calls closer than 10 ms
-		return Profile{}, true, fmt.Errorf("dash api is rate limiting this host (status 403)")
+		return true, fmt.Errorf("dash api is rate limiting this host (status 403)")
 	default:
-		return Profile{}, false, fmt.Errorf("dash api answered status %d", resp.StatusCode)
+		return false, fmt.Errorf("dash api answered status %d", status)
 	}
 }

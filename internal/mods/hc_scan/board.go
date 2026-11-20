@@ -15,9 +15,10 @@ func (s *Service) Me(ctx context.Context, u auth.User) (*MeView, error) {
 	procs, err := s.Perms.Processes(ctx, u, false)
 	if err != nil {
 		s.Log.Error("permission check failed", "ee", u.EE, "error", err)
-		return nil, newError(502, "permission_check_failed", "Your permission could not be verified right now. Try again in a moment.")
+		return nil, newError(502, "permission_check_failed")
 	}
-	var allowed []string
+	// the list is never nil: the page reads its length, and a person without permission must get [] and not null
+	allowed := []string{}
 	for _, p := range s.Processes { // keep the order of HC_PROCESS_LIST
 		if contains(procs, p) {
 			allowed = append(allowed, p)
@@ -63,20 +64,21 @@ func (s *Service) Board(ctx context.Context, u auth.User, k Key) (*BoardView, er
 	if err != nil {
 		return nil, s.internal("load session data", err)
 	}
-	return s.buildBoard(d, pending, scans), nil
+	return s.buildBoard(ctx, d, pending, scans), nil
 }
 
-// entryView adds the current warnings and the MTR level of the person on every machine to a draft line.
-func (s *Service) entryView(d *dayData, e Entry, used map[string]float64) EntryView {
+// entryView adds the current warnings and the MTR level of the person on every machine to a draft line. The
+// sentences are in the language of the request.
+func (s *Service) entryView(ctx context.Context, d *dayData, e Entry, used map[string]float64) EntryView {
 	flags := append(append([]Flag{}, e.Flags...), s.dynamicFlags(d, e, used)...)
 	levels := make(map[string]int, len(d.machines.machines))
 	for _, m := range d.machines.machines {
 		levels[m.ID] = d.levelOn(e.EE, m)
 	}
-	return EntryView{Entry: e, Photo: s.photo(e.EE), Flags: flags, Levels: levels, Warn: hasWarn(flags)}
+	return EntryView{Entry: e, Reason: say(ctx, e.ReasonMsg, e.Reason), Photo: s.photo(e.EE), Flags: flagViews(ctx, flags), Levels: levels, Warn: hasWarn(flags)}
 }
 
-func (s *Service) buildBoard(d *dayData, pending map[string]Entry, scans map[string]ScanRecord) *BoardView {
+func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string]Entry, scans map[string]ScanRecord) *BoardView {
 	used := s.usage(d, pending)
 	today := ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
 	bv := &BoardView{
@@ -127,7 +129,7 @@ func (s *Service) buildBoard(d *dayData, pending map[string]Entry, scans map[str
 
 	// pending lines, newest first
 	for _, e := range pending {
-		v := s.entryView(d, e, used)
+		v := s.entryView(ctx, d, e, used)
 		bv.Entries = append(bv.Entries, v)
 		bv.Totals.Pending++
 		switch {

@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/i18n"
+	"dash_go/internal/core/shell"
+	"dash_go/internal/version"
 )
 
 const httpPrefix = "/dash_go/hc_scan"
 
 type httpEnv struct {
 	*testEnv
-	mux    *http.ServeMux
+	mux    http.Handler
 	cookie *http.Cookie
 }
 
@@ -27,15 +30,20 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 		t.Fatal(err)
 	}
 	authSvc := auth.NewService(signer, auth.NewMemoryNonces(), auth.Settings{BasePath: "/dash_go", Now: func() time.Time { return testNow }})
+	sh, err := shell.New(shell.Options{Base: "/dash_go", Version: version.Version, PhotoURLTemplate: "/api/static/hr/{ee_code}.webp", Auth: authSvc})
+	if err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
-	if err := env.svc.Routes(mux, httpPrefix, authSvc.Require); err != nil {
+	sh.Mount(mux)
+	if err := env.svc.Routes(mux, httpPrefix, authSvc.Require, sh); err != nil {
 		t.Fatal(err)
 	}
 	session, err := signer.Sign(auth.Claims{K: auth.KindSession, EE: testUser.EE, Name: testUser.Name, Iat: testNow.Unix(), Exp: testNow.Add(time.Hour).Unix()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &httpEnv{testEnv: env, mux: mux, cookie: &http.Cookie{Name: "dash_go_session", Value: session}}
+	return &httpEnv{testEnv: env, mux: i18n.Middleware(mux), cookie: &http.Cookie{Name: "dash_go_session", Value: session}}
 }
 
 func (h *httpEnv) do(method, path, body string, withCookie bool) *httptest.ResponseRecorder {
@@ -65,8 +73,8 @@ const sessionBody = `"process":"Winder","date":"2026-11-19","shift":"AM"`
 
 func TestPageAndStaticFilesAreServed(t *testing.T) {
 	h := newHTTPEnv(t)
-	for path, want := range map[string]string{httpPrefix + "/": "<title>HC Scan Assign</title>", httpPrefix + "/static/app.js": "use strict", httpPrefix + "/static/app.css": "--bg"} {
-		rec := h.do(http.MethodGet, path, "", false)
+	for path, want := range map[string]string{httpPrefix + "/": "<title>HC Scan Assign · CIM EDGE</title>", httpPrefix + "/static/app.js": "use strict", httpPrefix + "/static/app.css": ".pagebar"} {
+		rec := h.do(http.MethodGet, path, "", true)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("%s: %d, missing %q", path, rec.Code, want)
 		}
@@ -88,7 +96,7 @@ func TestAPIRequiresLogin(t *testing.T) {
 func TestScanFlowOverHTTP(t *testing.T) {
 	h := newHTTPEnv(t)
 	me := decode(t, h.do(http.MethodGet, httpPrefix+"/api/me", "", true))
-	if me["version"] != "0.1.0" || me["config"].(map[string]any)["production_date"] != "2026-11-19" {
+	if me["version"] != version.Version || me["config"].(map[string]any)["production_date"] != "2026-11-19" {
 		t.Fatalf("me: %v", me)
 	}
 

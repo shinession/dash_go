@@ -28,11 +28,13 @@ type MeView struct {
 	Version   string       `json:"version"`
 }
 
-// EntryView is a draft line with its current warnings.
+// EntryView is a draft line with its current warnings. Reason and the texts of the flags are in the language of
+// the request.
 type EntryView struct {
 	Entry
+	Reason string         `json:"reason"`
 	Photo  string         `json:"photo"`
-	Flags  []Flag         `json:"flags"` // facts found at scan time plus the checks of the current assignment
+	Flags  []FlagView     `json:"flags"` // facts found at scan time plus the checks of the current assignment
 	Levels map[string]int `json:"levels"`
 	Warn   bool           `json:"warn"`
 }
@@ -128,10 +130,10 @@ type SkippedView struct {
 
 // AckView is a line with warnings the shift leader has to acknowledge.
 type AckView struct {
-	EE      string `json:"ee"`
-	Name    string `json:"name"`
-	Machine string `json:"machine"`
-	Flags   []Flag `json:"flags"`
+	EE      string     `json:"ee"`
+	Name    string     `json:"name"`
+	Machine string     `json:"machine"`
+	Flags   []FlagView `json:"flags"`
 }
 
 // ConfirmResult answers POST api/confirm.

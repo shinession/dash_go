@@ -1,0 +1,31 @@
+{{define "content"}}
+<main class="dg-main">
+<section class="dg-login">
+  <div class="dg-card dg-login-card">
+    {{template "logo"}}
+    <h1>{{.T "login.heading"}}</h1>
+    <p class="muted">{{.T "login.subtitle"}}</p>
+    {{with .Data.Notice}}<div class="dg-alert {{.Kind}}" role="alert">{{.Text}}</div>{{end}}
+    {{if .Data.Password}}
+    <form class="dg-form" id="login-form" method="post" data-next="{{.Data.Next}}" novalidate>
+      <label class="dg-field"><span>{{.T "login.account"}}</span>
+        <input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
+      <label class="dg-field"><span>{{.T "login.password"}}</span>
+        <input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="dg-alert hidden" id="login-error" role="alert"></div>
+      <button class="dg-btn dg-btn-primary" type="submit" id="login-submit">{{.T "login.submit"}}</button>
+    </form>
+    {{end}}
+    {{if .Data.SSO}}
+    {{if .Data.Password}}<div class="dg-or"><span>{{.T "login.or"}}</span></div>{{end}}
+    <div id="sso-box" data-next="{{.Data.Next}}">
+      <button class="dg-btn" type="button" id="sso-login">{{template "icon" (.Icon "user")}} {{.T "login.sso"}}</button>
+      <div class="dg-alert hidden" id="sso-status" role="status"></div>
+    </div>
+    {{end}}
+    {{if not .Data.Any}}<div class="dg-alert warn">{{.T "login.none"}}</div>{{end}}
+    <p class="muted small">{{.T "login.hint"}}{{if .Data.DashHome}} <a href="{{.Data.DashHome}}">{{.T "login.open_dash"}}</a>{{end}}</p>
+  </div>
+</section>
+</main>
+{{end}}

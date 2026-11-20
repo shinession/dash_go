@@ -9,19 +9,33 @@ import (
 	"time"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/i18n"
 )
 
-// Error is returned by the service; the HTTP layer maps it to a status code and a JSON body.
+// Error is returned by the service; the HTTP layer maps it to a status code and a JSON body. The sentence is not
+// made here: Key names a text of the catalog and Args fills its placeholders, so the answer is in the language of
+// the request. Without a Key the text is hc.err.<Code>.
 type Error struct {
 	Status int
 	Code   string
-	Msg    string
+	Key    string
+	Args   i18n.P
 }
 
-func (e *Error) Error() string { return e.Msg }
+func (e *Error) Error() string { return e.Code }
 
-func newError(status int, code, format string, args ...any) *Error {
-	return &Error{Status: status, Code: code, Msg: fmt.Sprintf(format, args...)}
+// newError makes an error whose text is hc.err.<code> of the catalog.
+func newError(status int, code string, args ...i18n.P) *Error {
+	e := &Error{Status: status, Code: code, Key: "hc.err." + code}
+	if len(args) > 0 {
+		e.Args = args[0]
+	}
+	return e
+}
+
+// newErrorKey makes an error whose text is another key of the catalog than hc.err.<code> (two texts share a code).
+func newErrorKey(status int, code, key string, args i18n.P) *Error {
+	return &Error{Status: status, Code: code, Key: key, Args: args}
 }
 
 // Settings are the module settings (config key modules.hc_scan). Every field has a default.
@@ -30,9 +44,9 @@ type Settings struct {
 	DraftStore               string `json:"draft_store"` // "redis" (default) or "memory" (single instance, development)
 	DraftTTLHours            int    `json:"draft_ttl_hours"`
 	RecentDays               int    `json:"recent_days"`
-	PhotoURLTemplate         string `json:"photo_url_template"`
-	DashAPIURL               string `json:"dash_api_url"`  // default http://<api_server>/api
-	DashDataDir              string `json:"dash_data_dir"` // data folder of the Python app, holds DailyAttnData.log
+	PhotoURLTemplate         string `json:"photo_url_template"` // default: the photo_url_template of the service
+	DashAPIURL               string `json:"dash_api_url"`       // default: the dash_api_url of the service, http://<api_server>/api
+	DashDataDir              string `json:"dash_data_dir"`      // data folder of the Python app, holds DailyAttnData.log
 	ProductionDayOffsetHours int    `json:"production_day_offset_hours"`
 	AMFromHour               int    `json:"am_from_hour"`
 	PMFromHour               int    `json:"pm_from_hour"`
@@ -50,7 +64,6 @@ func DefaultSettings() Settings {
 		DraftStore:               "redis",
 		DraftTTLHours:            48,
 		RecentDays:               7,
-		PhotoURLTemplate:         "/api/static/hr/{ee_code}.webp",
 		ProductionDayOffsetHours: 7,
 		AMFromHour:               7,
 		PMFromHour:               19,
@@ -375,23 +388,23 @@ func clip(s string, n int) string {
 // check validates the session key and the permission of the user.
 func (s *Service) check(ctx context.Context, u auth.User, k Key, fresh bool) error {
 	if !contains(s.Processes, k.Process) {
-		return newError(400, "bad_process", "Unknown process %q", clip(k.Process, 30))
+		return newError(400, "bad_process", i18n.P{"process": clip(k.Process, 30)})
 	}
 	if k.Shift != ShiftAM && k.Shift != ShiftPM {
-		return newError(400, "bad_shift", "The shift must be AM or PM")
+		return newError(400, "bad_shift")
 	}
 	today := ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
 	oldest := time.Date(today.Year(), today.Month()-1, 1, 0, 0, 0, 0, time.UTC)
 	if k.Date.After(today.AddDate(0, 0, 1)) || k.Date.Before(oldest) {
-		return newError(400, "bad_date", "The date must be between %s and %s", oldest.Format("2006-01-02"), today.AddDate(0, 0, 1).Format("2006-01-02"))
+		return newErrorKey(400, "bad_date", "hc.err.bad_date_range", i18n.P{"oldest": oldest.Format("2006-01-02"), "newest": today.AddDate(0, 0, 1).Format("2006-01-02")})
 	}
 	procs, err := s.Perms.Processes(ctx, u, fresh)
 	if err != nil {
 		s.Log.Error("permission check failed", "ee", u.EE, "error", err)
-		return newError(502, "permission_check_failed", "Your permission could not be verified right now. Try again in a moment.")
+		return newError(502, "permission_check_failed")
 	}
 	if !contains(procs, k.Process) {
-		return newError(403, "forbidden", "You don't have permission to work on %s manpower.", k.Process)
+		return newError(403, "forbidden", i18n.P{"process": k.Process})
 	}
 	return nil
 }
