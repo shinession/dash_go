@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (dash_go version 0.1.3). This describes the current code of `internal/core/update`, `internal/core/server/gate.go`, `PendingSignIns` in `internal/core/auth/ssoflow.go`, the settings `update_*` in `internal/core/config/config.go`, the wiring in `cmd/dash_go/main.go` and `cmd/dash_go/update.go`, and `scripts/release.ps1`. Section 10 says what was verified and what was not.
+**Updated:** 2026-11-23 (dash_go version 0.1.6). This describes the current code of `internal/core/update`, `internal/core/server/gate.go`, `PendingSignIns` in `internal/core/auth/ssoflow.go`, the settings `update_*` in `internal/core/config/config.go`, the wiring in `cmd/dash_go/main.go` and `cmd/dash_go/update.go`, and `scripts/release.ps1`. Version 0.1.6 made the `-check` that the updater runs on a new program also test the connections of the service (section 3); the updater itself is unchanged. Section 10 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -40,7 +40,7 @@ Rules:
 ## 3. What an update does
 
 1. **Look.** 10 seconds after the start and then every `update_interval_minutes` (default 10), the manifest is read (30 seconds at most).
-2. **Download and check.** When the version differs the program is downloaded to `dash_go.new.exe.part` (a download that receives nothing for 2 minutes is given up), checked against the size and the sha256 of the manifest and renamed to `dash_go.new.exe`. Then it is run twice (30 seconds at most each): `dash_go.new.exe -version` must say the version of the manifest, and `dash_go.new.exe <the flags of this program> -check` must succeed. `-check` loads the configuration and the modules and starts no server; it gets the same flags as the running program (for example `-config-dir`), so it reads the same configuration. Any failure is written to the log and tried again at the next look. The running program is not touched.
+2. **Download and check.** When the version differs the program is downloaded to `dash_go.new.exe.part` (a download that receives nothing for 2 minutes is given up), checked against the size and the sha256 of the manifest and renamed to `dash_go.new.exe`. Then it is run twice (30 seconds at most each): `dash_go.new.exe -version` must say the version of the manifest, and `dash_go.new.exe <the flags of this program> -check` must succeed. `-check` loads the configuration and the modules and starts no server; it gets the same flags as the running program (for example `-config-dir`), so it reads the same configuration. Since 0.1.6 it also tests the connections from this server (PostgreSQL, Redis and the Dash API, all at the same time, 20 seconds at most): a connection that does not work keeps the new program out until the next look, so a server is only updated while it can reach what it depends on. The update to 0.1.6 itself is checked this way too, because the running program runs the `-check` of the new one. Any failure is written to the log and tried again at the next look. The running program is not touched.
 3. **Ready.** The log says `the new version is ready`. The service goes on as usual. Every 2 seconds it asks whether somebody works with it. The service is **busy** when:
    - a request that changes something (every method but GET, HEAD and OPTIONS: scan, assign, remove, reset, confirm, sign in, sign out) is being served, or ended less than **10 seconds** ago; or
    - a Windows sign-in was started and is not done yet (it is only in memory and a restart would lose it).
@@ -121,7 +121,7 @@ All lines are in the log of the service (`logs\dash_go-YYYYMMDD.log` and the con
 | `a step failed ... step=check` with another text | The manifest cannot be reached or read (server down, address wrong, manifest invalid). The service runs on as it is; the same text is logged once until a look succeeds. |
 | `step=download error="... not the one the manifest describes"` | The size or the sha256 of the program is not the one of the manifest: a release that is still being copied, or a manifest that does not belong to the program. Tried again at the next look. |
 | `step=program error="the program of the release says it is version X, but the manifest says Y"` | The manifest and the program disagree. Not tried again until the manifest changes. Publish again with `release.ps1`. |
-| `step=program error="the new program does not accept the settings of this service: ..."` | `dash_go.new.exe <flags> -check` failed; the text is its reason (a setting the new version does not accept). Fix the setting. Tried again at the next look. |
+| `step=program error="the new program does not accept the settings of this service: ..."` | `dash_go.new.exe <flags> -check` failed; the text is its reason: a setting the new version does not accept, or, since 0.1.6, `connection check failed check=Redis ...` (the new program cannot reach what it depends on from this server; run `dash_go.exe -check` by hand for the whole report, [hc_scan_page.md](hc_scan_page.md), section 11). Fix the setting or the connection. Tried again at the next look. |
 | `step=install error="the new program could not be put in place ..."` | The files could not be renamed (rights, a virus scanner). The old program is back in place and the requests are taken again. |
 | `automatic update cannot put a new program in the folder of this one` | The folder of `dash_go.exe` cannot be written to by this account. |
 | `the new version waits for a quiet moment busy="..."` | Somebody is working with the service: `N request(s) that change something are being served`, `the last request that changed something ended Ns ago`, or `N Windows sign-in(s) are under way`. It goes on by itself. Logged once, then every 5 minutes. |
@@ -141,7 +141,7 @@ A server whose version never changes although the release is newer: look at `-ch
 - **Opt-in, no switch in the pages.** The updater has no page and no button. The log is the interface. To make a server look for a release at once, restart the service: the first look is 10 seconds after the start.
 - **"Nobody is clicking or submitting"** means requests that change something. The 10 seconds (`quietFor` in `cmd/dash_go/update.go`) and the looks every 2 seconds are fixed values, not settings. Somebody who only looks at a page does not hold an update back, and a restart ends what a page holds in the browser only (text that was typed and not sent). The browser shows a network error or the 503 message for a moment.
 - **Whoever can write to the release folder controls every server that reads it.** The sha256 only protects against damaged copies; the manifest and the program come from the same place. Keep the write access to `static\cd` as tight as the right to run programs on the servers. The address is `http` inside the company network; an `https` address or a share with its own rights is possible.
-- **No automatic way back.** A new program that starts and then fails is not replaced by the old one; section 7 is the way back. The new program is only installed after `-version` and `-check` passed, which catches the common reasons (a setting it does not accept).
+- **No automatic way back.** A new program that starts and then fails is not replaced by the old one; section 7 is the way back. The new program is only installed after `-version` and `-check` passed, which catches the common reasons (a setting it does not accept and, since 0.1.6, a connection it cannot make: a database that is down for a few minutes only delays the update).
 - **The launcher does not update itself** (section 4).
 - **One release for all servers** that read the folder. A server that needs another version reads another folder (`update_url`).
 - The updater is stdlib only and does not add a dependency.
@@ -163,12 +163,13 @@ Not verified:
 - A Windows sign-in that is under way while a release waits (the count is unit-tested, no real sign-on service was used), and an update while people really scan.
 - An `https` address, a share (`\\server\share`) as the release folder, a virus scanner that holds a new file.
 - The Back button behind the nginx of s1 and s2 (the link is `/`, tested against the scratch service only).
+- 0.1.6: an update with a rehearsal release was not run. That a failed connection test keeps a new program out is read from the code (`ExecChecker.Config` takes every non-zero exit of `-check` as a refusal and shows the first line of level ERROR as the reason), not seen in a running update; the real `-check` of 0.1.6 was run by hand on the development machine ([hc_scan_page.md](hc_scan_page.md), section 12).
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-20（dash_go 版本 0.1.3）。本文描述 `internal/core/update`、`internal/core/server/gate.go`、`internal/core/auth/ssoflow.go` 中的 `PendingSignIns`、`internal/core/config/config.go` 中的 `update_*` 设置、`cmd/dash_go/main.go` 和 `cmd/dash_go/update.go` 中的接线，以及 `scripts/release.ps1` 的当前代码。第 10 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-23（dash_go 版本 0.1.6）。本文描述 `internal/core/update`、`internal/core/server/gate.go`、`internal/core/auth/ssoflow.go` 中的 `PendingSignIns`、`internal/core/config/config.go` 中的 `update_*` 设置、`cmd/dash_go/main.go` 和 `cmd/dash_go/update.go` 中的接线，以及 `scripts/release.ps1` 的当前代码。0.1.6 版让更新程序对新程序运行的 `-check` 也测试服务的连接（第 3 节）；更新程序本身没有改动。第 10 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -208,7 +209,7 @@ Not verified:
 ## 3. 一次更新做什么
 
 1. **查看。** 启动 10 秒后，以及之后每隔 `update_interval_minutes`（默认 10 分钟），读取清单（最多 30 秒）。
-2. **下载并检查。** 版本不同时，把程序下载到 `dash_go.new.exe.part`（2 分钟收不到任何数据就放弃），按清单的大小和 sha256 检查，然后改名为 `dash_go.new.exe`。接着运行它两次（每次最多 30 秒）：`dash_go.new.exe -version` 必须报告清单中的版本，`dash_go.new.exe <本程序的参数> -check` 必须成功。`-check` 加载配置和模块，不启动服务器；它会得到与正在运行的程序相同的参数（例如 `-config-dir`），所以读取的是同一份配置。任何失败都会写进日志，并在下一次查看时重试。正在运行的程序不会被改动。
+2. **下载并检查。** 版本不同时，把程序下载到 `dash_go.new.exe.part`（2 分钟收不到任何数据就放弃），按清单的大小和 sha256 检查，然后改名为 `dash_go.new.exe`。接着运行它两次（每次最多 30 秒）：`dash_go.new.exe -version` 必须报告清单中的版本，`dash_go.new.exe <本程序的参数> -check` 必须成功。`-check` 加载配置和模块，不启动服务器；它会得到与正在运行的程序相同的参数（例如 `-config-dir`），所以读取的是同一份配置。自 0.1.6 起，它还会从这台服务器测试连接（PostgreSQL、Redis 和 Dash API，同时进行，最多 20 秒）：有连接不通时，新程序会被挡在外面，直到下一次查看，所以服务器只有在能连上它所依赖的服务时才会更新。更新到 0.1.6 本身也是这样检查的，因为正在运行的程序运行的是新程序的 `-check`。任何失败都会写进日志，并在下一次查看时重试。正在运行的程序不会被改动。
 3. **就绪。** 日志写 `the new version is ready`。服务照常运行。每隔 2 秒它询问是否有人正在使用。服务在以下情况**忙**：
    - 有改变数据的请求（除 GET、HEAD、OPTIONS 以外的所有方法：扫描、分派、移除、重置、确认、登录、退出登录）正在处理，或结束不到 **10 秒**；或
    - 有 Windows 登录已开始但尚未完成（它只在内存里，重启会丢失）。
@@ -289,7 +290,7 @@ Not verified:
 | `a step failed ... step=check`，文字不同 | 清单无法访问或无法读取（服务器宕机、地址错误、清单无效）。服务保持现状运行；相同的文字在查看成功之前只记录一次。 |
 | `step=download error="... not the one the manifest describes"` | 程序的大小或 sha256 与清单不一致：发布还在复制中，或者清单与程序不匹配。下一次查看时重试。 |
 | `step=program error="the program of the release says it is version X, but the manifest says Y"` | 清单和程序不一致。在清单变化之前不会再试。请用 `release.ps1` 重新发布。 |
-| `step=program error="the new program does not accept the settings of this service: ..."` | `dash_go.new.exe <参数> -check` 失败了；文字是它给出的原因（新版本不接受的某个设置）。请修正设置。下一次查看时重试。 |
+| `step=program error="the new program does not accept the settings of this service: ..."` | `dash_go.new.exe <参数> -check` 失败了；文字是它给出的原因：新版本不接受的某个设置，或者自 0.1.6 起的 `connection check failed check=Redis ...`（新程序从这台服务器连不上它所依赖的服务；手动运行 `dash_go.exe -check` 可以看到完整报告，[hc_scan_page.md](hc_scan_page.md) 第 11 节）。请修正设置或连接。下一次查看时重试。 |
 | `step=install error="the new program could not be put in place ..."` | 文件无法改名（权限、杀毒软件）。旧程序已恢复原位，并重新接受请求。 |
 | `automatic update cannot put a new program in the folder of this one` | 这个账号不能写入 `dash_go.exe` 所在的文件夹。 |
 | `the new version waits for a quiet moment busy="..."` | 有人正在使用服务：`N request(s) that change something are being served`、`the last request that changed something ended Ns ago`，或 `N Windows sign-in(s) are under way`。它会自己继续。记录一次，之后每 5 分钟一次。 |
@@ -309,7 +310,7 @@ Not verified:
 - **需要主动开启，页面里没有开关。** 更新程序没有页面，也没有按钮，日志就是界面。要让服务器马上去查看发布，重启服务即可：启动 10 秒后就会第一次查看。
 - **“没有人在点击或提交”**指的是改变数据的请求。10 秒（`cmd/dash_go/update.go` 中的 `quietFor`）和每 2 秒一次的查看是固定值，不是设置。只是在看页面的人不会拖住更新；重启只会丢掉页面在浏览器中单独持有的内容（输入了但没有发送的文字）。浏览器会短暂显示网络错误或 503 的消息。
 - **谁能写入发布文件夹，谁就控制所有读取它的服务器。** sha256 只能防止损坏的副本；清单和程序来自同一个地方。请把对 `static\cd` 的写权限，控制得和在这些服务器上运行程序的权限一样严。地址在公司内网中是 `http`；也可以使用 `https` 地址，或有独立权限的共享文件夹。
-- **没有自动回退。** 启动后失败的新程序不会被旧程序替换；第 7 节是回退的办法。新程序只有在 `-version` 和 `-check` 通过之后才会安装，这能挡住常见的原因（它不接受的某个设置）。
+- **没有自动回退。** 启动后失败的新程序不会被旧程序替换；第 7 节是回退的办法。新程序只有在 `-version` 和 `-check` 通过之后才会安装，这能挡住常见的原因（它不接受的某个设置，以及自 0.1.6 起它连不上的服务：数据库停机几分钟只会推迟更新）。
 - **启动器不会更新自己**（第 4 节）。
 - **一个发布供所有读取该文件夹的服务器使用。** 需要另一个版本的服务器去读另一个文件夹（`update_url`）。
 - 更新程序只使用标准库，没有增加依赖。
@@ -331,3 +332,4 @@ Not verified:
 - 有发布在等待时正在进行的 Windows 登录（计数有单元测试，没有用真实的登录服务），以及人们真正在扫码时的更新。
 - `https` 地址、共享文件夹（`\\server\share`）作为发布文件夹、杀毒软件占用新文件。
 - s1 和 s2 的 nginx 之后的返回按钮（链接是 `/`，只对临时服务测试过）。
+- 0.1.6：没有用演练发布运行过更新。连接测试失败会把新程序挡在外面，这一点是从代码读出来的（`ExecChecker.Config` 把 `-check` 的任何非零退出都当作拒绝，并把第一行 ERROR 级别的日志显示为原因），没有在运行中的更新里看到；0.1.6 真实的 `-check` 在开发机上手动运行过（[hc_scan_page.md](hc_scan_page.md) 第 12 节）。

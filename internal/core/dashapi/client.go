@@ -120,6 +120,26 @@ func (c *Client) VerifyUser(ctx context.Context, user, password string) error {
 	})
 }
 
+// Check finds out whether this host can use the backend, with a question that reads and changes nothing: the function
+// hc_user_processes without a user. A backend that can be reached, accepts the signature of this host and has the
+// function answers 202 ("user is unknown or deactivated"), which is the expected answer here and counts as success.
+// The failures are the ones people would meet: ErrUnauthorized (api.salt_3 or the clock of the two hosts differ),
+// ErrFunctionUnknown (an older backend, or not the one that was meant) and an address that cannot be reached.
+func (c *Client) Check(ctx context.Context) error {
+	return withRetry(ctx, func() (bool, error) {
+		status, _, retry, err := c.post(ctx, map[string]string{"func": "hc_user_processes"})
+		if err != nil {
+			return retry, err
+		}
+		switch status {
+		case http.StatusOK, http.StatusAccepted:
+			return false, nil
+		default:
+			return c.refusal(status)
+		}
+	})
+}
+
 // withRetry runs one request of the API. The second attempt covers a signature that expired at the hour change or
 // a burst limit; a definite answer is never repeated.
 func withRetry(ctx context.Context, attempt func() (retry bool, err error)) error {

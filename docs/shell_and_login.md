@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-23 (dash_go version 0.1.5). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Version 0.1.5 added the **Documentation** and **Guide** buttons to the header between the language switch and the user box, the bilingual `/dash_go/help` user guide page, and the step-by-step page tour (`tour.js`, with first-visit auto-start via `localStorage`, section 2). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-23 (dash_go version 0.1.6). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Version 0.1.5 added the **Documentation** and **Guide** buttons to the header between the language switch and the user box, the bilingual `/dash_go/help` user guide page, and the step-by-step page tour (`tour.js`, with first-visit auto-start via `localStorage`, section 2). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -142,7 +142,7 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 | `api.salt_3` | Python `config.json` | none | Secret of the `/api/user` endpoint and of the hand-over link (unchanged). |
 | `dash_home` | `dash_go.json` | `/ie/` | The login page links to the Dash application. |
 
-`dash_go.exe -check` prints whether the password and the Windows sign-in are on. Since 0.1.2 the log (and so `-check`) also says which Python API the sign-in and the modules ask and which key it came from: `the Dash API of the sign-in url=http://localhost/api from=dash_api_url`. Since 0.1.3 `-check` also says whether the automatic update is on. Its keys (`update_url`, `update_interval_minutes`, `update_restart`) are in [auto_update.md](auto_update.md), section 6.
+`dash_go.exe -check` prints whether the password and the Windows sign-in are on. Since 0.1.2 the log (and so `-check`) also says which Python API the sign-in and the modules ask and which key it came from: `the Dash API of the sign-in url=http://localhost/api from=dash_api_url`. Since 0.1.3 `-check` also says whether the automatic update is on. Its keys (`update_url`, `update_interval_minutes`, `update_restart`) are in [auto_update.md](auto_update.md), section 6. Since 0.1.6 `-check` also asks that API with a signed call that reads nothing (the line `Dash API (sign-in)`), so a wrong `api.salt_3` (`dash api rejected the request signature`) or a backend without the functions (`answered status 204`) shows up there before anybody tries to sign in; the other checks and the exit code are described in [hc_scan_page.md](hc_scan_page.md), section 11.
 
 ## 9. Deployment
 
@@ -216,7 +216,7 @@ Done (2026-11-23, version 0.1.5):
 
 # 中文
 
-**更新日期：** 2026-11-23（dash_go 版本 0.1.5）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。0.1.5 版在顶栏的语言切换和用户框之间加入了**文档**和**导览**按钮、中英文 `/dash_go/help` 使用手册页面以及交互式分步导览（`tour.js`，支持首次访问经 `localStorage` 自动引导，第 2 节）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-23（dash_go 版本 0.1.6）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。0.1.5 版在顶栏的语言切换和用户框之间加入了**文档**和**导览**按钮、中英文 `/dash_go/help` 使用手册页面以及交互式分步导览（`tour.js`，支持首次访问经 `localStorage` 自动引导，第 2 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -358,7 +358,7 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 | `api.salt_3` | Python `config.json` | 无 | `/api/user` 接口和交接链接的密钥（没有改变）。 |
 | `dash_home` | `dash_go.json` | `/ie/` | 登录页链接到 Dash 应用。 |
 
-`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。自 0.1.2 起，日志（所以 `-check` 也是）还会说明登录和各模块询问的是哪个 Python API，以及它来自哪个键：`the Dash API of the sign-in url=http://localhost/api from=dash_api_url`。自 0.1.3 起，`-check` 还会说明自动更新是否开启。它的键（`update_url`、`update_interval_minutes`、`update_restart`）见 [auto_update.md](auto_update.md) 第 6 节。
+`dash_go.exe -check` 会打印密码登录和 Windows 登录是否开启。自 0.1.2 起，日志（所以 `-check` 也是）还会说明登录和各模块询问的是哪个 Python API，以及它来自哪个键：`the Dash API of the sign-in url=http://localhost/api from=dash_api_url`。自 0.1.3 起，`-check` 还会说明自动更新是否开启。它的键（`update_url`、`update_interval_minutes`、`update_restart`）见 [auto_update.md](auto_update.md) 第 6 节。自 0.1.6 起，`-check` 还会用一个不读取任何东西的带签名调用去询问该 API（`Dash API (sign-in)` 这一行），所以错误的 `api.salt_3`（`dash api rejected the request signature`）或没有这些函数的后端，会在有人尝试登录之前就在那里显示出来；其他检查和退出码见 [hc_scan_page.md](hc_scan_page.md) 第 11 节。
 
 ## 9. 部署
 

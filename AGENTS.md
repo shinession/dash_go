@@ -567,6 +567,44 @@ Rule:
 
 Ruled out, so do not spend time on them first: the callback code and its permission checks, the link itself, and the nginx routing.
 
+### 14.7 A new Redis connection of a Python process takes 2 seconds when the host is written as `localhost` (Windows sign-in service, first request after a restart)
+
+Found on 2026-11-23 while the connections of the development machine were tested for `dash_go.exe -check`. Measured with redis-py 5.0.1, built the way `LocalListV3.load_redis` builds it (a `ConnectionPool` with no timeouts), and with the Go client of `dash_go`. Redis 5.0.14.1 on Windows, listening on IPv4 only (`Get-NetTCPConnection -State Listen -LocalPort 6379` shows only `0.0.0.0`).
+
+Symptoms:
+
+- The first command on a new Redis connection of a Python process takes about 2 seconds (2034 to 2058 ms); every later command on that connection takes 0.2 ms. `FastAPI/main.py` (the Windows sign-in service) builds a new `redis.Redis` in `get_redis_client()` for every call, so there every call pays it.
+- Redis, its password and the network are fine: the same settings with the host written as `127.0.0.1` answer the first command in 2 ms.
+- `dash_go` is not slowed down: its first Redis command on `localhost:6379` takes 2 to 4 ms.
+
+Root cause:
+
+- `localhost` resolves to `::1` first and then to `127.0.0.1`. Nothing listens on `::1:6379`, and a Python `connect()` to it returns the refusal only after about 2 seconds (2022 to 2051 ms, with a blocking socket and with `settimeout(5)` alike). Python tries the addresses one after the other, so the 2 seconds are spent before `127.0.0.1` is tried.
+- Go gets the same refusal in 1 ms and connects to `localhost:6379` in 4 ms. Why the two differ in their Windows socket calls was not investigated.
+
+Rule:
+
+- In the Dash configuration, write the host of a Redis on the same server as `127.0.0.1`, not `localhost`. A patch file replaces the whole top-level key of `config.json` (the shallow merge of `LocalListV3.load_config_json`, `FastAPI/main.py` and `dash_go`), so every patch that declares its own `redis` object has to be changed itself: changing `config.json` does not reach it.
+- Look at the listening addresses of the server before you change a host: `127.0.0.1` is refused when Redis listens on IPv6 only.
+- `dash_go.exe -check` (since 0.1.6) shows the time of a new connection of PostgreSQL and Redis. It tells whether `dash_go` is affected; it says nothing about the Python processes, which have to be measured with a Python client.
+
+How to confirm (no password is needed): time the connection to the refused address and to the good one.
+
+```python
+import socket, time
+for host, family in (("::1", socket.AF_INET6), ("127.0.0.1", socket.AF_INET)):
+    s = socket.socket(family, socket.SOCK_STREAM)
+    t0 = time.perf_counter()
+    try:
+        s.connect((host, 6379))
+    except OSError:
+        pass
+    print(host, round((time.perf_counter() - t0) * 1000), "ms")
+    s.close()
+```
+
+Ruled out, so do not spend time on them first: Redis itself, its password, the network, the connection pool of redis-py, and `socket_connect_timeout` (a blocking socket takes the same 2 seconds).
+
 ---
 
 # 中文
@@ -1129,3 +1167,41 @@ Object.values(window.store.getState().paths.objs).flat().some(o => o.values.join
 - 用返回 `refresh = False` 的模拟路由来测试。布局里固定 `refresh=True` 的小应用看不到这个缺陷，所以第一个版本在探针里看起来是正常的。
 
 已排除，所以不要优先在这些方向上花时间：回调代码及其权限检查、链接本身，以及 nginx 路由。
+
+### 14.7 Python 进程的新 Redis 连接在主机写成 `localhost` 时要 2 秒（Windows 登录服务，以及重启后的第一个请求）
+
+发现于 2026-11-23，当时为 `dash_go.exe -check` 测试开发机的各项连接。用 redis-py 5.0.1 测得，构造方式与 `LocalListV3.load_redis` 相同（不带任何超时的 `ConnectionPool`），同时也用 `dash_go` 的 Go 客户端测过。Windows 上的 Redis 5.0.14.1，只监听 IPv4（`Get-NetTCPConnection -State Listen -LocalPort 6379` 只显示 `0.0.0.0`）。
+
+现象：
+
+- Python 进程在新 Redis 连接上的第一条命令要约 2 秒（2034 到 2058 ms）；该连接上之后的每条命令只要 0.2 ms。`FastAPI/main.py`（Windows 登录服务）每次调用都会在 `get_redis_client()` 中新建一个 `redis.Redis`，所以那里每次调用都要付出这 2 秒。
+- Redis、它的密码和网络都没有问题：同样的设置，把主机写成 `127.0.0.1`，第一条命令 2 ms 就应答。
+- `dash_go` 没有变慢：它在 `localhost:6379` 上的第一条 Redis 命令只要 2 到 4 ms。
+
+根因：
+
+- `localhost` 先解析到 `::1`，再解析到 `127.0.0.1`。`::1:6379` 上没有任何监听，Python 的 `connect()` 要约 2 秒之后才拿到拒绝（2022 到 2051 ms，阻塞套接字和 `settimeout(5)` 都一样）。Python 是一个地址接一个地址地尝试，所以这 2 秒是在尝试 `127.0.0.1` 之前花掉的。
+- Go 在 1 ms 内就拿到同样的拒绝，并在 4 ms 内连上 `localhost:6379`。两者在 Windows 套接字调用上为何不同，没有深究。
+
+规则：
+
+- 在 Dash 配置中，把与本机同一台服务器上的 Redis 的主机写成 `127.0.0.1`，不要写 `localhost`。patch 文件会整体替换 `config.json` 的顶层键（`LocalListV3.load_config_json`、`FastAPI/main.py` 和 `dash_go` 的浅合并），所以每一个自己声明了 `redis` 对象的 patch 都要单独修改：只改 `config.json` 够不到它们。
+- 修改主机之前，先查这台服务器的监听地址：Redis 只监听 IPv6 时，`127.0.0.1` 会被拒绝。
+- `dash_go.exe -check`（自 0.1.6 起）会显示 PostgreSQL 和 Redis 新连接的耗时。它能说明 `dash_go` 是否受影响；对 Python 进程它什么也说明不了，Python 进程要用 Python 客户端去测。
+
+如何确认（不需要密码）：分别给被拒绝的地址和正常的地址计时。
+
+```python
+import socket, time
+for host, family in (("::1", socket.AF_INET6), ("127.0.0.1", socket.AF_INET)):
+    s = socket.socket(family, socket.SOCK_STREAM)
+    t0 = time.perf_counter()
+    try:
+        s.connect((host, 6379))
+    except OSError:
+        pass
+    print(host, round((time.perf_counter() - t0) * 1000), "ms")
+    s.close()
+```
+
+已排除，所以不要优先在这些方向上花时间：Redis 本身、它的密码、网络、redis-py 的连接池，以及 `socket_connect_timeout`（阻塞套接字同样要 2 秒）。

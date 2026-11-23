@@ -102,6 +102,67 @@ func TestAFunctionTheBackendDoesNotKnowIsReportedWithTheBackendAddress(t *testin
 	}
 }
 
+// Check is what dash_go -check asks the backend: a signed call that reads and changes nothing. A working backend
+// answers 202 to it (hc_user_processes without a user); everything else is a problem somebody would meet.
+func TestCheckTellsAWorkingBackendFromTheFailuresPeopleWouldMeet(t *testing.T) {
+	status := atomic.Int32{}
+	calls := atomic.Int32{}
+	var lastBody atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/user/hc_scan" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != Signature("salt", time.Now()) {
+			t.Errorf("the check must be signed like every other call")
+		}
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		lastBody.Store(body)
+		w.WriteHeader(int(status.Load()))
+	}))
+	c := New(srv.URL+"/api", "salt", time.Second)
+	ctx := context.Background()
+
+	for _, ok := range []int32{http.StatusAccepted, http.StatusOK} {
+		calls.Store(0)
+		status.Store(ok)
+		if err := c.Check(ctx); err != nil {
+			t.Errorf("%d: a working backend must pass: %v", ok, err)
+		}
+		if calls.Load() != 1 {
+			t.Errorf("%d: calls=%d, a definite answer is not repeated", ok, calls.Load())
+		}
+	}
+	body, _ := lastBody.Load().(map[string]string)
+	if _, asksForAUser := body["user"]; body["func"] != "hc_user_processes" || asksForAUser {
+		t.Errorf("the check must ask hc_user_processes without a user, so that no account is looked up: %v", body)
+	}
+
+	calls.Store(0)
+	status.Store(401)
+	if err := c.Check(ctx); !errors.Is(err, ErrUnauthorized) || calls.Load() != 2 {
+		t.Errorf("401: err=%v calls=%d (a rejected signature is tried once more for the hour change)", err, calls.Load())
+	}
+
+	calls.Store(0)
+	status.Store(204)
+	if err := c.Check(ctx); !errors.Is(err, ErrFunctionUnknown) || !strings.Contains(err.Error(), srv.URL+"/api answered status 204") || calls.Load() != 1 {
+		t.Errorf("204: err=%v calls=%d", err, calls.Load())
+	}
+
+	calls.Store(0)
+	status.Store(500)
+	if err := c.Check(ctx); err == nil || !strings.Contains(err.Error(), "status 500") || calls.Load() != 1 {
+		t.Errorf("500: err=%v calls=%d", err, calls.Load())
+	}
+
+	srv.Close()
+	if err := c.Check(ctx); err == nil || !strings.Contains(err.Error(), "dash api request failed") {
+		t.Errorf("a backend that cannot be reached: %v", err)
+	}
+}
+
 func TestRootIsWrittenWithoutCredentials(t *testing.T) {
 	if got := New("http://user:secret@api.example.local/api/", "salt", time.Second).Root(); got != "http://api.example.local/api" {
 		t.Errorf("%q", got)

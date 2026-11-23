@@ -149,9 +149,16 @@ func (e *Env) Redis() (*redis.Client, error) {
 			e.rdErr = errors.New("redis is not configured (config key redis)")
 			return
 		}
-		e.rd = redis.NewClient(&redis.Options{Addr: config.Addr(rc.Host, rc.Port), Password: rc.Password, DB: rc.DB})
+		e.rd = redis.NewClient(redisOptions(rc))
 	})
 	return e.rd, e.rdErr
+}
+
+// redisOptions are the settings of the Redis client of the service and of the client of its check. Every client gets
+// options of its own: a client changes the options it is given, and go-redis does not accept options that another
+// client has already prepared.
+func redisOptions(rc config.Redis) *redis.Options {
+	return &redis.Options{Addr: config.Addr(rc.Host, rc.Port), Password: rc.Password, DB: rc.DB}
 }
 
 // Close releases the shared connections.

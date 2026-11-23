@@ -140,7 +140,7 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 	if checkOnly {
 		fmt.Printf("configuration ok: %d module(s) ready (%s), base path %q, password login %t, windows login %t, automatic update %s\n",
 			len(mods), strings.Join(names, ", "), cfg.BasePath, env.Auth.PasswordEnabled(), env.Auth.SSOEnabled(), describeUpdate(cfg.Update))
-		return 0, nil
+		return checkConnections(cfg, log, env, mods), nil
 	}
 	if m, ok := update.TakeMarker(exe); ok {
 		log.Info("the program was updated", "from", m.From, "to", m.To, "waited_seconds", m.WaitedSeconds, "updated_at", m.At.Format(time.RFC3339))
@@ -190,6 +190,42 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 		return 0, up
 	}
 	return 0, nil
+}
+
+// checkConnections is the second half of -check: it tests what the service talks to (the shared PostgreSQL and Redis
+// that were opened, the Dash API of the sign-in, and whatever the modules depend on), prints the result and returns the
+// exit code, 0 when everything answers and 1 when something does not. The automatic update runs -check on a new
+// program before it installs it, so a service is only updated while it can reach what it depends on
+// (docs/auto_update.md). A failure is also logged at level ERROR: that line is what the updater shows as the reason.
+func checkConnections(cfg *config.Config, log *slog.Logger, env *module.Env, mods []module.Module) int {
+	probes := env.Probes()
+	if cfg.DashAPIURL != "" { // the login page is on only when there is an API to ask
+		api := dashapi.New(cfg.DashAPIURL, cfg.Dash.APISalt, 5*time.Second)
+		probes = append(probes, module.Probe{
+			Name:   "Dash API (sign-in)",
+			Target: api.Root(),
+			Run:    func(ctx context.Context) (string, error) { return "", api.Check(ctx) },
+		})
+	}
+	for _, m := range mods {
+		if c, ok := m.(module.Checker); ok {
+			probes = append(probes, c.Probes()...)
+		}
+	}
+	// well below the 30 seconds the updater gives -check
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	checks := module.RunProbes(ctx, probes)
+	failed := module.Report(os.Stdout, checks)
+	for _, c := range checks {
+		if c.Err != nil {
+			log.Error("connection check failed", "check", c.Name, "target", c.Target, "error", c.Err)
+		}
+	}
+	if failed > 0 {
+		return 1
+	}
+	return 0
 }
 
 // startUpdater starts the automatic update. A problem with it is logged and the service runs without it: the service

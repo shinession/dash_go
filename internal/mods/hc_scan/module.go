@@ -21,17 +21,20 @@ import (
 const Name = "hc_scan"
 
 // ModuleVersion is the version of this module.
-const ModuleVersion = "0.1.5"
+const ModuleVersion = "0.1.6"
 
 func init() {
 	i18n.Register(webFS, "i18n") // the texts of the page, the warnings and the messages, in English and Chinese
 	module.Register(Name, func() module.Module { return &Module{} })
 }
 
-// Module implements module.Module.
+// Module implements module.Module and module.Checker.
 type Module struct {
 	svc *Service
+	api *dashapi.Client // the backend of the permission check, kept for dash_go -check
 }
+
+var _ module.Checker = (*Module)(nil)
 
 // Info describes the module.
 func (m *Module) Info() module.Info {
@@ -91,6 +94,7 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 		return fmt.Errorf("%s: set modules.hc_scan.dash_api_url, dash_api_url or api_server in the Dash config", Name)
 	}
 	api := dashapi.New(apiURL, env.Cfg.Dash.APISalt, 5*time.Second)
+	m.api = api
 	env.Log.Info("hc_scan: the Dash API of the permission check", "url", api.Root(), "from", apiFrom)
 	perms := NewDashPermissions(api, time.Minute)
 
@@ -115,6 +119,20 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 	}
 	m.svc = svc
 	return svc.Routes(mux, env.Base+"/"+Name, env.Auth.Require, env.Shell)
+}
+
+// Probes tests what the module depends on besides the shared PostgreSQL and Redis: the Dash API that answers who may
+// work on which process. dash_go -check runs it. A module that is not mounted has nothing to test.
+func (m *Module) Probes() []module.Probe {
+	api := m.api
+	if api == nil {
+		return nil
+	}
+	return []module.Probe{{
+		Name:   "Dash API (hc_scan)",
+		Target: api.Root(),
+		Run:    func(ctx context.Context) (string, error) { return "", api.Check(ctx) },
+	}}
 }
 
 // Close releases the module.

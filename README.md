@@ -4,7 +4,7 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.5** (see `VERSION`).
+Current version: **0.1.6** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
@@ -65,7 +65,7 @@ Settings come from two layers of JSON files: the config folder of the Python app
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<config folder of the Python application>'
-.\dash_go.exe -check        # load the configuration and the modules, say which Python API is used, whether the password and Windows sign-in are on and whether the automatic update is on, then exit
+.\dash_go.exe -check        # load the configuration and the modules, say which Python API is used, whether the password and Windows sign-in are on and whether the automatic update is on, test the connections (PostgreSQL, Redis, the Dash API), then exit; exit code 1 when a connection does not work
 .\dash_go.exe               # serve on the address of "listen", below /dash_go/
 .\dash_go.exe -version      # version and compiled-in modules
 ```
@@ -87,7 +87,7 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.5**（见 `VERSION`）。
+当前版本：**0.1.6**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
@@ -148,7 +148,7 @@ docs/                      文档，每个模块一个文件
 
 ```powershell
 $env:DASH_GO_DASH_CONFIG_DIR = '<Python 应用的配置文件夹>'
-.\dash_go.exe -check        # 加载配置和模块，说明使用哪个 Python API、密码登录和 Windows 登录是否开启、自动更新是否开启，然后退出
+.\dash_go.exe -check        # 加载配置和模块，说明使用哪个 Python API、密码登录和 Windows 登录是否开启、自动更新是否开启，测试连接（PostgreSQL、Redis、Dash API），然后退出；有连接不通时退出码为 1
 .\dash_go.exe               # 在 "listen" 指定的地址上，于 /dash_go/ 之下提供服务
 .\dash_go.exe -version      # 版本和已编入的模块
 ```
