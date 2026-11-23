@@ -1,0 +1,293 @@
+{{define "content"}}
+{{if not .IsZh}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="Contents"{{.Tour "tour.help_toc"}}>
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">What HC Scan Assign is</a></li>
+      <li><a href="#workflow">Step-by-step workflow</a></li>
+      <li><a href="#board">Reading the board</a></li>
+      <li><a href="#rules">Automatic assignment rules</a></li>
+      <li><a href="#warnings">Warnings and confirmation</a></li>
+      <li><a href="#limits">Important rules and tips</a></li>
+      <li><a href="#interface">Header and Page Guide</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} HC Scan Assign — User guide</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>What HC Scan Assign is</h2>
+      <p><a href="{{.Data}}/"><strong>HC Scan Assign</strong></a> lets a shift leader scan employee badges at the start of a shift to assign people to machines or activities automatically based on their MTR (training record) levels.</p>
+      <ul>
+        <li><strong>Draft first, save on Confirm:</strong> scanning only builds a draft. Nothing is written to the database until you review the board and press <strong>Confirm</strong>.</li>
+        <li><strong>Optional shortcut:</strong> anyone already assigned on Dash (HC Input or Area Assign) does not need to be scanned again; they already appear on their machine card.</li>
+        <li><strong>Shared across terminals:</strong> several computers open to the same process, date and shift share the same live draft and refresh every few seconds.</li>
+      </ul>
+    </section>
+
+    <section id="workflow" class="dg-doc-section">
+      <h2>Step-by-step workflow</h2>
+      <ol>
+        <li><strong>Choose a process:</strong> after signing in, click the process you are working on. You only see processes you have permission to manage.</li>
+        <li><strong>Check date and shift:</strong> the production date (production day starts at 07:00) and <strong>AM</strong> / <strong>PM</strong> shift are preselected automatically. Change them at the top bar if needed.</li>
+        <li><strong>Scan badges:</strong> keep the cursor in the <strong>Scan badge</strong> box (it focuses automatically). Scan a badge with the barcode scanner — no Enter key is required — or type an employee ID and press <kbd>Enter</kbd>.</li>
+        <li><strong>Check the result card and sound:</strong>
+          <ul>
+            <li><span class="dg-doc-chip ok">Green</span> + one high beep: clean assignment.</li>
+            <li><span class="dg-doc-chip warn">Yellow</span> + two beeps: assigned with a warning, already scanned, or no eligible machine found.</li>
+            <li><span class="dg-doc-chip err">Red</span> + one low tone: invalid employee ID or employee not found.</li>
+          </ul>
+        </li>
+        <li><strong>Adjust if needed:</strong> in the <strong>Scanned</strong> list, use the drop-down menu on any line to pick another machine or activity, or click <strong>x</strong> to remove the line from the draft.</li>
+        <li><strong>Confirm:</strong> press <strong>Confirm</strong> to save all pending lines that have a machine. If any line has a yellow warning, a confirmation dialog lists them so you can review and choose <strong>Submit anyway</strong> or <strong>Go back</strong>.</li>
+      </ol>
+    </section>
+
+    <section id="board" class="dg-doc-section">
+      <h2>Reading the board</h2>
+
+      <h3>Page bar counters</h3>
+      <p>The first four counters summarize the shift's head count (matching the Daily Attn Summary in Dash); the remaining counters describe the scan draft.</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>Counter</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Scheduled</strong></td><td class="dg-doc-wrap">Roster members of this process who belong to the selected shift.</td></tr>
+            <tr><td><strong>Assigned</strong></td><td class="dg-doc-wrap">Head count of those people assigned to machines (saved records plus pending draft lines).</td></tr>
+            <tr><td><strong>Leave</strong></td><td class="dg-doc-wrap">Head count of those people on leave, all leave types combined.</td></tr>
+            <tr><td><strong>To assign</strong></td><td class="dg-doc-wrap">Head count of those people who still have no machine task.</td></tr>
+            <tr><td><strong>Pending</strong></td><td class="dg-doc-wrap">Number of lines currently in the draft waiting for Confirm.</td></tr>
+            <tr><td><strong>Saved</strong></td><td class="dg-doc-wrap">Number of people already scanned and saved in this shift.</td></tr>
+            <tr><td><strong>No machine</strong></td><td class="dg-doc-wrap">Pending lines that do not have a machine yet (shown only when above 0).</td></tr>
+            <tr><td><strong>Warnings</strong></td><td class="dg-doc-wrap">Pending lines that carry a yellow warning (shown only when above 0).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Machine cards</h3>
+      <ul>
+        <li>The header shows <strong>used / budget</strong> head count. A green border means the machine is full; a red border means it is over budget.</li>
+        <li>Names in <em>italics</em> are pending in the draft; names marked <span class="dg-doc-chip ok">saved</span> are already saved in the database.</li>
+        <li>Each person on a routine machine shows an MTR level badge: <span class="dg-doc-chip ok">Lv3</span>, <span class="dg-doc-chip warn">Lv2</span>, <span class="dg-doc-chip err">Lv1</span>, <span class="dg-doc-chip">No Rec</span> (no MTR record), or <span class="dg-doc-chip info">Activity</span>.</li>
+        <li>A person from another process working on a machine here carries a process tag next to their name (support). They count toward the machine's budget, but not toward this process's shift counters.</li>
+        <li>Tags under the machine name explain special status: <span class="dg-doc-chip">activity</span> (non-routine activity), <span class="dg-doc-chip warn">no MTR mapping</span> (never assigned automatically), or <span class="dg-doc-chip">no budget</span>.</li>
+      </ul>
+
+      <h3>Special cards and Not assigned yet</h3>
+      <ul>
+        <li><strong>Leave</strong> (dashed card): people on full-day or part-day leave with their leave codes. Someone on part-day leave also appears on their machine (or in <em>Not assigned yet</em>) for the rest of the day.</li>
+        <li><strong>Elsewhere</strong> (dashed card): members of this process whose saved task is on a machine of another process, or on a name not listed in this process's machines.</li>
+        <li><strong>Not assigned yet</strong>: scheduled people who still have no machine and are not on full-day leave. A number in brackets (such as <code>(0.5)</code>) means part of their day is leave.</li>
+      </ul>
+    </section>
+
+    <section id="rules" class="dg-doc-section">
+      <h2>Automatic assignment rules</h2>
+      <ol>
+        <li><strong>Already assigned:</strong> if the person already has a machine record for that date, the page shows their existing machine and does not overwrite it automatically (you can still change it manually if needed).</li>
+        <li><strong>Shift Leaders:</strong> leaders are placed on the process's <strong>Group Leader</strong> row first, provided that row has budget remaining. If it is full, the line stays unassigned for manual choice.</li>
+        <li><strong>Eligible machines:</strong> a routine machine of this process is eligible only if it has an MTR mapping, the employee holds <strong>MTR Lv1 or higher</strong> on it, and it has enough remaining budget for the employee's head count (1, or the remainder after part-day leave).</li>
+        <li><strong>Ranking order:</strong> among eligible machines, the system picks by:
+          <ol>
+            <li>Higher MTR level (<strong>Lv3</strong> before <strong>Lv2</strong> before <strong>Lv1</strong>);</li>
+            <li>More days worked on that machine during the recent days;</li>
+            <li>Larger remaining budget head count;</li>
+            <li>The machine display order.</li>
+          </ol>
+        </li>
+        <li><strong>When no machine is eligible:</strong> the line is kept as <em>No machine assigned</em> with the exact reason (for example no MTR record on this process, no MTR mapping, or all qualified machines are full). Select a machine or activity manually from the drop-down list.</li>
+      </ol>
+      <p class="dg-doc-note"><strong>Note:</strong> Seats are taken in the order badges are scanned; there is no automatic rebalancing. You can always adjust assignments manually before pressing <strong>Confirm</strong>.</p>
+    </section>
+
+    <section id="warnings" class="dg-doc-section">
+      <h2>Warnings and confirmation</h2>
+      <p>Anyone can be scanned, even if they belong to another shift, another process or are on leave. Yellow warnings highlight exceptions so the shift leader can decide:</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>Warning</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Not on roster</strong></td><td class="dg-doc-wrap">The person belongs to another process, has another direct type, or has resigned before this date.</td></tr>
+            <tr><td><strong>Shift mismatch</strong></td><td class="dg-doc-wrap">The calendar shows the person is scheduled for the other shift, on a day off, or has no calendar entry for this date.</td></tr>
+            <tr><td><strong>Full-day leave</strong></td><td class="dg-doc-wrap">The person has a full-day leave record. Pressing Confirm replaces that leave record with the assigned machine.</td></tr>
+            <tr><td><strong>Part-day leave</strong></td><td class="dg-doc-wrap">Informational note (not yellow): only the remaining fraction of the day is placed on the machine; the leave entry is kept.</td></tr>
+            <tr><td><strong>Already has record</strong></td><td class="dg-doc-wrap">The person already has a machine record in the database (yellow when recorded in the other shift).</td></tr>
+            <tr><td><strong>No machine assigned</strong></td><td class="dg-doc-wrap">No machine was chosen yet. Lines without a machine are never saved when you press Confirm.</td></tr>
+            <tr><td><strong>No MTR record / mapping</strong></td><td class="dg-doc-wrap">A manually chosen machine has no MTR record (Lv1+) for this employee, or has no MTR mapping.</td></tr>
+            <tr><td><strong>Over budget</strong></td><td class="dg-doc-wrap">A manually chosen machine exceeds its budget head count.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>When you press <strong>Confirm</strong>, any lines with yellow warnings are listed in a confirmation popup. Nothing is saved until you press <strong>Submit anyway</strong>.</p>
+    </section>
+
+    <section id="limits" class="dg-doc-section">
+      <h2>Important rules and tips</h2>
+      <ul>
+        <li><strong>Month lock:</strong> after the 7th of each month, previous-month daily attendance is locked. A yellow banner appears at the top and <strong>Confirm</strong> is disabled.</li>
+        <li><strong>Clear draft vs. saved data:</strong> <strong>Clear draft</strong> only removes pending, unconfirmed lines. Records already saved to the database are never deleted.</li>
+        <li><strong>Changing a saved record:</strong> after a person is saved, scanning them again reports that they were already scanned and saved. To change a saved assignment, edit it in Dash (HC Input or Area Assign).</li>
+        <li><strong>Changing process:</strong> switching process keeps your pending draft for the previous process and shift so you can return to it later.</li>
+        <li><strong>MTR freshness:</strong> the timestamp above the machine cards shows when the MTR training data was last updated.</li>
+      </ul>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>Header and Page Guide</h2>
+      <ul>
+        <li><strong>Back</strong> next to the module title returns to the Dash home page on this server.</li>
+        <li>Use the <strong>Theme</strong> button (sun/moon) and <strong>EN / <span lang="zh">中文</span></strong> switch at the top right at any time; your choices are remembered by the browser.</li>
+        <li>Press the <strong>Guide</strong> button (compass icon) on the <a href="{{.Data}}/">HC Scan Assign</a> page to replay the step-by-step tour of the screen you are on. Use <kbd>→</kbd> / <kbd>←</kbd> to step and <kbd>Esc</kbd> to close.</li>
+        <li>See also the <a href="{{.Base}}/help">dash_go general user guide</a> for signing in and common header controls.</li>
+      </ul>
+    </section>
+  </article>
+</div>
+{{else}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="目录"{{.Tour "tour.help_toc"}}>
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#overview">HC 扫码分派是什么</a></li>
+      <li><a href="#workflow">操作步骤</a></li>
+      <li><a href="#board">看懂看板</a></li>
+      <li><a href="#rules">自动分派规则</a></li>
+      <li><a href="#warnings">黄色警告与确认</a></li>
+      <li><a href="#limits">重要规则与提示</a></li>
+      <li><a href="#interface">顶栏与页面导览</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} HC 扫码分派 — 使用手册</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>HC 扫码分派是什么</h2>
+      <p><a href="{{.Data}}/"><strong>HC 扫码分派</strong></a>让领班在开班时通过扫描员工工牌，根据员工的 MTR（培训资质）等级自动将其分派到合适的机台或活动。</p>
+      <ul>
+        <li><strong>先草稿，确认后再保存：</strong>每次扫描只生成草稿，在你检查看板并点击<strong>确认</strong>之前，不会写入数据库。</li>
+        <li><strong>快捷方式而非强制：</strong>已经在 Dash（HC Input 或 Area Assign）里安排好机台的员工不需要再扫，他们会直接显示在对应机台卡片上。</li>
+        <li><strong>多终端同步：</strong>多台电脑打开同一工序、日期和班次时共享同一份实时草稿，页面每隔几秒自动刷新。</li>
+      </ul>
+    </section>
+
+    <section id="workflow" class="dg-doc-section">
+      <h2>操作步骤</h2>
+      <ol>
+        <li><strong>选择工序：</strong>登录后点击你要操作的工序。页面只会显示你有权限管理的工序。</li>
+        <li><strong>核对日期和班次：</strong>生产日期（生产日从 07:00 开始）和 <strong>AM</strong> / <strong>PM</strong> 班次会根据时间自动预选，必要时可在页面栏修改。</li>
+        <li><strong>扫描工牌：</strong>保持焦点在<strong>扫描工牌</strong>输入框内（页面会自动聚焦）。用扫码枪直接扫工牌（不需要按回车），或手动输入工号后按 <kbd>Enter</kbd>。</li>
+        <li><strong>查看大卡片与提示音：</strong>
+          <ul>
+            <li><span class="dg-doc-chip ok">绿色</span> + 一声高音：正常分派成功。</li>
+            <li><span class="dg-doc-chip warn">黄色</span> + 两声提示音：带有警告、重复扫描，或没有符合条件的自动分派机台。</li>
+            <li><span class="dg-doc-chip err">红色</span> + 一声低音：工号格式无效，或在员工名单中找不到该工号。</li>
+          </ul>
+        </li>
+        <li><strong>按需微调：</strong>在<strong>已扫描</strong>列表中，可以通过下拉框手动改选机台或活动，或点击 <strong>x</strong> 把该行从草稿中移除。</li>
+        <li><strong>确认提交：</strong>点击<strong>确认</strong>保存所有已分派机台的待确认记录。如果有带黄色警告的行，会先弹出确认窗口列出详情，可选择<strong>仍然提交</strong>或<strong>返回</strong>修改。</li>
+      </ol>
+    </section>
+
+    <section id="board" class="dg-doc-section">
+      <h2>看懂看板</h2>
+
+      <h3>页面栏计数</h3>
+      <p>前四项汇总本班次人力情况（与 Dash 的 Daily Attn Summary 对应）；其余各项显示当前扫码草稿的状态。</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>计数项</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td><strong>排班</strong></td><td class="dg-doc-wrap">本工序名册中属于所选班次的员工人数。</td></tr>
+            <tr><td><strong>已分派</strong></td><td class="dg-doc-wrap">上述人员中已安排到机台的人力（包含已保存记录和待确认草稿）。</td></tr>
+            <tr><td><strong>请假</strong></td><td class="dg-doc-wrap">上述人员中各类请假的人力总和。</td></tr>
+            <tr><td><strong>待分派</strong></td><td class="dg-doc-wrap">上述人员中尚未安排任务的人力。</td></tr>
+            <tr><td><strong>待确认</strong></td><td class="dg-doc-wrap">当前草稿中等待点击“确认”的行数。</td></tr>
+            <tr><td><strong>已保存</strong></td><td class="dg-doc-wrap">本班次已通过扫码确认保存的人数。</td></tr>
+            <tr><td><strong>无机台</strong></td><td class="dg-doc-wrap">草稿中尚未分派机台的行数（大于 0 时才显示）。</td></tr>
+            <tr><td><strong>警告</strong></td><td class="dg-doc-wrap">草稿中带有黄色警告的行数（大于 0 时才显示）。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>机台卡片</h3>
+      <ul>
+        <li>卡片标题显示<strong>已用 / 预算</strong>人力：绿色边框表示已满员，红色边框表示超出预算。</li>
+        <li><em>斜体</em>姓名表示待确认草稿；带有 <span class="dg-doc-chip ok">已保存</span> 标记的表示已保存在数据库中。</li>
+        <li>常规机台上会显示 MTR 等级徽章：<span class="dg-doc-chip ok">Lv3</span>、<span class="dg-doc-chip warn">Lv2</span>、<span class="dg-doc-chip err">Lv1</span>、<span class="dg-doc-chip">无记录</span>（无 MTR 记录）或 <span class="dg-doc-chip info">活动</span>。</li>
+        <li>其他工序来支援本工序机台的人员，名字旁边会显示其所属工序标签；他们会计入该机台的已用人数与预算，但不计入本工序的班次计数。</li>
+        <li>机台名称下的小标签说明特殊属性：<span class="dg-doc-chip">活动</span>（非日常活动）、<span class="dg-doc-chip warn">无 MTR 对应</span>（不会自动分派）或 <span class="dg-doc-chip">无预算</span>。</li>
+      </ul>
+
+      <h3>特殊卡片与“尚未分派”</h3>
+      <ul>
+        <li><strong>请假</strong>（虚线卡片）：显示全天请假和部分时间请假人员及其请假代码。部分时间请假的人员，剩余时段仍会出现在机台卡片或“尚未分派”中。</li>
+        <li><strong>其他去向</strong>（虚线卡片）：属于本工序、但任务记录在其他工序的机台上，或任务名称不在本工序机台列表中的人员。</li>
+        <li><strong>尚未分派</strong>：本班次排班中还没有机台且未全天请假的人员。括号里的数字（例如 <code>(0.5)</code>）表示该员工请了半天假、还剩半天需要安排。</li>
+      </ul>
+    </section>
+
+    <section id="rules" class="dg-doc-section">
+      <h2>自动分派规则</h2>
+      <ol>
+        <li><strong>已有记录：</strong>如果该员工当天在数据库中已有分配好的机台，扫描后只会展示现有任务，不会自动改动（领班仍可手动更改）。</li>
+        <li><strong>领班（Shift Leader）：</strong>领班会优先分派到本工序的 <strong>Group Leader</strong> 行（前提是有剩余预算）；如果该行已满，则保持无机台，由现场决定。</li>
+        <li><strong>可选机台条件：</strong>只有同时满足以下条件的本工序常规机台才会参与自动分派：具有 MTR 对应关系、员工在该机台具有 <strong>MTR Lv1 或以上</strong>等级，且剩余预算足以容纳该员工所需人力（1 人，或部分请假后的剩余人力）。</li>
+        <li><strong>优先顺序：</strong>在所有符合条件的机台中，按以下顺序择优分派：
+          <ol>
+            <li>MTR 等级更高优先（<strong>Lv3</strong> 优先于 <strong>Lv2</strong> 优先于 <strong>Lv1</strong>）；</li>
+            <li>最近几天在该机台上工作天数更多优先；</li>
+            <li>机台剩余预算更多优先；</li>
+            <li>按机台显示顺序排列。</li>
+          </ol>
+        </li>
+        <li><strong>无法自动分派时：</strong>该行会保留为<em>未分派机台</em>并注明原因（例如无 MTR 记录、机台无 MTR 对应关系，或所有具备资质的机台均已满员）。此时请在下拉列表中手动选择机台或活动。</li>
+      </ol>
+      <p class="dg-doc-note"><strong>提示：</strong>机台空位按扫码先后顺序即时占用，系统不会自动重新洗牌。在点击<strong>确认</strong>之前，你随时可以手动调整任意人员的分派结果。</p>
+    </section>
+
+    <section id="warnings" class="dg-doc-section">
+      <h2>黄色警告与确认</h2>
+      <p>即使员工不属于本工序名册、排在其他班次或正在请假，依然可以扫描。页面会用黄色标签标明原因，由领班把关决定：</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>警告类型</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><strong>不在名册内</strong></td><td class="dg-doc-wrap">该员工属于其他工序、不是 Direct / Shift Leader，或已在该日期之前离职。</td></tr>
+            <tr><td><strong>班次不匹配</strong></td><td class="dg-doc-wrap">排班日历显示该员工排在另一个班次、当天休息，或日历中找不到对应班次记录。</td></tr>
+            <tr><td><strong>全天请假</strong></td><td class="dg-doc-wrap">该员工当天有全天请假记录。点击“确认”保存后，机台记录会替换原来的请假记录。</td></tr>
+            <tr><td><strong>部分时间请假</strong></td><td class="dg-doc-wrap">信息提示（非黄色警告）：系统只会把剩余人力分配到机台，原有请假记录会被保留。</td></tr>
+            <tr><td><strong>数据库中已有记录</strong></td><td class="dg-doc-wrap">该员工当天已有任务记录（如果记录在另一个班次则标黄提示）。</td></tr>
+            <tr><td><strong>未分派机台</strong></td><td class="dg-doc-wrap">尚未选择机台。点击“确认”时，没有机台的行不会被保存。</td></tr>
+            <tr><td><strong>无 MTR 记录 / 对应</strong></td><td class="dg-doc-wrap">手动选择的机台没有该员工的 MTR Lv1+ 记录，或机台没有维护 MTR 对应关系。</td></tr>
+            <tr><td><strong>超出预算人力</strong></td><td class="dg-doc-wrap">手动选择的机台超出了预算人数。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>点击<strong>确认</strong>时，若草稿中包含带黄色警告的行，会先弹窗汇总列表；只有点击<strong>仍然提交</strong>后才会真正写入数据库。</p>
+    </section>
+
+    <section id="limits" class="dg-doc-section">
+      <h2>重要规则与提示</h2>
+      <ul>
+        <li><strong>月份锁定：</strong>每月 7 日之后，上个月的每日出勤数据会被锁定。页面顶部会显示黄色提示横幅，且<strong>确认</strong>按钮不可点击。</li>
+        <li><strong>清空草稿与已保存数据：</strong><strong>清空草稿</strong>只会清除未确认的草稿行，绝不会删除数据库中已经保存的记录。</li>
+        <li><strong>修改已保存的记录：</strong>保存完成后再次扫描同一人，页面会提示已扫描并保存过。如需修改已保存的分配，请到 Dash 的 HC Input 或 Area Assign 页面修改。</li>
+        <li><strong>切换工序：</strong>切换到其他工序时，原工序和班次中尚未确认的草稿仍会保留，之后切回可以继续。</li>
+        <li><strong>MTR 数据时间：</strong>机台区域右上角显示最近一次 MTR 培训数据的更新时间。</li>
+      </ul>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>顶栏与页面导览</h2>
+      <ul>
+        <li>模块名称旁的<strong>返回</strong>按钮可返回本服务器的 Dash 首页。</li>
+        <li>随时可在右上角切换<strong>浅色 / 深色主题</strong>和 <strong>EN / 中文</strong>，浏览器会自动记住你的选择。</li>
+        <li>在 <a href="{{.Data}}/">HC 扫码分派</a>页面点击顶栏的<strong>导览</strong>按钮（指南针图标），可随时重看当前界面的分步导览；支持键盘 <kbd>→</kbd> / <kbd>←</kbd> 切换步骤、<kbd>Esc</kbd> 关闭。</li>
+        <li>关于登录方式和顶栏通用功能，也可查看 <a href="{{.Base}}/help">dash_go 通用使用手册</a>。</li>
+      </ul>
+    </section>
+  </article>
+</div>
+{{end}}
+{{end}}

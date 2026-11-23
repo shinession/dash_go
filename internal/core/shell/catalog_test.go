@@ -17,6 +17,7 @@ import (
 var (
 	coreKey    = regexp.MustCompile(`"((?:ui|login|err)\.[a-z0-9_.]*[a-z0-9])"`)
 	templateT  = regexp.MustCompile(`\.T "((?:ui|login|err)\.[a-z0-9_.]*[a-z0-9])"`)
+	tourCall   = regexp.MustCompile(`\.Tour "((?:tour)\.[a-z0-9_.]*[a-z0-9])"`)
 	scriptT    = regexp.MustCompile(`\bt\('((?:ui|login|err)\.[a-z0-9_.]*[a-z0-9])'`)
 	ssoStatus  = []string{"popup", "no_user", "denied", "mismatch", "expired", "busy", "timeout", "cancelled", "error", "unavailable", "waiting"}
 	scriptFile = "web/assets/login.js"
@@ -104,6 +105,51 @@ func TestLoginPageSendsEveryTextItsScriptUses(t *testing.T) {
 	for _, status := range ssoStatus {
 		if cat["login.sso_"+status] == "" {
 			t.Errorf("the login page must send login.sso_%s", status)
+		}
+	}
+}
+
+func TestCoreTourCatalogKeysAreUsedAndExist(t *testing.T) {
+	std := i18n.Std()
+	templates := readAll(t, "web/templates/*.html")
+	used := map[string]bool{}
+	for file, src := range templates {
+		for _, m := range tourCall.FindAllStringSubmatch(src, -1) {
+			for _, suffix := range []string{".title", ".text"} {
+				k := m[1] + suffix
+				used[k] = true
+				if !std.Has(k) {
+					t.Errorf("%s: tour step %q lacks catalog key %q", file, m[1], k)
+				}
+			}
+		}
+	}
+	if len(used) < 10 {
+		t.Fatalf("only %d tour keys found in shell templates", len(used))
+	}
+	var unused []string
+	for _, k := range std.Keys(i18n.EN) {
+		if strings.HasPrefix(k, "tour.") && !used[k] {
+			unused = append(unused, k)
+		}
+	}
+	sort.Strings(unused)
+	if len(unused) > 0 {
+		t.Errorf("these tour texts of the core catalog are used by nothing: %v", unused)
+	}
+}
+
+func TestTourScriptUsesOnlyKeysSentToTheBrowser(t *testing.T) {
+	f := newFixture(t, true, true)
+	cat := pageCatalog(t, f.get("/dash_go/").Body.String())
+	src := readAll(t, "web/assets/tour.js")["web/assets/tour.js"]
+	asked := scriptT.FindAllStringSubmatch(src, -1)
+	if len(asked) < 5 {
+		t.Fatalf("only %d texts found in tour.js", len(asked))
+	}
+	for _, m := range asked {
+		if cat[m[1]] == "" {
+			t.Errorf("tour.js uses %q but the page does not send it", m[1])
 		}
 	}
 }

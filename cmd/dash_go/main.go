@@ -113,7 +113,11 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 		defer m.Close()
 		i := m.Info()
 		mods = append(mods, m)
-		links = append(links, shell.ModuleLink{Name: i.Name, Title: i.Title, TitleKey: i.TitleKey, Description: i.Description, DescriptionKey: i.DescriptionKey, Version: i.Version, Href: cfg.BasePath + "/" + i.Name + "/"})
+		link := shell.ModuleLink{Name: i.Name, Title: i.Title, TitleKey: i.TitleKey, Description: i.Description, DescriptionKey: i.DescriptionKey, Version: i.Version, Href: cfg.BasePath + "/" + i.Name + "/"}
+		if i.HasHelp {
+			link.HelpHref = cfg.BasePath + "/" + i.Name + "/help"
+		}
+		links = append(links, link)
 	}
 	env.Shell, err = shell.New(shell.Options{Base: cfg.BasePath, Version: version.Version, PhotoURLTemplate: cfg.PhotoURLTemplate, DashHome: cfg.DashHome, Auth: env.Auth, Modules: links, Log: log})
 	if err != nil {

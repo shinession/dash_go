@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (module version 0.1.4). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Version 0.1.4 fixed the board, which showed the people of other processes on its cards, and changed what the page says about the people of the shift: leave is shown, and somebody who already has a task is no longer listed as "not scanned" (sections 2.1 and 11). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-23 (module version 0.1.5). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Version 0.1.4 fixed the board, which showed the people of other processes on its cards, and changed what the page says about the people of the shift: leave is shown, and somebody who already has a task is no longer listed as "not scanned" (sections 2.1 and 11). Version 0.1.5 added the bilingual end-user guide at `/dash_go/hc_scan/help` (opened from the header Documentation button) and the step-by-step page tour for both the process picker and the main scan board (with automatic first-visit start via `localStorage`, focus/polling pause while open, and replay from the header Guide button). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -130,6 +130,8 @@ All paths are below `/dash_go/hc_scan/`. Answers are JSON with `Cache-Control: n
 
 | Request | Purpose |
 |---|---|
+| `GET /dash_go/hc_scan/` | The HC Scan Assign page (requires login). Carries `hc.tour.*` step attributes for both the process picker and the main scan board; pauses `#scan` auto-focus and 3-second polling while the tour is open, and restores focus to `#scan` when it closes. |
+| `GET /dash_go/hc_scan/help` | Bilingual end-user guide for shift leaders (public, no login required; opened in a new tab from the header Documentation button). |
 | `GET api/me` | User, permitted processes, client settings. |
 | `GET api/board?process=&date=&shift=` | The whole session: machines, draft lines, the people without a task (`not_assigned`), on leave (`leave`) and elsewhere (`elsewhere`), the counters (`totals`: `scheduled`, `placed_hc`, `leave_hc`, `to_assign_hc`, and for the draft `pending`, `saved`, `assigned`, `unassigned`, `warnings`), month lock, MTR freshness. |
 | `POST api/scan` `{process, date, shift, input}` | One scan. Statuses `assigned`, `unassigned`, `existing`, `duplicate`, `saved`. |
@@ -238,6 +240,9 @@ Done (2026-11-19):
   - On the development copy of the real database (read-only session, `TestDevCopyBoardAgreesWithTheDailyAttnSummary`): 13 days from 2026-11-02 to 2026-11-18, 20 boards each (10 processes, AM and PM), 260 boards. On none of them is there a person on a card who is not a member of the process, unless an entry of their record names the process (a supporter), and the counters equal the logic of the Daily Attn Summary (`cal_daily_summary`) written again from the raw rows: exactly on every board without swapped or overtime people, and where there are such people the Scheduled count differs by exactly their number: minus those scheduled for the shift but recorded in the other one, plus those recorded in the shift but not scheduled for it (section 13). The comparison is with that logic, not with the popup of a running Python application.
   - The page was driven in headless Chrome against the same copy, through a temporary copy of the service that was not kept (the real handlers and page, drafts in memory, a read-only database session): the boards of Slitter, HSL, CSV and Packing, in English and Chinese, in the light and the dark theme; the Leave card, the "Elsewhere" card, the process tag of a supporter and the people of "Not assigned yet"; a scan of somebody without a task (Assigned 0 to 1, To assign 22 to 21, Pending 1, Confirm on) and of somebody who was already assigned (counters unchanged, the task shown, Confirm stays off). No JavaScript error.
   - The PostgreSQL tests (`repo_pg_test.go`) ran again on a throw-away PostgreSQL 18; `go vet ./...` and `go test ./...` pass.
+- 0.1.5 (2026-11-23): added `/dash_go/hc_scan/help` user guide and interactive page tour integration:
+  - Unit tests (`catalog_test.go`, `http_test.go`): every `{{.Tour}}` step in `web/index.html` and `web/help.html` has `.title` and `.text` in both languages with no unused `hc.tour.*` keys and none leaked into `#dg-i18n`; `/dash_go/hc_scan/` includes the Docs link to `/dash_go/hc_scan/help`, Guide button, `tour.js` before `app.js`, and all tour step attributes in EN and ZH; `/dash_go/hc_scan/help` serves 200 (signed out and signed in) with matching section IDs in EN and ZH and no `data-tour-auto`. `go vet ./...` and `go test ./...` pass across all packages (including `miniredis`).
+  - Headless Chrome verification (Playwright against an in-process `httptest.Server` with fake in-memory repo/perms and real shell + `hc_scan` handlers): first-visit auto-tour on `#screen-picker` (6 steps), then on `#screen-app` after selecting Winder (8 board-only steps without repeating header), `#scan` focus trap and backdrop click isolation during tour, focus return to `#scan` on Done, no repeat auto-tour on reload, manual Guide click running full 13-step tour, Docs button opening `/dash_go/hc_scan/help` in a new tab, Chinese + dark theme + 390 px narrow screen (docked tour bubble, zero horizontal overflow). Zero JS or CSP errors (only expected 404 for the unmounted `/api/static/hr/` photo URL in the test harness).
 
 **Not verified:**
 
@@ -245,8 +250,9 @@ Done (2026-11-19):
 - Real photos, a real barcode scanner (whether it presses Enter, which characters it adds), and a real Redis server (the Redis store was tested with an in-process Redis).
 - The call `hc_user_processes` against the Python backend on s2 itself (in 0.1.2 it was tried against the backend of the development machine, and through `prod_eng`, which answered 204: the function is not deployed behind it), and the Dash button in a running Dash application (only the callback function, the layout text and the Dash `Location.href` mechanism were tested separately).
 - The nginx of s1 and s2 as deployed (their files were tested with isolated instances, [shell_and_login.md](shell_and_login.md), section 12) and the port on s2.
-- The Chinese wording has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
+- The Chinese wording (including the 0.1.5 user guide and tour texts) has not been reviewed by the users; the pictures of the people (the page was only tried without pictures).
 - 0.1.4: the real binary and the real database. The page was driven through a temporary service on the copy. The day of the screenshot that led to 0.1.4 (2026-11-20) is not in the copy (5 records), so the defect was reproduced on 2026-11-17, which has the same pattern. Confirm itself did not change in 0.1.4 (only the condition that switches its button on); it was not run against a real database again. The Chinese texts of the new cards and counters have not been reviewed by the users.
+- 0.1.5: PostgreSQL integration tests (`DASH_GO_TEST_PG`) were not re-run (no database SQL or write logic changed); the locked-month tour step (`hc.tour.locked`) was verified by template/unit tests rather than a locked-month browser session.
 
 ## 13. Decisions and known limits
 
@@ -269,7 +275,7 @@ Done (2026-11-19):
 
 # 中文
 
-**更新日期：** 2026-11-20（模块版本 0.1.4）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。0.1.4 版修复了看板（它的卡片上出现了其他 process 的人），并改变了页面对本班人员的说明：显示请假，已经有任务的人不再被列为“未扫描”（第 2.1 节和第 11 节）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-23（模块版本 0.1.5）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。0.1.4 版修复了看板（它的卡片上出现了其他 process 的人），并改变了页面对本班人员的说明：显示请假，已经有任务的人不再被列为“未扫描”（第 2.1 节和第 11 节）。0.1.5 版新增了面向领班的中英文使用手册 `/dash_go/hc_scan/help`（通过顶栏文档按钮在新标签页打开），并为选工序界面和扫码主看板加入了交互式分步导览（支持首次访问经 `localStorage` 自动引导、导览期间暂停扫码框抢焦点与自动轮询，并可随时通过顶栏导览按钮重看）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -399,6 +405,8 @@ Confirm 对每一行按 `uid = <ee_code>_<yyyymmdd>` 做一次 upsert 写入 `t_
 
 | 请求 | 用途 |
 |---|---|
+| `GET /dash_go/hc_scan/` | HC 扫码分派主页面（需要登录）。选工序界面和扫码主看板均带有 `hc.tour.*` 导览属性；导览打开期间暂停 `#scan` 自动聚焦和 3 秒轮询，关闭后焦点自动回到 `#scan`。 |
+| `GET /dash_go/hc_scan/help` | 面向领班的中英文使用手册页面（公开访问，无需登录；从顶栏文档按钮在新标签页打开）。 |
 | `GET api/me` | 用户、允许的 process、客户端设置。 |
 | `GET api/board?process=&date=&shift=` | 整个会话：machine、草稿行、没有任务的人（`not_assigned`）、请假的人（`leave`）和任务在别处的人（`elsewhere`）、计数（`totals`：`scheduled`、`placed_hc`、`leave_hc`、`to_assign_hc`，以及草稿的 `pending`、`saved`、`assigned`、`unassigned`、`warnings`）、月份锁定、MTR 新鲜度。 |
 | `POST api/scan` `{process, date, shift, input}` | 一次扫描。状态有 `assigned`、`unassigned`、`existing`、`duplicate`、`saved`。 |
@@ -507,6 +515,9 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
   - 在真实数据库的开发副本上（只读会话，`TestDevCopyBoardAgreesWithTheDailyAttnSummary`）：2026-11-02 到 2026-11-18 的 13 天，每天 20 个看板（10 个 process、AM 和 PM），共 260 个看板。在任何一个看板上，卡片上都没有“不是本 process 成员、记录里又没有 entry 写明本 process”的人（有这样 entry 的是支援人员），并且计数与按原始行重新写出的 Daily Attn Summary 逻辑（`cal_daily_summary`）一致：没有换班或加班的人的看板完全一致，有这类人的看板，Scheduled 的差正好等于他们的人数：减去排了本班却记录在另一班的人，加上记录在本班却没有排本班的人（第 13 节）。对比的是这套逻辑，而不是一个运行中的 Python 应用的弹窗。
   - 页面在无头 Chrome 中对同一份副本做了操作，经过一个没有保留的临时服务副本（真实的处理函数和页面、草稿在内存中、只读数据库会话）：Slitter、HSL、CSV 和 Packing 的看板，英文和中文，浅色和深色主题；Leave 卡片、“Elsewhere” 卡片、支援人员的 process 标签以及 “Not assigned yet” 中的人；扫描一个没有任务的人（Assigned 0 变 1，To assign 22 变 21，Pending 1，Confirm 亮起）和一个已经分派的人（计数不变，显示他的任务，Confirm 保持关闭）。没有 JavaScript 报错。
   - PostgreSQL 测试（`repo_pg_test.go`）在一个临时的 PostgreSQL 18 上再次运行；`go vet ./...` 和 `go test ./...` 通过。
+- 0.1.5（2026-11-23）：新增 `/dash_go/hc_scan/help` 使用手册与页面导览集成：
+  - 单元测试（`catalog_test.go`、`http_test.go`）：`web/index.html` 与 `web/help.html` 中的每个 `{{.Tour}}` 步骤在两种语言下都有 `.title` 和 `.text`，没有未使用的 `hc.tour.*` 词条且不会泄漏进 `#dg-i18n`；`/dash_go/hc_scan/` 包含指向 `/dash_go/hc_scan/help` 的文档链接、导览按钮、`tour.js`（位于 `app.js` 之前）以及中英文导览属性；`/dash_go/hc_scan/help` 在未登录和已登录下均返回 200，中英文章节 ID 一致且不带 `data-tour-auto`。全部包（含 `miniredis`）的 `go vet ./...` 和 `go test ./...` 均通过。
+  - 无头 Chrome 端到端验证（Playwright 对接进程内 `httptest.Server`，使用内存假数据与真实 shell + `hc_scan` 路由）：首次访问 `#screen-picker` 自动启动导览（6 步），选定 Winder 进入 `#screen-app` 后自动启动主看板导览（8 步且不重复顶栏），导览期间 `#scan` 不抢焦点且遮罩拦截误点击，点击完成后焦点自动回到 `#scan`，刷新后不再重复自动弹出，手动点击导览按钮运行完整 13 步导览，点击文档按钮在新标签页打开 `/dash_go/hc_scan/help`，中文界面 + 深色主题 + 390 px 窄屏（导览气泡底部停靠、无横向溢出）。无 JS 或 CSP 报错（仅测试桩未挂载 `/api/static/hr/` 头像路径导致的预期 404）。
 
 **没有验证：**
 
@@ -514,8 +525,9 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 真实的照片、真实的扫码枪（是否发送 Enter、会加哪些字符）以及真实的 Redis 服务器（Redis 存储只用进程内的 Redis 测试过）。
 - 针对 s2 本身的 Python 后端调用 `hc_user_processes`（0.1.2 中它是对开发机的后端试的，以及通过 `prod_eng` 试的，后者回答 204：该函数没有部署到它后面），以及在运行中的 Dash 应用里点击按钮（只单独测试了回调函数、布局文本和 Dash `Location.href` 机制）。
 - 已部署的 s1 和 s2 上的 nginx（它们的文件用隔离实例测试过，[shell_and_login.md](shell_and_login.md) 第 12 节）以及 s2 上的端口。
-- 使用者对中文措辞的审阅；人员的头像（页面只在没有头像的情况下试过）。
-- 0.1.4：真实的可执行文件和真实的数据库。页面是通过副本上的一个临时服务操作的。导致 0.1.4 的那张截图所在的日期（2026-11-20）不在副本里（只有 5 条记录），所以缺陷是在 2026-11-17 复现的，那一天是同样的情形。Confirm 本身在 0.1.4 中没有改动（只改了让它的按钮亮起的条件）；没有再对真实数据库运行过。新卡片和新计数的中文文字没有经过使用者审阅。
+- 使用者对中文措辞（包括 0.1.5 新增的使用手册与导览文案）的审阅；人员的头像（页面只在没有头像的情况下试过）。
+- 0.1.4：真实的可执行文件和真实的数据库。页面是通过副本上的一个临时服务操作的。
+- 0.1.5：未重新运行 PostgreSQL 集成测试（`DASH_GO_TEST_PG`，本次未改动任何数据库 SQL 或写入逻辑）；月份锁定导览步骤（`hc.tour.locked`）仅经模板与单元测试验证，未在锁定月份的浏览器会话中实测。导致 0.1.4 的那张截图所在的日期（2026-11-20）不在副本里（只有 5 条记录），所以缺陷是在 2026-11-17 复现的，那一天是同样的情形。Confirm 本身在 0.1.4 中没有改动（只改了让它的按钮亮起的条件）；没有再对真实数据库运行过。新卡片和新计数的中文文字没有经过使用者审阅。
 
 ## 13. 决定与已知限制
 

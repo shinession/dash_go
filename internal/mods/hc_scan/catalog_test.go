@@ -326,13 +326,48 @@ func TestEveryTextOfTheServerIsUsed(t *testing.T) {
 	}
 	var unused []string
 	for _, k := range i18n.Std().Keys(i18n.EN) {
-		if strings.HasPrefix(k, "hc.") && !strings.HasPrefix(k, "hc.ui.") && !strings.HasPrefix(k, "hc.title") && !strings.HasPrefix(k, "hc.description") && !used[k] {
+		if strings.HasPrefix(k, "hc.") && !strings.HasPrefix(k, "hc.ui.") && !strings.HasPrefix(k, "hc.tour.") && !strings.HasPrefix(k, "hc.title") && !strings.HasPrefix(k, "hc.description") && !used[k] {
 			unused = append(unused, k)
 		}
 	}
 	sort.Strings(unused)
 	if len(unused) > 0 {
 		t.Errorf("these texts are used by no code, remove them from the catalog: %v", unused)
+	}
+}
+
+var tourStepCall = regexp.MustCompile(`\{\{\.Tour "([a-z0-9_.]*[a-z0-9])"\}\}`)
+
+func TestEveryTourStepOfThePageHasTextsAndNoTourTextIsUnused(t *testing.T) {
+	std := i18n.Std()
+	used := map[string]bool{}
+	for _, file := range []string{"web/index.html", "web/help.html"} {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range tourStepCall.FindAllStringSubmatch(string(raw), -1) {
+			for _, suffix := range []string{".title", ".text"} {
+				k := m[1] + suffix
+				used[k] = true
+				if !std.Has(k) {
+					t.Errorf("%s: tour step %q lacks catalog key %q", file, m[1], k)
+				}
+			}
+		}
+	}
+	if len(used) < 16 {
+		t.Fatalf("only %d tour keys found in hc_scan templates", len(used))
+	}
+	var unused []string
+	for _, k := range std.Keys(i18n.EN) {
+		if strings.HasPrefix(k, "hc.tour.") && !used[k] {
+			unused = append(unused, k)
+		}
+	}
+	sort.Strings(unused)
+	if len(unused) > 0 {
+		t.Errorf("these hc.tour texts are used by no template: %v", unused)
 	}
 }
 

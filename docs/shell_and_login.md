@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-20 (dash_go version 0.1.3). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-23 (dash_go version 0.1.5). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Version 0.1.5 added the **Documentation** and **Guide** buttons to the header between the language switch and the user box, the bilingual `/dash_go/help` user guide page, and the step-by-step page tour (`tour.js`, with first-visit auto-start via `localStorage`, section 2). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -23,14 +23,17 @@ The shell lives in `internal/core`, so every module (and the landing page `/dash
 ## 2. The header
 
 ```text
-[logo CIM EDGE]  | HC Scan Assign  [<- Back]          (sun/moon)  [EN|中文]  (picture) Name  [sign out]     <- shell, every page
- Winder  [date] [AM|PM] [Change process]                 Scheduled 20  Assigned 14  Leave 3  To assign 3  Pending 2 ...   <- page bar of the module
+[logo CIM EDGE]  | HC Scan Assign  [<- Back]      (sun/moon)  [EN|中文]  (book) (compass)  (picture) Name  [sign out]  <- shell, every page
+ Winder  [date] [AM|PM] [Change process]             Scheduled 20  Assigned 14  Leave 3  To assign 3  Pending 2 ...    <- page bar of the module
 ```
 
 - The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page). Since 0.1.3 it is in the accent colour of the theme (`--accent`: `#0b63c5` in the light theme, `#4da3ff` in the dark one), 1.3 rem and weight 600; before it was the muted grey, which was too dim on the dark header. The contrast of the accent on the header is covered by `palette_test.go`.
 - The **Back** button (since 0.1.3, only on the pages of a module: the landing page and the login page have no module name and no button) is the link `/`, the root of the server the page was opened on, not `dash_home`. The link has no host, so it follows the address the person typed: `http://127.0.0.1/` on the development machine, `http://<s2>/` on s2, and the host of s1 when the page was opened through s1. Its texts are `ui.back` and `ui.back_title`.
 - The theme button shows the icon of the theme that is on now: the sun in the light theme, the moon in the dark one.
 - The language switch is a link: it sets the cookie and comes back to the same page (query string included).
+- The **Documentation** (book icon) and **Guide** (compass icon) buttons sit between the language switch and the user box / Sign in button (since 0.1.5, adapted from the TimeVault project; hidden on the login page):
+  - **Documentation** (`PageSpec.HelpHref`, `target="_blank" rel="noopener"`) opens the bilingual user guide for the current page in a new tab (`/dash_go/help` on the landing page, `/dash_go/<module>/help` on module pages). Help pages follow the current language and light/dark theme, use a sticky table of contents (`.dg-doc`), and do not auto-start the tour when opened.
+  - **Guide** (`PageSpec.Guide`, `web/assets/tour.js`) starts a read-only spotlight tour of the visible elements carrying `data-tour` attributes (emitted server-side via `{{.Tour "<key>"}}`, reading `<key>.title` and `<key>.text` from the i18n catalog; page content steps come first, header steps follow). It supports **Next** / **Back** / **Done**, keyboard shortcuts (`→`, `←`, `Esc`, focus-trapped `Tab`), sticky bar awareness (`data-tour-sticky`), and docked layout on narrow screens (`<= 640px`). On a visitor's first visit to a page, the tour starts automatically once (remembered in `localStorage` under `dash_go.tour.seen.<key>`, via `PageSpec.TourAutoKey` or `dashGo.tour.autoStart(key, { skipHeaderIfSeen: true })`; if `localStorage` is unavailable, auto-start is skipped so it never loops). Clicking the Guide button replays the complete tour at any time.
 - The user box shows the picture of the person (section 6) or the initials, the name (cut with an ellipsis after 11 rem; the tooltip is "Name (employee code)") and the sign-out button. A visitor without a session sees a **Sign in** button instead (not on the login page itself).
 - When the session ends while a page is open, the script of the page turns the user box into the Sign in button and shows "Session expired" with a button to the login page.
 - Below 760 px the module name is hidden (the Back button stays) and the logo shrinks to its mark; below 480 px the name of the user is hidden too. The header wraps instead of scrolling.
@@ -99,9 +102,10 @@ After any of them the service sets the session cookie `dash_go_session` (HttpOnl
 | Request | Purpose |
 |---|---|
 | `GET /dash_go/` | Landing page with the modules (public). |
+| `GET /dash_go/help` | General user guide (public, English and Chinese, lists compiled-in modules and links to their guides). |
 | `GET /dash_go/login?next=&error=&signed_out=&expired=` | Login page. A signed-in person is sent on to `next`. |
 | `GET /dash_go/lang?set=en\|zh&next=` | Language switch. |
-| `GET /dash_go/_shell/...` | Files of the shell (`shell.css`, `shell.js`, `theme-init.js`, `login.js`, `icons.svg`, `favicon.svg`). |
+| `GET /dash_go/_shell/...` | Files of the shell (`shell.css`, `shell.js`, `tour.js`, `theme-init.js`, `login.js`, `icons.svg`, `favicon.svg`). |
 | `GET /dash_go/auth/sso?t=&next=` | One-time link of Dash. |
 | `POST /dash_go/auth/login`, `.../auth/logout`, `.../auth/sso/start`, `.../auth/sso/poll` | JSON endpoints of the login page. |
 
@@ -193,20 +197,26 @@ Done (2026-11-20, version 0.1.3):
 - New unit tests: the Back button is on the pages of a module, goes to `/`, is in both languages and is not on the landing page or the login page (`shell_test.go`); the catalogs have `ui.back`, `ui.back_title` and `err.updating` in both languages (`catalog_test.go`, which also finds every key the code uses); the 503 of the gate in the language of the request (`internal/core/server/gate_test.go`). The contrast of the accent on the header was already covered by `palette_test.go`.
 - The real 0.1.3 binary (scratch configuration on port 18754, the real Python configuration and API) in the integrated browser of the editor, signed in with a hand-over link made with a test secret: the header of the module page in the light and the dark theme, in English and in Chinese, and in a window 390 px wide. The name of the module is in the blue of the theme (computed `rgb(11, 99, 197)` in the light theme), 20.8 px, weight 600; the Back button is next to it with the arrow icon; at 390 px the name is hidden and the button stays next to the logo, and the page does not scroll sideways. A click on Back went to `/` of the same host and port.
 
+Done (2026-11-23, version 0.1.5):
+
+- New unit tests: header places Docs and Guide buttons between the language switch and the user box / Sign in link, hides them and `tour.js` on `/dash_go/login`, serves `/dash_go/_shell/tour.js`, serves `/dash_go/help` in both languages with matching section IDs and without `data-tour-auto` (`shell_test.go`); every `{{.Tour}}` step in shell templates has `.title` and `.text` in both languages, no `tour.*` key is unused, `tour.*` stays out of `#dg-i18n`, and every `t('ui.*')` key used by `tour.js` is sent to the browser (`catalog_test.go`); `palette_test.go`, `go vet ./...` and `go test ./...` pass across all packages.
+- End-to-end headless Chrome verification (Playwright against an in-process `httptest.Server` running the real shell, CSP headers and `hc_scan` handlers with in-memory test data): visual left-to-right button order (`lang < docs < guide < sign-in / userbox`); landing page first-visit auto-tour, keyboard navigation (`→` / `←` / `Esc`), no auto-tour on reload, manual replay via Guide button, Docs button opening `/dash_go/help` in a new tab without auto-tour; login page hiding both buttons; Chinese language, dark theme and 390 px narrow screen (docked tour bubble, zero horizontal overflow). No JS or CSP errors.
+
 **Not verified:**
 
 - The real Python backend (`verify_user`, `sso_result` as deployed; `hc_user_processes` was tried against the Python backend of the development machine in 0.1.2, not against s2), the real Windows sign-on service and a real Windows user.
 - The real nginx of s1 and s2 (their files were tested with isolated instances, see above, but are not deployed), https, and the real `prod_eng` in front of the development machine (its address was simulated; the nginx that is running on the development machine after the new file is copied and reloaded).
 - The 480 x 320 placeholder of the real static endpoint (taken from the TimeVault records) and real photos.
 - Browsers other than Chrome (Edge is expected to behave the same), a real scanner.
-- A review of the Chinese wording by the users.
+- A review of the Chinese wording (including the 0.1.5 user guides and tour texts) by the users.
 - The Back button behind the nginx of s1 and s2 (0.1.3): the link is `/` and was clicked against the scratch service only, which answers 404 there because it serves `/dash_go/` only.
+- Blocked `localStorage` behaviour (tested by code review only, not simulated in a restricted browser profile).
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-20（dash_go 版本 0.1.3）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-23（dash_go 版本 0.1.5）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。0.1.5 版在顶栏的语言切换和用户框之间加入了**文档**和**导览**按钮、中英文 `/dash_go/help` 使用手册页面以及交互式分步导览（`tour.js`，支持首次访问经 `localStorage` 自动引导，第 2 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -229,14 +239,17 @@ shell 放在 `internal/core` 中，所以每个模块（以及首页 `/dash_go/`
 ## 2. 顶栏
 
 ```text
-[logo CIM EDGE]  | HC 扫码分派  [<- 返回]               (太阳/月亮)  [EN|中文]  (头像) 姓名  [退出]     <- shell，每个页面都有
- Winder  [日期] [AM|PM] [切换工序]                       排班 20  已分派 14  请假 3  待分派 3  待确认 2 ...   <- 模块自己的页面栏
+[logo CIM EDGE]  | HC 扫码分派  [<- 返回]          (太阳/月亮)  [EN|中文]  (书本) (指南针)  (头像) 姓名  [退出]  <- shell，每个页面都有
+ Winder  [日期] [AM|PM] [切换工序]                  排班 20  已分派 14  请假 3  待分派 3  待确认 2 ...        <- 模块自己的页面栏
 ```
 
 - logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`）。自 0.1.3 起它使用主题的强调色（`--accent`：浅色主题 `#0b63c5`，深色主题 `#4da3ff`），1.3 rem，字重 600；之前它是暗淡的灰色，在深色顶栏上太不显眼。强调色在顶栏上的对比度由 `palette_test.go` 覆盖。
 - **返回**按钮（自 0.1.3 起，只出现在模块的页面上：首页和登录页没有模块名称，也没有这个按钮）是链接 `/`，即打开页面时所在服务器的根路径，而不是 `dash_home`。链接里没有主机，所以它跟随使用者输入的地址：开发机上是 `http://127.0.0.1/`，s2 上是 `http://<s2>/`，经由 s1 打开页面时则是 s1 的主机。它的文字是 `ui.back` 和 `ui.back_title`。
 - 主题按钮显示当前主题的图标：浅色主题是太阳，深色主题是月亮。
 - 语言切换是一个链接：设置 cookie 后回到同一页面（包括查询字符串）。
+- **文档**（书本图标）和**导览**（指南针图标）按钮位于语言切换与用户框 / 登录按钮之间（自 0.1.5 起，参考 TimeVault 项目实现；登录页不显示）：
+  - **文档**（`PageSpec.HelpHref`，`target="_blank" rel="noopener"`）在新标签页打开当前页面的中英文使用手册（首页对应 `/dash_go/help`，模块页面对应 `/dash_go/<module>/help`）。手册页跟随当前语言与浅色 / 深色主题，带左侧吸顶目录（`.dg-doc`），打开时不会自动弹出导览遮罩。
+  - **导览**（`PageSpec.Guide`，`web/assets/tour.js`）启动只读聚光灯式分步导览，遍历当前页面所有可见的 `data-tour` 元素（由服务端通过 `{{.Tour "<key>"}}` 渲染，读取词条 `<key>.title` 与 `<key>.text`；页面主体步骤在前，顶栏步骤在后）。支持**下一步** / **上一步** / **完成**、键盘快捷键（`→`、`←`、`Esc` 及对话框内 `Tab` 焦点循环）、吸顶栏避让（`data-tour-sticky`）以及窄屏（`<= 640px`）底部停靠。浏览器首次访问页面时会自动启动一次导览（通过 `localStorage` 键 `dash_go.tour.seen.<key>` 记录，由 `PageSpec.TourAutoKey` 或 `dashGo.tour.autoStart(key, { skipHeaderIfSeen: true })` 触发；若 `localStorage` 不可用则跳过自动启动以避免循环弹出）。随时点击顶栏导览按钮可重看完整导览。
 - 用户框显示头像（第 6 节）或首字母、姓名（超过 11 rem 用省略号截断，悬停提示是“姓名（工号）”）和退出按钮。没有会话的访问者看到的是 **登录** 按钮（登录页本身不显示）。
 - 页面打开期间会话结束时，页面脚本把用户框换成登录按钮，并显示“登录已过期”和一个去登录页的按钮。
 - 窄于 760 px 时隐藏模块名称（返回按钮保留），logo 缩成只剩图标；窄于 480 px 时也隐藏用户名。顶栏会换行而不是出现滚动条。
@@ -305,9 +318,10 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 | 请求 | 用途 |
 |---|---|
 | `GET /dash_go/` | 带模块列表的首页（公开）。 |
+| `GET /dash_go/help` | 通用使用手册（公开，中英文，列出已编入的模块并链接到各自的使用手册）。 |
 | `GET /dash_go/login?next=&error=&signed_out=&expired=` | 登录页。已登录的人会被带到 `next`。 |
 | `GET /dash_go/lang?set=en\|zh&next=` | 语言切换。 |
-| `GET /dash_go/_shell/...` | shell 的文件（`shell.css`、`shell.js`、`theme-init.js`、`login.js`、`icons.svg`、`favicon.svg`）。 |
+| `GET /dash_go/_shell/...` | shell 的文件（`shell.css`、`shell.js`、`tour.js`、`theme-init.js`、`login.js`、`icons.svg`、`favicon.svg`）。 |
 | `GET /dash_go/auth/sso?t=&next=` | Dash 的一次性链接。 |
 | `POST /dash_go/auth/login`、`.../auth/logout`、`.../auth/sso/start`、`.../auth/sso/poll` | 登录页的 JSON 接口。 |
 
@@ -399,11 +413,17 @@ Redis 中草稿行的警告和原因保存为词条键加上它的值（`{"key":
 - 新的单元测试：返回按钮出现在模块的页面上，指向 `/`，有两种语言，并且不出现在首页和登录页上（`shell_test.go`）；词条文件中 `ui.back`、`ui.back_title` 和 `err.updating` 两种语言都有（`catalog_test.go`，它也会找出代码用到的每个键）；闸门的 503 使用请求的语言（`internal/core/server/gate_test.go`）。强调色在顶栏上的对比度，`palette_test.go` 本来就已覆盖。
 - 真实的 0.1.3 可执行文件（端口 18754 的临时配置、真实的 Python 配置和 API）在编辑器的内置浏览器中运行，用测试密钥生成的交接链接登录：模块页面的顶栏在浅色和深色主题、英文和中文、以及 390 px 宽的窗口中的样子。模块名称使用主题的蓝色（浅色主题下计算值为 `rgb(11, 99, 197)`），20.8 px，字重 600；返回按钮在它旁边，带箭头图标；在 390 px 宽度下名称被隐藏，按钮留在 logo 旁边，页面不会横向滚动。点击返回后去往了同一主机和端口的 `/`。
 
+已完成（2026-11-23，版本 0.1.5）：
+
+- 新的单元测试：顶栏将文档和导览按钮放在语言切换与用户框 / 登录按钮之间，在 `/dash_go/login` 上隐藏这两个按钮和 `tour.js`，提供 `/dash_go/_shell/tour.js`，提供中英文 `/dash_go/help` 且章节 ID 一致且不带 `data-tour-auto`（`shell_test.go`）；shell 模板中每个 `{{.Tour}}` 步骤在两种语言下都有 `.title` 和 `.text`，没有未使用的 `tour.*` 词条，`tour.*` 不进入 `#dg-i18n`，`tour.js` 使用的每个 `t('ui.*')` 键都会发送到浏览器（`catalog_test.go`）；`palette_test.go`、`go vet ./...` 和 `go test ./...` 全部通过。
+- 无头 Chrome 端到端验证（Playwright 对接进程内 `httptest.Server`，运行真实 shell、CSP 响应头和带内存测试数据的 `hc_scan` 路由）：顶栏按钮从左到右视觉顺序（`lang < docs < guide < sign-in / userbox`）；首页首次访问自动启动导览、键盘切换（`→` / `←` / `Esc`）、刷新后不再自动启动、点击导览按钮手动重放、点击文档按钮在新标签页打开 `/dash_go/help` 且不自动弹窗；登录页隐藏两个按钮；中文界面、深色主题与 390 px 窄屏（导览气泡底部停靠、无横向滚动）。无 JS 或 CSP 报错。
+
 **没有验证：**
 
 - 真实的 Python 后端（部署后的 `verify_user`、`sso_result`；0.1.2 中 `hc_user_processes` 是对开发机的 Python 后端试过的，不是对 s2），真实的 Windows 登录服务和真实的 Windows 用户。
 - s1 和 s2 上真实的 nginx（它们的文件用隔离实例测试过，见上文，但没有部署）、https，以及真实的 `prod_eng` 位于开发机之前的情况（它的地址是模拟的；新文件复制过去并 reload 之后，开发机上正在运行的 nginx）。
 - 真实静态接口的 480 x 320 占位图（取自 TimeVault 的记录）和真实头像。
 - Chrome 之外的浏览器（预计 Edge 表现相同）、真实的扫码枪。
-- 使用者对中文措辞的审阅。
+- 使用者对中文措辞（包括 0.1.5 新增的使用手册与导览文案）的审阅。
 - s1 和 s2 的 nginx 之后的返回按钮（0.1.3）：链接是 `/`，只对临时服务点击过，而临时服务只提供 `/dash_go/`，所以那里回答 404。
+- 禁用 `localStorage` 时的表现（仅经代码审阅确认，未在受限浏览器配置中实测）。

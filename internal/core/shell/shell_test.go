@@ -60,7 +60,7 @@ func newFixture(t *testing.T, password, sso bool) *fixture {
 	svc := auth.NewService(signer, auth.NewMemoryNonces(), set)
 	sh, err := New(Options{
 		Base: "/dash_go", Version: "9.9.9", PhotoURLTemplate: "/api/static/hr/{ee_code}.webp", Auth: svc,
-		Modules: []ModuleLink{{Name: "demo", TitleKey: "ui.landing_title", Description: "A demo module", Version: "1.2.3", Href: "/dash_go/demo/"}},
+		Modules: []ModuleLink{{Name: "demo", TitleKey: "ui.landing_title", Description: "A demo module", Version: "1.2.3", Href: "/dash_go/demo/", HelpHref: "/dash_go/demo/help"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -419,6 +419,7 @@ func TestStaticFilesOfTheShell(t *testing.T) {
 	for path, ct := range map[string]string{
 		"/dash_go/_shell/shell.css":     "text/css",
 		"/dash_go/_shell/shell.js":      "text/javascript",
+		"/dash_go/_shell/tour.js":       "text/javascript",
 		"/dash_go/_shell/theme-init.js": "text/javascript",
 		"/dash_go/_shell/login.js":      "text/javascript",
 		"/dash_go/_shell/icons.svg":     "image/svg+xml",
@@ -448,5 +449,105 @@ func TestInitials(t *testing.T) {
 func TestNewRequiresTheAuthService(t *testing.T) {
 	if _, err := New(Options{Base: "/dash_go"}); err == nil {
 		t.Error("the shell shows the user, it needs the auth service")
+	}
+}
+
+func TestHeaderPlacesDocsAndGuideButtonsBetweenLanguageAndUser(t *testing.T) {
+	f := newFixture(t, true, true)
+
+	// Landing page when signed in: Docs and Guide sit between language switch and user box.
+	signedIn := f.get("/dash_go/", f.cookie("AB12C34", "Yan Shi")).Body.String()
+	for _, want := range []string{
+		`class="dg-helptools"`,
+		`href="/dash_go/help" target="_blank" rel="noopener" data-docs-link`,
+		`/dash_go/_shell/icons.svg#book`,
+		`data-tour-start data-tour-auto="landing"`,
+		`/dash_go/_shell/icons.svg#explore`,
+		`/dash_go/_shell/tour.js?v=9.9.9`,
+		`data-tour="tour.landing_modules"`,
+		`data-tour="tour.theme"`, `data-tour="tour.lang"`, `data-tour="tour.help"`, `data-tour="tour.account"`,
+	} {
+		if !strings.Contains(signedIn, want) {
+			t.Errorf("landing page lacks %q", want)
+		}
+	}
+	iLang := strings.Index(signedIn, `class="dg-lang"`)
+	iHelp := strings.Index(signedIn, `class="dg-helptools"`)
+	iUser := strings.Index(signedIn, `class="dg-userbox"`)
+	if !(iLang >= 0 && iHelp > iLang && iUser > iHelp) {
+		t.Errorf("expected order dg-lang (%d) < dg-helptools (%d) < dg-userbox (%d)", iLang, iHelp, iUser)
+	}
+	if strings.Index(signedIn, "shell.js") > strings.Index(signedIn, "tour.js") {
+		t.Error("shell.js must load before tour.js")
+	}
+
+	// Landing page when signed out: Docs and Guide sit between language switch and Sign in link.
+	signedOut := f.get("/dash_go/").Body.String()
+	iLang = strings.Index(signedOut, `class="dg-lang"`)
+	iHelp = strings.Index(signedOut, `class="dg-helptools"`)
+	iSignIn := strings.Index(signedOut, `href="/dash_go/login?next=%2Fdash_go%2F"`)
+	if !(iLang >= 0 && iHelp > iLang && iSignIn > iHelp) {
+		t.Errorf("expected order dg-lang (%d) < dg-helptools (%d) < sign-in (%d)", iLang, iHelp, iSignIn)
+	}
+	if !strings.Contains(signedOut, `data-tour="tour.signin"`) || strings.Contains(signedOut, `data-tour="tour.account"`) {
+		t.Error("signed-out header should mark signin, not account")
+	}
+
+	// Chinese tooltips and tour texts follow the language cookie.
+	zh := f.get("/dash_go/", &http.Cookie{Name: i18n.CookieName, Value: "zh"}).Body.String()
+	for _, want := range []string{
+		`title="文档：在新标签页中打开本页使用手册"`,
+		`title="导览：逐步介绍本页面"`,
+		`data-tour-title="文档与页面导览"`,
+	} {
+		if !strings.Contains(zh, want) {
+			t.Errorf("Chinese landing page lacks %q", want)
+		}
+	}
+
+	// Login page hides Docs, Guide, tour.js and tour markup.
+	login := f.get("/dash_go/login").Body.String()
+	for _, forbid := range []string{"dg-helptools", "data-docs-link", "data-tour-start", "tour.js", "data-tour="} {
+		if strings.Contains(login, forbid) {
+			t.Errorf("login page must not contain %q", forbid)
+		}
+	}
+}
+
+func TestCoreHelpPageHasBothLanguagesAndMatchesSections(t *testing.T) {
+	f := newFixture(t, true, true)
+	recEN := f.get("/dash_go/help")
+	if recEN.Code != http.StatusOK {
+		t.Fatalf("GET /dash_go/help = %d", recEN.Code)
+	}
+	en := recEN.Body.String()
+	zh := f.get("/dash_go/help", &http.Cookie{Name: i18n.CookieName, Value: "zh"}).Body.String()
+	if en == zh {
+		t.Fatal("Chinese help page must differ from English")
+	}
+	for _, want := range []string{`<title>User guide · CIM EDGE</title>`, `href="/dash_go/demo/help"`, `data-tour="tour.help_toc"`, `data-tour="tour.help_body"`, `data-docs-link`, `data-tour-start`} {
+		if !strings.Contains(en, want) {
+			t.Errorf("English help page lacks %q", want)
+		}
+	}
+	for _, want := range []string{`<title>使用手册 · CIM EDGE</title>`, `href="/dash_go/demo/help"`, `data-tour-title="目录"`, `data-tour-title="手册正文"`} {
+		if !strings.Contains(zh, want) {
+			t.Errorf("Chinese help page lacks %q", want)
+		}
+	}
+	for _, id := range []string{`id="overview"`, `id="signin"`, `id="interface"`, `id="guide"`, `id="faq"`} {
+		if !strings.Contains(en, id) || !strings.Contains(zh, id) {
+			t.Errorf("help page missing section %s in one language", id)
+		}
+	}
+	// Opening the documentation page must not auto-start the tour overlay.
+	if strings.Contains(en, "data-tour-auto") {
+		t.Error("help page should not auto-start tour on open")
+	}
+	// Server-only tour.* keys must stay out of #dg-i18n JSON.
+	for k := range pageCatalog(t, en) {
+		if strings.HasPrefix(k, "tour.") {
+			t.Errorf("tour key %q must not be sent inside #dg-i18n", k)
+		}
 	}
 }

@@ -92,8 +92,10 @@
   // ---- state ---------------------------------------------------------------------------------------------------
 
   const state = { me: null, process: null, date: null, shift: null, board: null, seq: 0, timer: null, idRe: null, last: { id: '', at: 0 }, chain: Promise.resolve() };
+  const tourOpen = () => !!(dg.tour && dg.tour.isActive());
 
   function show(name) {
+    if (tourOpen()) dg.tour.stop();
     for (const id of ['screen-message', 'screen-picker', 'screen-app']) $(id).classList.toggle('hidden', id !== 'screen-' + name);
   }
 
@@ -117,7 +119,7 @@
   }
 
   const key = () => ({ process: state.process, date: state.date, shift: state.shift });
-  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open) $('scan').focus({ preventScroll: true }); };
+  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open && !tourOpen()) $('scan').focus({ preventScroll: true }); };
 
   // The page bar and the scan panel stick below the header and below each other; they need each other's height.
   function trackBars() {
@@ -165,6 +167,7 @@
     box.replaceChildren(...state.me.processes.map((p) => el('button', { type: 'button', text: p, onclick: () => startSession(p) })));
     $('picker-user').textContent = t('hc.ui.signed_in_as', { name: state.me.user.name, ee: state.me.user.ee });
     show('picker');
+    if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.picker', { skipHeaderIfSeen: true }));
   }
 
   function startSession(process, date, shift) {
@@ -209,7 +212,7 @@
   function startPolling() {
     stopPolling();
     state.timer = setInterval(() => {
-      if (document.hidden || $('dialog').open) return;
+      if (document.hidden || $('dialog').open || tourOpen()) return;
       refresh(true);
     }, state.me.config.poll_ms || 3000);
   }
@@ -282,6 +285,7 @@
     if (list(b.elsewhere).length) cards.push(renderElsewhere(list(b.elsewhere)));
     $('machines').replaceChildren(...cards);
     $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_assigned') })]));
+    if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.board', { skipHeaderIfSeen: true }));
   }
 
   function machineLabel(m, level) {
@@ -524,7 +528,8 @@
       if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(debounce); tryScan(true); }
     });
     input.addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; if (!a || a === document.body) focusScan(); }, 250));
-    document.addEventListener('click', (ev) => { if (!ev.target.closest('select, button, input, dialog, a')) focusScan(); });
+    document.addEventListener('click', (ev) => { if (!tourOpen() && !ev.target.closest('select, button, input, dialog, a, .dg-tour')) focusScan(); });
+    document.addEventListener('dg:tour-stop', () => focusScan());
 
     $('date').addEventListener('change', (ev) => {
       if (!ev.target.value) return;

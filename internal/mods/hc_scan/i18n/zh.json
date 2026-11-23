@@ -1,6 +1,7 @@
 {
   "hc.title": "HC 扫码分派",
   "hc.description": "扫描员工工牌，按 MTR 等级分派机台和活动",
+  "hc.help.title": "HC 扫码分派 — 使用手册",
 
   "hc.ui.pick_process": "请选择你要为哪个工序扫码。",
   "hc.ui.signed_in_as": "当前登录：{name}（{ee}）",
@@ -145,5 +146,26 @@
   "hc.skip.machine_gone": "该机台已不在机台列表中",
   "hc.skip.changed_record": "扫描之后发生了变化：该记录现在是 {machine}。请重新扫描工牌。",
   "hc.skip.changed_leave": "扫描之后发生了变化：该记录现在是全天请假。请重新扫描工牌。",
-  "hc.skip.no_shift": "班次代码或日历日类型未知"
+  "hc.skip.no_shift": "班次代码或日历日类型未知",
+
+  "hc.tour.picker.title": "选择工序",
+  "hc.tour.picker.text": "先选择你要扫码分派的 HC 工序。这里只会显示你有操作权限的工序。",
+  "hc.tour.controls.title": "日期、班次与工序",
+  "hc.tour.controls.text": "生产日期和 AM / PM 班次会根据当前时间自动预选，也可以在这里切换。点击“切换工序”可更换其他工序，当前班次尚未确认的草稿会保留。",
+  "hc.tour.counters.title": "班次与草稿计数",
+  "hc.tour.counters.text": "“排班”“已分派”“请假”“待分派”汇总本班次人力情况；“待确认”“已保存”“无机台”“警告”显示当前草稿状态。",
+  "hc.tour.locked.title": "月份已锁定",
+  "hc.tour.locked.text": "每月 7 日之后，上个月的出勤记录已锁定，无法再提交保存。",
+  "hc.tour.scan.title": "扫描工牌",
+  "hc.tour.scan.text": "输入框会自动保持焦点。用扫码枪扫员工工牌（无需按回车），或手动输入工号后按回车，系统会按 MTR 等级和近期工作记录自动分派机台。",
+  "hc.tour.result.title": "最近一次扫描结果",
+  "hc.tour.result.text": "大卡片即时显示刚扫描的员工、分派到的机台或活动、MTR 等级及警告，并伴有提示音（一声正常、两声警告、低音错误）。",
+  "hc.tour.actions.title": "清空草稿与确认",
+  "hc.tour.actions.text": "点击“确认”之前不会写入数据库。带有黄色警告的行会先弹窗确认。“清空草稿”只会清除未确认的行，不会影响已保存的数据。",
+  "hc.tour.entries.title": "已扫描草稿列表",
+  "hc.tour.entries.text": "所有待确认的扫描记录都在这里。可以用下拉列表手动调整机台，或点击 x 将该行移出草稿。",
+  "hc.tour.machines.title": "机台卡片",
+  "hc.tour.machines.text": "显示每个机台的已用 / 预算人力、人员列表、MTR 等级徽章及已保存 / 斜体待确认状态。末尾虚线卡片展示“请假”和“其他去向”人员。",
+  "hc.tour.missing.title": "尚未分派",
+  "hc.tour.missing.text": "本工序本班次排班中，还没有机台任务且未全天请假的人员。已在其他页面分派好机台的人不会出现在这里。"
 }

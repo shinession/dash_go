@@ -20,7 +20,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | Document | Covers |
 |---|---|
-| [shell_and_login.md](shell_and_login.md) | The frame of every page (`/dash_go/_shell/`): the header with the CIM EDGE logo, the name of the module with the Back button to the root of the server, the light / dark theme, English / Chinese (catalogs, how a module adds texts), the user box and the pictures of people, and the sign-in of dash_go itself (link from Dash, account and password, Windows sign-in, limits, configuration, deployment behind proxies, troubleshooting, verification status) |
+| [shell_and_login.md](shell_and_login.md) | The frame of every page (`/dash_go/_shell/`): the header with the CIM EDGE logo, the name of the module with the Back button to the root of the server, the light / dark theme, English / Chinese (catalogs, how a module adds texts), the Documentation and Page Guide buttons (user guide pages and interactive tour with first-visit auto-start), the user box and the pictures of people, and the sign-in of dash_go itself (link from Dash, account and password, Windows sign-in, limits, configuration, deployment behind proxies, troubleshooting, verification status) |
 | [auto_update.md](auto_update.md) | The automatic update (since 0.1.3): a release is `dash_go.exe` and `dash_go.json` in the static folder of the Dash API (`scripts/release.ps1`); a server with `update_url` reads the manifest, downloads and checks the new program, waits until nobody is clicking or submitting, puts it in place and restarts (launcher or exit code 75). Settings, publishing, going back, troubleshooting by log line, limits and verification status |
 
 ### Modules
@@ -53,7 +53,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | 文档 | 内容 |
 |---|---|
-| [shell_and_login.md](shell_and_login.md) | 每个页面的外框（`/dash_go/_shell/`）：带 CIM EDGE logo 的顶栏、模块名称及其旁边通向服务器根路径的返回按钮、浅色 / 深色主题、中英文（词条文件、模块如何添加文字）、用户框和人员头像，以及 dash_go 自己的登录（Dash 的链接、账号密码、Windows 登录、限流、配置、代理之后的部署、故障排查、验证状态） |
+| [shell_and_login.md](shell_and_login.md) | 每个页面的外框（`/dash_go/_shell/`）：带 CIM EDGE logo 的顶栏、模块名称及其旁边通向服务器根路径的返回按钮、浅色 / 深色主题、中英文（词条文件、模块如何添加文字）、文档与页面导览按钮（使用手册页面和支持首次访问自动引导的交互式导览）、用户框和人员头像，以及 dash_go 自己的登录（Dash 的链接、账号密码、Windows 登录、限流、配置、代理之后的部署、故障排查、验证状态） |
 | [auto_update.md](auto_update.md) | 自动更新（自 0.1.3 起）：一个发布就是 Dash API 静态文件夹中的 `dash_go.exe` 和 `dash_go.json`（`scripts/release.ps1`）；设置了 `update_url` 的服务器读取清单，下载并检查新程序，等到没有人在点击或提交，再就位并重启（启动器或退出码 75）。设置、发布、回退、按日志行排查、限制和验证状态 |
 
 ### 模块

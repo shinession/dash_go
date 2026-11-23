@@ -5,19 +5,19 @@
   <p id="message-action" class="hidden"><a id="message-link" class="dg-btn dg-btn-primary" href="#"></a></p>
 </section>
 
-<section id="screen-picker" class="screen hidden">
+<section id="screen-picker" class="screen hidden" data-tour-screen="hc_scan.picker">
   <h1>{{.T "hc.title"}}</h1>
   <p class="muted">{{.T "hc.ui.pick_process"}}</p>
-  <div id="process-buttons" class="process-buttons"></div>
+  <div id="process-buttons" class="process-buttons"{{.Tour "hc.tour.picker"}}></div>
   <p class="muted small" id="picker-user"></p>
 </section>
 
-<div id="screen-app" class="hidden">
-  <div class="pagebar" id="pagebar">
+<div id="screen-app" class="hidden" data-tour-screen="hc_scan.board">
+  <div class="pagebar" id="pagebar" data-tour-sticky>
     <div class="title">
       <span id="process-name" class="process-name"></span>
     </div>
-    <div class="controls">
+    <div class="controls"{{.Tour "hc.tour.controls"}}>
       <input id="date" type="date" aria-label="{{.T "hc.ui.date_label"}}">
       <div class="seg" role="group" aria-label="{{.T "hc.ui.shift_label"}}">
         <button id="shift-AM" type="button" class="seg-btn">AM</button>
@@ -25,40 +25,40 @@
       </div>
       <button id="change-process" type="button" class="btn ghost">{{.T "hc.ui.change_process"}}</button>
     </div>
-    <div class="counters" id="counters"></div>
+    <div class="counters" id="counters"{{.Tour "hc.tour.counters"}}></div>
   </div>
 
-  <div id="locked-banner" class="banner warn hidden">{{.T "hc.ui.locked"}}</div>
+  <div id="locked-banner" class="banner warn hidden"{{.Tour "hc.tour.locked"}}>{{.T "hc.ui.locked"}}</div>
 
   <main class="layout">
     <section class="left">
-      <div class="scan-block">
-      <div class="scan-panel">
+      <div class="scan-block" data-tour-sticky>
+      <div class="scan-panel"{{.Tour "hc.tour.scan"}}>
         <label for="scan" class="scan-label">{{.T "hc.ui.scan_label"}}</label>
         <input id="scan" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="{{.T "hc.ui.scan_placeholder"}}">
       </div>
 
-      <div id="result" class="result idle">
+      <div id="result" class="result idle"{{.Tour "hc.tour.result"}}>
         <div class="result-idle">{{.T "hc.ui.ready"}}</div>
       </div>
       </div>
 
       <div class="panel-head">
         <h2>{{.T "hc.ui.scanned"}} <span id="pending-count" class="pill">0</span></h2>
-        <div class="actions">
+        <div class="actions"{{.Tour "hc.tour.actions"}}>
           <button id="reset" type="button" class="btn ghost">{{.T "hc.ui.clear_draft"}}</button>
           <button id="confirm" type="button" class="btn primary">{{.T "hc.ui.confirm"}}</button>
         </div>
       </div>
       <p class="muted small">{{.T "hc.ui.draft_hint"}}</p>
-      <div id="entries" class="entries"></div>
+      <div id="entries" class="entries"{{.Tour "hc.tour.entries"}}></div>
     </section>
 
     <aside class="right">
       <div class="panel-head"><h2>{{.T "hc.ui.machines"}}</h2><span id="mtr-info" class="muted small"></span></div>
-      <div id="machines" class="machines"></div>
+      <div id="machines" class="machines"{{.Tour "hc.tour.machines"}}></div>
       <div class="panel-head"><h2>{{.T "hc.ui.not_assigned"}} <span id="missing-count" class="pill">0</span></h2></div>
-      <div id="missing" class="missing"></div>
+      <div id="missing" class="missing"{{.Tour "hc.tour.missing"}}></div>
     </aside>
   </main>
 </div>

@@ -138,6 +138,8 @@ a { color: var(--accent); }
 .dg-lang-link:hover { color: var(--text); }
 .dg-lang-link.is-active { background: var(--soft-hover); color: var(--accent); }
 
+.dg-helptools { display: inline-flex; flex: none; align-items: center; gap: .5rem; }
+
 .dg-userbox { display: flex; align-items: center; gap: .25rem; min-width: 0; }
 .dg-user {
   display: inline-flex; align-items: center; gap: .4rem; min-width: 0; max-width: 11rem; min-height: 2rem;
@@ -169,6 +171,8 @@ a { color: var(--accent); }
 .dg-btn-small { min-height: 1.875rem; padding: .2rem .8rem; font-size: .875rem; }
 .dg-btn-primary { background: var(--primary); color: var(--on-primary); }
 .dg-btn-primary:hover { background: var(--primary-hover); }
+.dg-btn-ghost { background: transparent; color: var(--muted); }
+.dg-btn-ghost:hover { background: var(--panel-2); color: var(--text); }
 .dg-btn .dg-icon { width: 1.15em; height: 1.15em; }
 
 .toast { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%); max-width: min(92vw, 720px); background: var(--toast-bg); color: var(--text); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 10px; padding: .8rem 1.1rem; box-shadow: var(--shadow); z-index: 20; white-space: pre-line; }
@@ -212,7 +216,79 @@ dialog .dlg-actions { display: flex; justify-content: flex-end; gap: .6rem; }
 .dg-alert.info { border-color: var(--accent); color: var(--text); }
 .dg-alert.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--yellow); }
 
+/* ---- page guide (tour.js) ------------------------------------------------------------------------------------ */
+
+.dg-tour-shield { position: fixed; inset: 0; z-index: 1000; }
+.dg-tour-spot {
+  position: fixed; z-index: 1001; box-sizing: border-box; border-radius: 10px;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 100vmax rgba(8, 12, 16, .62);
+  pointer-events: none;
+}
+.dg-tour.is-placed .dg-tour-spot { transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease; }
+.dg-tour-pop {
+  position: fixed; z-index: 1002; box-sizing: border-box;
+  width: min(23rem, calc(100vw - 1.5rem)); padding: 1rem 1.1rem .85rem;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+}
+.dg-tour:not(.is-shown) .dg-tour-pop { visibility: hidden; }
+.dg-tour-pop.is-docked { top: auto; right: .5rem; bottom: .5rem; left: .5rem; width: auto; max-height: 45vh; overflow: auto; }
+.dg-tour-pop.is-docked.is-top { top: .5rem; bottom: auto; }
+.dg-tour-title { margin: 0 2rem .4rem 0; font-size: 1.05rem; font-weight: 700; display: block; }
+.dg-tour-text { margin: 0; font-size: .92rem; line-height: 1.55; white-space: pre-line; }
+.dg-tour-foot { display: flex; align-items: center; gap: .5rem; margin-top: .9rem; }
+.dg-tour-count { margin-right: auto; color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
+.dg-tour-close { position: absolute; top: .55rem; right: .55rem; width: 1.85rem; height: 1.85rem; font-size: 1.2rem; line-height: 1; }
+
+/* ---- user guide pages (help.html) ---------------------------------------------------------------------------- */
+
+.dg-doc { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 1.5rem 2rem; align-items: start; max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.2rem 2.5rem; }
+.dg-doc-toc {
+  position: sticky; top: calc(var(--dg-header-h, 3.5rem) + 1rem);
+  max-height: calc(100vh - var(--dg-header-h, 3.5rem) - 2rem); overflow: auto;
+  padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); box-shadow: var(--shadow); font-size: .9rem;
+}
+.dg-doc-toc h2 { margin: 0 0 .5rem; color: var(--muted); font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; display: block; }
+.dg-doc-toc ol { display: grid; gap: .35rem; margin: 0; padding-left: 1.2rem; }
+.dg-doc-toc a { color: var(--text); text-decoration: none; }
+.dg-doc-toc a:hover { color: var(--accent); text-decoration: underline; }
+
+.dg-doc-body { min-width: 0; max-width: 52rem; line-height: 1.65; }
+.dg-doc-title { display: flex; align-items: center; gap: .55rem; font-size: 1.6rem; margin: 0 0 1.25rem; }
+.dg-doc-title .dg-icon { color: var(--accent); }
+.dg-doc-section { scroll-margin-top: calc(var(--dg-header-h, 3.5rem) + 1rem); }
+.dg-doc-section + .dg-doc-section { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--line); }
+.dg-doc-body h2 { margin: 0 0 .7rem; font-size: 1.25rem; display: block; }
+.dg-doc-body h3 { margin: 1.2rem 0 .45rem; font-size: 1.02rem; }
+.dg-doc-body p, .dg-doc-body ul, .dg-doc-body ol, .dg-doc-table-wrap { margin: 0 0 .85rem; }
+.dg-doc-body ul, .dg-doc-body ol { padding-left: 1.4rem; }
+.dg-doc-body li { margin-bottom: .3rem; }
+.dg-doc-body li > ul, .dg-doc-body li > ol { margin: .3rem 0 0; }
+
+.dg-doc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.dg-doc-table { width: 100%; border-collapse: collapse; font-size: .9rem; line-height: 1.5; }
+.dg-doc-table th { padding: .55rem .75rem; border-bottom: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: .82rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.dg-doc-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.dg-doc-table tbody tr:last-child td { border-bottom: 0; }
+.dg-doc-table td:not(.dg-doc-wrap) { white-space: nowrap; }
+.dg-doc-table td.dg-doc-wrap { overflow-wrap: anywhere; }
+
+.dg-doc-note { padding: .7rem .95rem; border-radius: 0 8px 8px 0; border-left: 3px solid var(--accent); background: var(--soft); }
+.dg-doc-note.warn { border-left-color: var(--warn-line); background: var(--warn-bg); }
+.dg-doc-chip { display: inline-flex; align-items: center; padding: .08rem .5rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); font-size: .82rem; font-weight: 600; white-space: nowrap; }
+.dg-doc-chip.ok { color: var(--green); border-color: var(--ok-line); }
+.dg-doc-chip.warn { color: var(--yellow); border-color: var(--warn-line); background: var(--warn-flag-bg); }
+.dg-doc-chip.err { color: var(--red); border-color: var(--red); }
+.dg-doc-chip.info { color: var(--accent); border-color: var(--accent); }
+.dg-doc kbd { padding: .05em .4em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--panel-2); font-size: .85em; font-family: ui-monospace, Consolas, monospace; }
+
 /* ---- narrow screens ------------------------------------------------------------------------------------------ */
+
+@media (max-width: 900px) {
+  .dg-doc { grid-template-columns: minmax(0, 1fr); }
+  .dg-doc-toc { position: static; max-height: none; }
+}
 
 @media (max-width: 760px) {
   .dg-header-inner { flex-wrap: wrap; padding: .4rem .8rem; }

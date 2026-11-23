@@ -22,9 +22,19 @@ var webFS embed.FS
 func pageSpec(prefix string) shell.PageSpec {
 	return shell.PageSpec{
 		TitleKey: "hc.title", AppKey: "hc.title", RequireLogin: true,
+		HelpHref:       prefix + "/help",
+		Guide:          true,
 		Styles:         []string{prefix + "/static/app.css"},
 		Scripts:        []string{prefix + "/static/app.js"},
 		ClientPrefixes: []string{"hc.ui."},
+	}
+}
+
+func helpPageSpec(prefix string) shell.PageSpec {
+	return shell.PageSpec{
+		TitleKey: "hc.help.title", AppKey: "hc.title",
+		HelpHref: prefix + "/help",
+		Guide:    true,
 	}
 }
 
@@ -39,10 +49,15 @@ func (s *Service) Routes(mux *http.ServeMux, prefix string, guard func(http.Hand
 	if err != nil {
 		return err
 	}
+	helpPage, err := sh.NewPage(helpPageSpec(prefix), webFS, "web/help.html")
+	if err != nil {
+		return err
+	}
 	mux.HandleFunc("GET "+prefix, func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, prefix+"/", http.StatusMovedPermanently)
 	})
 	mux.Handle("GET "+prefix+"/{$}", page.Handler(nil))
+	mux.Handle("GET "+prefix+"/help", helpPage.Handler(func(*http.Request) any { return prefix }))
 	mux.Handle("GET "+prefix+"/static/", noCache(http.StripPrefix(prefix+"/static/", http.FileServerFS(static))))
 
 	api := func(method, path string, h http.HandlerFunc) {

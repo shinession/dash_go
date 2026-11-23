@@ -1,6 +1,7 @@
 {
   "hc.title": "HC Scan Assign",
   "hc.description": "Scan employee badges to assign machines and activities by MTR level",
+  "hc.help.title": "HC Scan Assign — User guide",
 
   "hc.ui.pick_process": "Choose the process you are scanning for.",
   "hc.ui.signed_in_as": "Signed in as {name} ({ee})",
@@ -145,5 +146,26 @@
   "hc.skip.machine_gone": "the machine is not in the machine list any more",
   "hc.skip.changed_record": "changed since the scan: the record now has {machine}. Scan the badge again.",
   "hc.skip.changed_leave": "changed since the scan: the record is now a full-day leave. Scan the badge again.",
-  "hc.skip.no_shift": "the shift code or the calendar day type is unknown"
+  "hc.skip.no_shift": "the shift code or the calendar day type is unknown",
+
+  "hc.tour.picker.title": "Choose a process",
+  "hc.tour.picker.text": "Select the HC process you want to scan badges for. Only processes you have permission to manage are shown.",
+  "hc.tour.controls.title": "Date, shift and process",
+  "hc.tour.controls.text": "The production date and AM / PM shift are preselected from the clock and can be changed here. Use “Change process” to switch to another process; pending draft lines stay saved for this shift.",
+  "hc.tour.counters.title": "Shift and draft counters",
+  "hc.tour.counters.text": "Scheduled, Assigned, Leave and To assign summarize this shift's head count. Pending, Saved, No machine and Warnings track the current scan draft.",
+  "hc.tour.locked.title": "Month locked",
+  "hc.tour.locked.text": "After the 7th of each month, previous-month attendance is locked and cannot be saved.",
+  "hc.tour.scan.title": "Scan badge",
+  "hc.tour.scan.text": "This box stays focused automatically. Scan an employee badge (no Enter key needed) or type an employee ID and press Enter. Each scan picks the best eligible machine by MTR level and recent work history.",
+  "hc.tour.result.title": "Last scan result",
+  "hc.tour.result.text": "Shows the person just scanned, the assigned machine or activity, their MTR level and any warnings, together with an audio beep (one for clean, two for warning, low tone for error).",
+  "hc.tour.actions.title": "Clear draft and Confirm",
+  "hc.tour.actions.text": "Nothing is written to the database until you press Confirm. Lines with yellow warnings will ask for acknowledgement first. Clear draft removes pending lines only; saved records are never touched.",
+  "hc.tour.entries.title": "Scanned draft list",
+  "hc.tour.entries.text": "Every pending scan appears here. Use the drop-down list to change a person's machine manually, or press x to remove a line from the draft.",
+  "hc.tour.machines.title": "Machine cards",
+  "hc.tour.machines.text": "Shows used / budget head count and assigned people per machine, with saved marks, italic pending entries and MTR level badges. Dashed cards at the end show people on Leave or working Elsewhere.",
+  "hc.tour.missing.title": "Not assigned yet",
+  "hc.tour.missing.text": "Scheduled members of this process and shift who still have no machine and are not on full-day leave. People already assigned on another page do not appear here."
 }

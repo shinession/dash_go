@@ -13,7 +13,8 @@
   {{range .Styles}}<link rel="stylesheet" href="{{.}}?v={{$.AssetVer}}">
   {{end}}<script type="application/json" id="dg-i18n">{{.I18n}}</script>
   <script src="{{.Base}}/_shell/shell.js?v={{.AssetVer}}" defer></script>
-  {{range .Scripts}}<script src="{{.}}?v={{$.AssetVer}}" defer></script>
+  {{if .Guide}}<script src="{{.Base}}/_shell/tour.js?v={{.AssetVer}}" defer></script>
+  {{end}}{{range .Scripts}}<script src="{{.}}?v={{$.AssetVer}}" defer></script>
   {{end}}</head>
 <body class="dg">
 {{template "header" .}}
@@ -24,27 +25,33 @@
 
 {{define "icon"}}<svg class="dg-icon" aria-hidden="true" focusable="false"><use href="{{.Base}}/_shell/icons.svg#{{.Name}}"></use></svg>{{end}}
 
-{{/* The bar of every page: the logo, the name of the module with the way back to the root of the server, the theme button, the language switch and the user. */}}
+{{/* The bar of every page: the logo, the name of the module with the way back to the root of the server, the theme button, the language switch, documentation and guide buttons, and the user. */}}
 {{define "header"}}<header class="dg-header" id="dg-header">
   <div class="dg-header-inner">
     <a class="dg-brand" href="{{.Base}}/" title="{{.T "ui.home"}}">{{template "logo"}}</a>
     {{if .App}}<span class="dg-app">{{.App}}</span>
-    <a class="dg-btn dg-btn-small dg-back" href="/" title="{{.T "ui.back_title"}}">{{template "icon" (.Icon "back")}} {{.T "ui.back"}}</a>{{end}}
+    <a class="dg-btn dg-btn-small dg-back" href="/" title="{{.T "ui.back_title"}}"{{.Tour "tour.back"}}>{{template "icon" (.Icon "back")}} {{.T "ui.back"}}</a>{{end}}
     <div class="dg-tools">
-      <button type="button" class="dg-iconbtn" data-theme-toggle title="{{.T "ui.theme_toggle"}}" aria-label="{{.T "ui.theme_toggle"}}">
+      <button type="button" class="dg-iconbtn" data-theme-toggle title="{{.T "ui.theme_toggle"}}" aria-label="{{.T "ui.theme_toggle"}}"{{.Tour "tour.theme"}}>
         <span class="dg-theme-sun">{{template "icon" (.Icon "sun")}}</span><span class="dg-theme-moon">{{template "icon" (.Icon "moon")}}</span>
       </button>
-      <div class="dg-lang" role="group" aria-label="{{.T "ui.lang_label"}}">
+      <div class="dg-lang" role="group" aria-label="{{.T "ui.lang_label"}}"{{.Tour "tour.lang"}}>
         <a class="dg-lang-link{{if not .IsZh}} is-active{{end}}" lang="en" href="{{.LangHref "en"}}">EN</a>
         <a class="dg-lang-link{{if .IsZh}} is-active{{end}}" lang="zh" href="{{.LangHref "zh"}}">中文</a>
       </div>
+      {{if or .HelpHref .Guide}}
+      <div class="dg-helptools"{{.Tour "tour.help"}}>
+        {{if .HelpHref}}<a class="dg-iconbtn" href="{{.HelpHref}}" target="_blank" rel="noopener" data-docs-link title="{{.T "ui.docs_title"}}" aria-label="{{.T "ui.docs_title"}}">{{template "icon" (.Icon "book")}}</a>{{end}}
+        {{if .Guide}}<button type="button" class="dg-iconbtn" data-tour-start{{if .TourAutoKey}} data-tour-auto="{{.TourAutoKey}}"{{end}} title="{{.T "ui.guide_title"}}" aria-label="{{.T "ui.guide_title"}}">{{template "icon" (.Icon "explore")}}</button>{{end}}
+      </div>
+      {{end}}
       {{if .User}}
-      <div class="dg-userbox">
+      <div class="dg-userbox"{{.Tour "tour.account"}}>
         <span class="dg-user" title="{{.User.Name}} ({{.User.EE}})"><span class="avatar" data-photo-for="{{.User.EE}}" data-name="{{.User.Name}}">{{.User.Initials}}</span><span class="dg-user-name">{{.User.Name}}</span></span>
         <button type="button" class="dg-iconbtn" data-logout title="{{.T "ui.sign_out"}}" aria-label="{{.T "ui.sign_out"}}">{{template "icon" (.Icon "logout")}}</button>
       </div>
       {{else if .ShowSignIn}}
-      <a class="dg-btn dg-btn-small" href="{{.LoginHref}}">{{template "icon" (.Icon "user")}} {{.T "ui.sign_in"}}</a>
+      <a class="dg-btn dg-btn-small" href="{{.LoginHref}}"{{.Tour "tour.signin"}}>{{template "icon" (.Icon "user")}} {{.T "ui.sign_in"}}</a>
       {{end}}
     </div>
   </div>

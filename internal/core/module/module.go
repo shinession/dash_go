@@ -32,6 +32,7 @@ type Info struct {
 	Version        string
 	Description    string
 	DescriptionKey string
+	HasHelp        bool
 }
 
 // Module is implemented by every module.

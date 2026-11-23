@@ -1,6 +1,6 @@
 {{define "content"}}
 <main class="dg-main">
-<section class="dg-landing">
+<section class="dg-landing"{{.Tour "tour.landing_modules"}}>
   <h1>{{.T "ui.landing_title"}} <small class="muted">{{.T "ui.landing_version" "version" .Data.Version}}</small></h1>
   <p class="muted">{{.T "ui.landing_modules"}}</p>
   <ul class="dg-modules">

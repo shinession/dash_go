@@ -4,13 +4,13 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.4** (see `VERSION`).
+Current version: **0.1.5** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
 | `hc_scan` | A shift leader scans employee badges; every scan assigns a machine or activity by the MTR record of the person. The result is a draft that the leader checks and confirms. | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
 
-Every page has the same frame, the **shell**: the header with the CIM EDGE logo, a light / dark theme button, an English / Chinese switch, the signed-in user and sign-in / sign-out; plus a login page of its own (account and password, or the Windows sign-in) next to the link that Dash builds. The pages of a module also show the name of the module and a **Back** button to the root of the server. It is described in [docs/shell_and_login.md](docs/shell_and_login.md).
+Every page has the same frame, the **shell**: the header with the CIM EDGE logo, a light / dark theme button, an English / Chinese switch, a Documentation button (user guide for the current page) and a Guide button (interactive step-by-step tour), the signed-in user and sign-in / sign-out; plus a login page of its own (account and password, or the Windows sign-in) next to the link that Dash builds. The pages of a module also show the name of the module and a **Back** button to the root of the server. It is described in [docs/shell_and_login.md](docs/shell_and_login.md).
 
 A server that is told where the releases are (`update_url`) **updates itself**: it reads a manifest from the static folder of the Dash API, downloads and checks the new program, waits until nobody is clicking or submitting, and restarts. See [docs/auto_update.md](docs/auto_update.md).
 
@@ -87,13 +87,13 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.4**（见 `VERSION`）。
+当前版本：**0.1.5**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
 | `hc_scan` | 领班扫描员工工牌；每次扫描根据此人的 MTR 记录分派 machine 或 activity。结果是草稿，由领班检查并确认。 | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
 
-每个页面都有同样的外框，即 **shell**：带 CIM EDGE logo 的顶栏、浅色 / 深色主题按钮、中英文切换、当前登录用户以及登录 / 退出登录；另外还有自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的链接并存。模块的页面还会显示模块名称，以及一个通向服务器根路径的**返回**按钮。详见 [docs/shell_and_login.md](docs/shell_and_login.md)。
+每个页面都有同样的外框，即 **shell**：带 CIM EDGE logo 的顶栏、浅色 / 深色主题按钮、中英文切换、文档按钮（当前页面的使用手册）和导览按钮（交互式分步导览）、当前登录用户以及登录 / 退出登录；另外还有自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的链接并存。模块的页面还会显示模块名称，以及一个通向服务器根路径的**返回**按钮。详见 [docs/shell_and_login.md](docs/shell_and_login.md)。
 
 知道发布位置的服务器（`update_url`）会**自己更新**：它从 Dash API 的静态文件夹读取清单，下载并检查新程序，等到没有人在点击或提交，然后重启。见 [docs/auto_update.md](docs/auto_update.md)。
 

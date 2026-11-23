@@ -1,0 +1,177 @@
+{{define "content"}}
+{{if not .IsZh}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="Contents"{{.Tour "tour.help_toc"}}>
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">What dash_go is</a></li>
+      <li><a href="#signin">Signing in and signing out</a></li>
+      <li><a href="#interface">Around the header</a></li>
+      <li><a href="#guide">Page guide (tour)</a></li>
+      <li><a href="#faq">Common questions</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} dash_go user guide</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>What dash_go is</h2>
+      <p><strong>dash_go</strong> hosts fast web tools alongside the CIM EDGE Dash application. Every page shares the same header, light and dark themes, English and Chinese interface, and sign-in.</p>
+      {{if .Data.Modules}}
+      <h3>Modules on this server</h3>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>Module</th><th>What it does</th><th>Guide</th></tr></thead>
+          <tbody>
+            {{range .Data.Modules}}<tr>
+              <td><a href="{{.Href}}"><strong>{{.Title}}</strong></a></td>
+              <td class="dg-doc-wrap">{{.Description}}</td>
+              <td>{{if .HelpHref}}<a href="{{.HelpHref}}">User guide</a>{{else}}<span class="muted">-</span>{{end}}</td>
+            </tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+      <p>Go to the <a href="{{.Base}}/">home page</a> at any time by clicking the <strong>CIM EDGE</strong> logo at the top left.</p>
+    </section>
+
+    <section id="signin" class="dg-doc-section">
+      <h2>Signing in and signing out</h2>
+      <p>Protected module pages require your Dash account. You can sign in in three ways (depending on what is enabled on this server):</p>
+      <ol>
+        <li><strong>From the Dash application:</strong> click the module button inside Dash. It signs you in automatically with a one-time link.</li>
+        <li><strong>Account and password:</strong> open <a href="{{.Base}}/login">Sign in</a>, enter your employee ID, name or e-mail address together with your password, and press <strong>Sign in</strong>. The employee ID is the least ambiguous.</li>
+        <li><strong>Windows (SSO):</strong> press <strong>Sign in with Windows (SSO)</strong> on the login page. A small window opens on your company computer and closes by itself (allow pop-ups for this site).</li>
+      </ol>
+      <p class="dg-doc-note"><strong>Note:</strong> Signing out at the top right ends your session in dash_go only; it does not sign you out of the Python Dash application.</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>Around the header</h2>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><strong>CIM EDGE</strong> logo</td><td class="dg-doc-wrap">Opens the dash_go home page with the list of modules.</td></tr>
+            <tr><td><strong>Back</strong> (on module pages)</td><td class="dg-doc-wrap">Returns to the home page of this server (the Dash application).</td></tr>
+            <tr><td><strong>Theme</strong> (sun / moon)</td><td class="dg-doc-wrap">Switches between the light and dark themes. Until you change it, the page follows your system setting; afterwards this browser remembers your choice.</td></tr>
+            <tr><td><strong>EN / <span lang="zh">中文</span></strong></td><td class="dg-doc-wrap">Switches the language of the interface, warnings, messages and user guide. Your choice is remembered by this browser.</td></tr>
+            <tr><td><strong>Documentation</strong> (book)</td><td class="dg-doc-wrap">Opens the user guide for the page you are currently on in a new browser tab.</td></tr>
+            <tr><td><strong>Guide</strong> (compass)</td><td class="dg-doc-wrap">Starts the interactive step-by-step tour of the current page.</td></tr>
+            <tr><td><strong>User / Sign in</strong></td><td class="dg-doc-wrap">Shows your photo (or initials), your name and the <strong>Sign out</strong> button. Point at your name to see your employee ID. Visitors without a session see <strong>Sign in</strong>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="guide" class="dg-doc-section">
+      <h2>Page guide (tour)</h2>
+      <p>The page guide dims the screen and highlights one part of the page at a time, with a short explanation of what it shows or does.</p>
+      <ul>
+        <li><strong>First visit:</strong> the guide starts automatically once when you visit a page for the first time in this browser, so you can quickly get oriented.</li>
+        <li><strong>Replay any time:</strong> press the <strong>Guide</strong> button (compass icon) in the header whenever you want to walk through the current page again.</li>
+        <li><strong>Controls:</strong> use <strong>Next</strong> and <strong>Back</strong>, or press <kbd>→</kbd> / <kbd>←</kbd> on your keyboard. Press <strong>Done</strong> on the last step, click <strong>×</strong>, or press <kbd>Esc</kbd> to close it.</li>
+        <li><strong>Safe and read-only:</strong> the guide never changes data, never submits forms and never clicks buttons for you.</li>
+      </ul>
+    </section>
+
+    <section id="faq" class="dg-doc-section">
+      <h2>Common questions</h2>
+      <h3>The page says “Session expired”</h3>
+      <p>Your sign-in lasts for a fixed number of hours. Click <strong>Sign in</strong> to sign in again; your work in progress (such as an unconfirmed scan draft) is kept on the server.</p>
+      <h3>Windows sign-in window does not open</h3>
+      <p>Your browser blocked the pop-up window. Allow pop-ups for this site and click <strong>Sign in with Windows (SSO)</strong> again, or sign in with your password.</p>
+      <h3>Theme or language resets after closing the browser</h3>
+      <p>Your browser may be clearing site storage or cookies (for example in a private window). Normal browser windows remember both settings.</p>
+    </section>
+  </article>
+</div>
+{{else}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="目录"{{.Tour "tour.help_toc"}}>
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#overview">dash_go 是什么</a></li>
+      <li><a href="#signin">登录与退出登录</a></li>
+      <li><a href="#interface">顶栏说明</a></li>
+      <li><a href="#guide">页面导览</a></li>
+      <li><a href="#faq">常见问题</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} dash_go 使用手册</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>dash_go 是什么</h2>
+      <p><strong>dash_go</strong> 是与 CIM EDGE Dash 应用配合运行的轻量网页工具集合。所有页面共用统一的顶栏、浅色 / 深色主题、中英文切换以及登录状态。</p>
+      {{if .Data.Modules}}
+      <h3>本服务器提供的模块</h3>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>模块</th><th>功能说明</th><th>手册</th></tr></thead>
+          <tbody>
+            {{range .Data.Modules}}<tr>
+              <td><a href="{{.Href}}"><strong>{{.Title}}</strong></a></td>
+              <td class="dg-doc-wrap">{{.Description}}</td>
+              <td>{{if .HelpHref}}<a href="{{.HelpHref}}">使用手册</a>{{else}}<span class="muted">-</span>{{end}}</td>
+            </tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+      <p>随时点击左上角的 <strong>CIM EDGE</strong> logo 可以回到 <a href="{{.Base}}/">dash_go 首页</a>。</p>
+    </section>
+
+    <section id="signin" class="dg-doc-section">
+      <h2>登录与退出登录</h2>
+      <p>受保护的模块页面需要使用你的 Dash 账号登录。根据服务器配置，支持以下三种方式：</p>
+      <ol>
+        <li><strong>从 Dash 应用进入：</strong>在 Dash 中点击对应模块按钮，会通过一次性链接自动登录并跳转。</li>
+        <li><strong>账号和密码：</strong>打开<a href="{{.Base}}/login">登录页</a>，输入工号、姓名或邮箱以及密码，点击<strong>登录</strong>。使用工号最不易重名。</li>
+        <li><strong>Windows 账号登录（SSO）：</strong>在登录页点击<strong>使用 Windows 账号登录（SSO）</strong>。在公司电脑上会弹出一个小窗口并在完成后自动关闭（请允许本站的弹出窗口）。</li>
+      </ol>
+      <p class="dg-doc-note"><strong>提示：</strong>点击右上角的退出按钮只会退出 dash_go 的登录状态，不会影响你在原 Python Dash 应用中的登录。</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>顶栏说明</h2>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>控件</th><th>作用</th></tr></thead>
+          <tbody>
+            <tr><td><strong>CIM EDGE</strong> logo</td><td class="dg-doc-wrap">返回 dash_go 首页，查看可用模块列表。</td></tr>
+            <tr><td><strong>返回</strong>（模块页面显示）</td><td class="dg-doc-wrap">返回本服务器的首页（Dash 应用）。</td></tr>
+            <tr><td><strong>主题</strong>（太阳 / 月亮）</td><td class="dg-doc-wrap">在浅色和深色主题之间切换。在你手动切换之前跟随系统设置，切换后由当前浏览器记住。</td></tr>
+            <tr><td><strong>EN / 中文</strong></td><td class="dg-doc-wrap">切换界面、警告提示、消息及使用手册的语言，当前浏览器会记住你的选择。</td></tr>
+            <tr><td><strong>文档</strong>（书本图标）</td><td class="dg-doc-wrap">在新标签页中打开当前页面的使用手册。</td></tr>
+            <tr><td><strong>导览</strong>（指南针图标）</td><td class="dg-doc-wrap">启动当前页面的交互式分步导览。</td></tr>
+            <tr><td><strong>用户 / 登录</strong></td><td class="dg-doc-wrap">显示你的头像（或首字母）、姓名及<strong>退出登录</strong>按钮，悬停在姓名上可查看工号。未登录时显示<strong>登录</strong>按钮。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="guide" class="dg-doc-section">
+      <h2>页面导览</h2>
+      <p>页面导览会压暗背景并逐个高亮介绍页面上的主要区域，帮助你快速了解各部分的用途。</p>
+      <ul>
+        <li><strong>首次访问自动引导：</strong>在当前浏览器首次访问某个页面时，导览会自动启动一次，帮助你快速熟悉界面。</li>
+        <li><strong>随时重看：</strong>点击顶栏中的<strong>导览</strong>按钮（指南针图标），可随时重新体验当前页面的完整导览。</li>
+        <li><strong>操作方式：</strong>点击<strong>下一步</strong> / <strong>上一步</strong>，或使用键盘方向键 <kbd>→</kbd> / <kbd>←</kbd> 切换步骤；在最后一步点击<strong>完成</strong>、点击 <strong>×</strong> 或按 <kbd>Esc</kbd> 即可关闭。</li>
+        <li><strong>安全只读：</strong>导览不会修改任何数据、不会提交表单，也不会替你点击任何按钮。</li>
+      </ul>
+    </section>
+
+    <section id="faq" class="dg-doc-section">
+      <h2>常见问题</h2>
+      <h3>页面提示“登录已过期”</h3>
+      <p>登录状态会在一定小时数后过期。点击<strong>登录</strong>重新登录即可；尚未确认的工作草稿（例如扫码草稿）仍保留在服务器上。</p>
+      <h3>Windows 登录窗口没有弹出来</h3>
+      <p>浏览器拦截了弹出窗口。请允许本站弹出窗口后再次点击<strong>使用 Windows 账号登录（SSO）</strong>，或改用密码登录。</p>
+      <h3>关闭浏览器后主题或语言恢复默认</h3>
+      <p>浏览器可能开启了隐私模式或自动清除本地存储 / Cookie。正常窗口下会自动记住这两项设置。</p>
+    </section>
+  </article>
+</div>
+{{end}}
+{{end}}

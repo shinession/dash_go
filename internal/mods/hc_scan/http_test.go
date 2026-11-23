@@ -162,3 +162,78 @@ func TestErrorsDoNotLeakInternals(t *testing.T) {
 		t.Errorf("API answers must not be cached: %q", ct)
 	}
 }
+
+func TestHCScanPageHasDocsGuideAndTourSteps(t *testing.T) {
+	h := newHTTPEnv(t)
+	en := h.do(http.MethodGet, httpPrefix+"/", "", true).Body.String()
+	for _, want := range []string{
+		`href="/dash_go/hc_scan/help" target="_blank" rel="noopener" data-docs-link`,
+		`data-tour-start`,
+		`/dash_go/_shell/tour.js?v=` + version.Version,
+		`data-tour-screen="hc_scan.picker"`, `data-tour-screen="hc_scan.board"`,
+		`data-tour="hc.tour.picker"`, `data-tour="hc.tour.controls"`, `data-tour="hc.tour.counters"`,
+		`data-tour="hc.tour.scan"`, `data-tour="hc.tour.result"`, `data-tour="hc.tour.actions"`,
+		`data-tour="hc.tour.entries"`, `data-tour="hc.tour.machines"`, `data-tour="hc.tour.missing"`,
+		`data-tour="tour.back"`, `data-tour="tour.help"`,
+	} {
+		if !strings.Contains(en, want) {
+			t.Errorf("hc_scan page lacks %q", want)
+		}
+	}
+	if strings.Index(en, "tour.js") > strings.Index(en, "hc_scan/static/app.js") {
+		t.Error("tour.js must load before hc_scan/static/app.js")
+	}
+	iLang := strings.Index(en, `class="dg-lang"`)
+	iHelp := strings.Index(en, `class="dg-helptools"`)
+	iUser := strings.Index(en, `class="dg-userbox"`)
+	if !(iLang >= 0 && iHelp > iLang && iUser > iHelp) {
+		t.Errorf("expected order dg-lang (%d) < dg-helptools (%d) < dg-userbox (%d)", iLang, iHelp, iUser)
+	}
+	zh := h.doLang(http.MethodGet, httpPrefix+"/", "", "zh").Body.String()
+	for _, want := range []string{`data-tour-title="选择工序"`, `data-tour-title="扫描工牌"`, `data-tour-title="机台卡片"`} {
+		if !strings.Contains(zh, want) {
+			t.Errorf("Chinese hc_scan page lacks %q", want)
+		}
+	}
+}
+
+func TestHCScanHelpPageHasBothLanguagesAndMatchesSections(t *testing.T) {
+	h := newHTTPEnv(t)
+	// Accessible without signing in, as well as when signed in.
+	recEN := h.do(http.MethodGet, httpPrefix+"/help", "", false)
+	if recEN.Code != http.StatusOK {
+		t.Fatalf("GET %s/help = %d", httpPrefix, recEN.Code)
+	}
+	en := recEN.Body.String()
+	zh := h.doLang(http.MethodGet, httpPrefix+"/help", "", "zh").Body.String()
+	if en == zh {
+		t.Fatal("Chinese hc_scan help page must differ from English")
+	}
+	for _, want := range []string{
+		`<title>HC Scan Assign — User guide · CIM EDGE</title>`,
+		`href="/dash_go/hc_scan/"`, `href="/dash_go/help"`,
+		`data-tour="tour.help_toc"`, `data-tour="tour.help_body"`,
+		`data-docs-link`, `data-tour-start`,
+	} {
+		if !strings.Contains(en, want) {
+			t.Errorf("English hc_scan help page lacks %q", want)
+		}
+	}
+	for _, want := range []string{
+		`<title>HC 扫码分派 — 使用手册 · CIM EDGE</title>`,
+		`href="/dash_go/hc_scan/"`, `href="/dash_go/help"`,
+		`data-tour-title="目录"`, `data-tour-title="手册正文"`,
+	} {
+		if !strings.Contains(zh, want) {
+			t.Errorf("Chinese hc_scan help page lacks %q", want)
+		}
+	}
+	for _, id := range []string{`id="overview"`, `id="workflow"`, `id="board"`, `id="rules"`, `id="warnings"`, `id="limits"`, `id="interface"`} {
+		if !strings.Contains(en, id) || !strings.Contains(zh, id) {
+			t.Errorf("hc_scan help page missing section %s in one language", id)
+		}
+	}
+	if strings.Contains(en, "data-tour-auto") {
+		t.Error("hc_scan help page must not auto-start tour")
+	}
+}

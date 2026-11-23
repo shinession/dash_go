@@ -35,6 +35,7 @@ type ModuleLink struct {
 	DescriptionKey string
 	Version        string
 	Href           string
+	HelpHref       string
 }
 
 // Options configure the shell.
@@ -54,6 +55,7 @@ type Shell struct {
 	layout  *template.Template
 	login   *Page
 	landing *Page
+	help    *Page
 }
 
 // New parses the templates of the shell.
@@ -72,13 +74,25 @@ func New(opts Options) (*Shell, error) {
 	if s.login, err = s.NewPage(PageSpec{TitleKey: "login.title", Scripts: []string{opts.Base + "/_shell/login.js"}, ClientPrefixes: []string{"login."}}, webFS, "web/templates/login.html"); err != nil {
 		return nil, err
 	}
-	if s.landing, err = s.NewPage(PageSpec{TitleKey: "ui.landing_title"}, webFS, "web/templates/landing.html"); err != nil {
+	if s.landing, err = s.NewPage(PageSpec{
+		TitleKey:    "ui.landing_title",
+		HelpHref:    opts.Base + "/help",
+		Guide:       true,
+		TourAutoKey: "landing",
+	}, webFS, "web/templates/landing.html"); err != nil {
+		return nil, err
+	}
+	if s.help, err = s.NewPage(PageSpec{
+		TitleKey: "ui.help_title",
+		HelpHref: opts.Base + "/help",
+		Guide:    true,
+	}, webFS, "web/templates/help.html"); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-// Mount registers the files of the shell, the language switch, the login page and the landing page.
+// Mount registers the files of the shell, the language switch, the login page, the landing page and the user guide.
 func (s *Shell) Mount(mux *http.ServeMux) {
 	static, _ := fs.Sub(webFS, "web/assets")
 	files := http.StripPrefix(s.opts.Base+"/_shell/", http.FileServerFS(static))
@@ -88,6 +102,7 @@ func (s *Shell) Mount(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("GET "+s.opts.Base+"/lang", s.handleLang)
 	mux.HandleFunc("GET "+s.opts.Base+"/login", s.handleLogin)
+	mux.HandleFunc("GET "+s.opts.Base+"/help", s.handleHelp)
 	mux.HandleFunc("GET "+s.opts.Base+"/{$}", s.handleLanding)
 }
 
@@ -153,14 +168,13 @@ type landingData struct {
 }
 
 type landingModule struct {
-	Title, Description, Version, Href string
+	Title, Description, Version, Href, HelpHref string
 }
 
-func (s *Shell) handleLanding(w http.ResponseWriter, r *http.Request) {
-	lang := i18n.LangOf(r.Context())
+func (s *Shell) landingViewData(lang i18n.Lang) landingData {
 	d := landingData{Version: s.opts.Version}
 	for _, m := range s.opts.Modules {
-		lm := landingModule{Title: m.Title, Description: m.Description, Version: m.Version, Href: m.Href}
+		lm := landingModule{Title: m.Title, Description: m.Description, Version: m.Version, Href: m.Href, HelpHref: m.HelpHref}
 		if m.TitleKey != "" {
 			lm.Title = i18n.Std().T(lang, m.TitleKey, nil)
 		}
@@ -169,7 +183,15 @@ func (s *Shell) handleLanding(w http.ResponseWriter, r *http.Request) {
 		}
 		d.Modules = append(d.Modules, lm)
 	}
-	s.landing.Render(w, r, http.StatusOK, d)
+	return d
+}
+
+func (s *Shell) handleLanding(w http.ResponseWriter, r *http.Request) {
+	s.landing.Render(w, r, http.StatusOK, s.landingViewData(i18n.LangOf(r.Context())))
+}
+
+func (s *Shell) handleHelp(w http.ResponseWriter, r *http.Request) {
+	s.help.Render(w, r, http.StatusOK, s.landingViewData(i18n.LangOf(r.Context())))
 }
 
 // PageSpec describes a page.
@@ -184,6 +206,15 @@ type PageSpec struct {
 	ClientPrefixes []string
 	// RequireLogin sends a visitor without a session to the login page.
 	RequireLogin bool
+	// HelpHref is the URL of the user guide for this page (opened in a new tab from the header Docs button).
+	// Leave empty to hide the Docs button.
+	HelpHref string
+	// Guide enables the header Guide button (step-by-step tour of the page) and loads tour.js.
+	Guide bool
+	// TourAutoKey, when non-empty, starts the page tour automatically once on the visitor's first visit
+	// (remembered in localStorage). Pages whose main content loads asynchronously leave this empty and call
+	// dashGo.tour.autoStart(key) once the screen is ready.
+	TourAutoKey string
 }
 
 // Page is a page of the shell with the template of its content.
@@ -250,6 +281,9 @@ type view struct {
 	AssetVer      string
 	Title         string
 	App           string
+	HelpHref      string
+	Guide         bool
+	TourAutoKey   string
 	Styles        []string
 	Scripts       []string
 	I18n          map[string]string
@@ -276,7 +310,8 @@ func (s *Shell) newView(r *http.Request, spec PageSpec, data any) *view {
 	std := i18n.Std()
 	v := &view{
 		Lang: string(lang), IsZh: lang == i18n.ZH, Base: s.opts.Base, AssetVer: s.opts.Version,
-		Title:  std.T(lang, spec.TitleKey, nil) + " · CIM EDGE",
+		Title:    std.T(lang, spec.TitleKey, nil) + " · CIM EDGE",
+		HelpHref: spec.HelpHref, Guide: spec.Guide, TourAutoKey: spec.TourAutoKey,
 		Styles: spec.Styles, Scripts: spec.Scripts, PhotoTemplate: s.opts.PhotoURLTemplate, Data: data,
 		lang: lang, requestURI: r.URL.RequestURI(),
 		I18n: std.Subset(lang, append([]string{"ui."}, spec.ClientPrefixes...)...),
@@ -291,6 +326,19 @@ func (s *Shell) newView(r *http.Request, spec PageSpec, data any) *view {
 	v.ShowSignIn = !onLogin
 	v.LoginHref = s.opts.Auth.LoginPath(s.opts.Auth.SafeNext(r.URL.Path))
 	return v
+}
+
+// Tour emits the data-tour attributes that tour.js reads for one step of the page guide: the step key and its
+// translated title (<key>.title) and text (<key>.text). When the page has no guide it returns empty, so pages like
+// the login page carry no tour markup.
+func (v *view) Tour(key string) template.HTMLAttr {
+	if !v.Guide {
+		return ""
+	}
+	std := i18n.Std()
+	return template.HTMLAttr(` data-tour="` + template.HTMLEscapeString(key) +
+		`" data-tour-title="` + template.HTMLEscapeString(std.T(v.lang, key+".title", nil)) +
+		`" data-tour-text="` + template.HTMLEscapeString(std.T(v.lang, key+".text", nil)) + `"`)
 }
 
 // T translates a key into the language of the request. The optional arguments are name and value pairs for the
