@@ -189,6 +189,10 @@ func TestHCScanPageHasDocsGuideAndTourSteps(t *testing.T) {
 	if !(iLang >= 0 && iHelp > iLang && iUser > iHelp) {
 		t.Errorf("expected order dg-lang (%d) < dg-helptools (%d) < dg-userbox (%d)", iLang, iHelp, iUser)
 	}
+	// Not assigned yet appears above Machines in the right column (since 0.1.7).
+	if iMissing, iMachines := strings.Index(en, `id="missing"`), strings.Index(en, `id="machines"`); !(iMissing >= 0 && iMachines > iMissing) {
+		t.Errorf("expected id=missing (%d) before id=machines (%d)", iMissing, iMachines)
+	}
 	zh := h.doLang(http.MethodGet, httpPrefix+"/", "", "zh").Body.String()
 	for _, want := range []string{`data-tour-title="选择工序"`, `data-tour-title="扫描工牌"`, `data-tour-title="机台卡片"`} {
 		if !strings.Contains(zh, want) {

@@ -37,6 +37,14 @@
   const fmt = (n) => (Math.round(n * 100) / 100).toString();
   const avatar = (name, url, size) => dg.avatar(name, url, size);
 
+  function personInfo(name, ee, hc) {
+    const label = hc != null && hc !== 1 ? `${name} (${fmt(hc)})` : name;
+    return el('span', { class: 'person-info' },
+      el('span', { class: 'person-name', text: label, title: label }),
+      el('span', { class: 'person-id', text: ee || '' }),
+    );
+  }
+
   function lvBadge(level) {
     if (level >= 1) return el('span', { class: `lv lv${Math.min(level, 3)}`, text: `Lv${level}` });
     if (level === 0) return el('span', { class: 'lv lv0', text: t('hc.ui.badge_norec') });
@@ -280,9 +288,16 @@
       + (b.mtr.unmapped_machines ? ' | ' + t('hc.ui.mtr_unmapped', { n: b.mtr.unmapped_machines }) : '');
 
     entries.replaceChildren(...(entryList.length ? entryList.map(renderEntry) : [el('div', { class: 'empty', text: t('hc.ui.no_entries') })]));
-    const cards = list(b.machines).map(renderMachine);
+    const allMachines = list(b.machines);
+    const assignedMachines = allMachines.filter((m) => list(m.members).length > 0);
+    const emptyMachines = allMachines.filter((m) => list(m.members).length === 0);
+    const cards = assignedMachines.map(renderMachine);
     if (list(b.leave).length) cards.push(renderLeave(list(b.leave), totals.leave_hc));
     if (list(b.elsewhere).length) cards.push(renderElsewhere(list(b.elsewhere)));
+    if (emptyMachines.length) {
+      if (cards.length) cards.push(el('div', { class: 'machines-sep', text: t('hc.ui.machines_unassigned', { n: emptyMachines.length }) }));
+      cards.push(...emptyMachines.map(renderMachine));
+    }
     $('machines').replaceChildren(...cards);
     $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_assigned') })]));
     if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.board', { skipHeaderIfSeen: true }));
@@ -319,12 +334,12 @@
       m.routine && !m.mtr_mapped ? el('span', { class: 'tag warn', text: t('hc.ui.tag_no_mapping') }) : null,
       m.budget <= 0 ? el('span', { class: 'tag', text: t('hc.ui.tag_no_budget') }) : null,
     ];
-    return el('div', { class: 'machine' + (m.over ? ' over' : '') + (full ? ' full' : '') },
+    return el('div', { class: 'machine' + (m.over ? ' over' : '') + (full ? ' full' : ''), 'data-machine-id': m.id },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: m.name }), el('span', { class: 'machine-count', text: `${fmt(m.used)} / ${fmt(m.budget)}` })),
       el('div', { class: 'machine-tags' }, tags),
       el('div', { class: 'members' }, list(m.members).map((p) => el('div', { class: 'member' + (p.saved ? '' : ' pending'), title: p.saved ? t('hc.ui.member_saved_title') : t('hc.ui.member_pending_title') },
-        avatar(p.name, p.photo, 'xs'),
-        el('span', { class: 'member-name', text: p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name }),
+        avatar(p.name, p.photo, 'sm'),
+        personInfo(p.name, p.ee, p.hc),
         // somebody from another process who works on a machine of this one: the seat is taken, so they are shown
         p.from ? el('span', { class: 'tag from', title: t('hc.ui.from_process_title', { process: p.from }), text: p.from }) : null,
         m.routine ? lvBadge(p.level) : null,
@@ -338,8 +353,8 @@
     return el('div', { class: 'machine leave' },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_leave') }), el('span', { class: 'machine-count', text: fmt(hc) })),
       el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member' },
-        avatar(p.name, p.photo, 'xs'),
-        el('span', { class: 'member-name', text: p.name, title: p.name }),
+        avatar(p.name, p.photo, 'sm'),
+        personInfo(p.name, p.ee),
         list(p.items).map((i) => el('span', { class: 'tag leave-code', title: i.name, text: i.hc === 1 ? i.code : `${i.code} ${fmt(i.hc)}` })),
       ))),
     );
@@ -351,17 +366,35 @@
     return el('div', { class: 'machine away', title: t('hc.ui.card_elsewhere_title') },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_elsewhere') }), el('span', { class: 'machine-count', text: fmt(people.reduce((sum, p) => sum + p.hc, 0)) })),
       el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member away-member' },
-        avatar(p.name, p.photo, 'xs'),
-        el('span', { class: 'member-name', text: p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name, title: p.name }),
+        avatar(p.name, p.photo, 'sm'),
+        personInfo(p.name, p.ee, p.hc),
         el('span', { class: 'away-where', text: list(p.where).join(', '), title: list(p.where).join(', ') }),
       ))),
     );
   }
 
-  // somebody who has no task yet; the HC is only shown when a part-day leave leaves less than a whole day
+  // somebody who has no task yet; clicking enters their employee ID into the scan box and scans them in
   function renderMissing(p) {
-    const title = [p.ee, t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
-    return el('span', { class: 'chip', title }, avatar(p.name, p.photo, 'xs'), p.hc !== 1 ? `${p.name} (${fmt(p.hc)})` : p.name);
+    const title = [t('hc.ui.click_to_scan', { name: p.name, ee: p.ee }), t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
+    return el('button', {
+      type: 'button',
+      class: 'chip',
+      title,
+      'data-ee': p.ee,
+      onclick: (ev) => scanFromChip(p.ee, ev.currentTarget),
+    }, avatar(p.name, p.photo, 'sm'), personInfo(p.name, p.ee, p.hc));
+  }
+
+  function scanFromChip(ee, btn) {
+    if (!ee || !state.process) return;
+    if (btn) btn.disabled = true;
+    const input = $('scan');
+    input.value = ee;
+    clearTimeout(debounce);
+    clearTimeout(dropTimer);
+    tryScan(true);
+    focusScan();
+    setTimeout(() => { if (btn && btn.isConnected) btn.disabled = false; }, 1600);
   }
 
   // ---- scanning ------------------------------------------------------------------------------------------------

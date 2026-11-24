@@ -55,10 +55,10 @@
     </section>
 
     <aside class="right">
+      <div class="panel-head"><h2>{{.T "hc.ui.not_assigned"}} <span id="missing-count" class="pill">0</span></h2><span class="muted small">{{.T "hc.ui.missing_hint"}}</span></div>
+      <div id="missing" class="missing"{{.Tour "hc.tour.missing"}}></div>
       <div class="panel-head"><h2>{{.T "hc.ui.machines"}}</h2><span id="mtr-info" class="muted small"></span></div>
       <div id="machines" class="machines"{{.Tour "hc.tour.machines"}}></div>
-      <div class="panel-head"><h2>{{.T "hc.ui.not_assigned"}} <span id="missing-count" class="pill">0</span></h2></div>
-      <div id="missing" class="missing"{{.Tour "hc.tour.missing"}}></div>
     </aside>
   </main>
 </div>

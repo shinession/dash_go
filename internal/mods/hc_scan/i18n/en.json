@@ -22,7 +22,10 @@
   "hc.ui.confirm": "Confirm",
   "hc.ui.draft_hint": "Nothing is written to the database until you press Confirm. Change a machine with the list, or remove a line with the x.",
   "hc.ui.machines": "Machines",
+  "hc.ui.machines_unassigned": "No people assigned ({n})",
   "hc.ui.not_assigned": "Not assigned yet",
+  "hc.ui.missing_hint": "Click a person to scan",
+  "hc.ui.click_to_scan": "Click to scan {name} ({ee})",
   "hc.ui.card_leave": "Leave",
   "hc.ui.card_elsewhere": "Elsewhere",
   "hc.ui.card_elsewhere_title": "People of this process whose task is on none of the machine cards: it is on a machine of another process, or its name is not in the machine list",
@@ -165,7 +168,7 @@
   "hc.tour.entries.title": "Scanned draft list",
   "hc.tour.entries.text": "Every pending scan appears here. Use the drop-down list to change a person's machine manually, or press x to remove a line from the draft.",
   "hc.tour.machines.title": "Machine cards",
-  "hc.tour.machines.text": "Shows used / budget head count and assigned people per machine, with saved marks, italic pending entries and MTR level badges. Dashed cards at the end show people on Leave or working Elsewhere.",
+  "hc.tour.machines.text": "Machines with assigned people appear first, followed by dashed Leave and Elsewhere cards, and then machines without assignments. Each person shows their name and employee ID, MTR level badge, and saved or italic pending status.",
   "hc.tour.missing.title": "Not assigned yet",
-  "hc.tour.missing.text": "Scheduled members of this process and shift who still have no machine and are not on full-day leave. People already assigned on another page do not appear here."
+  "hc.tour.missing.text": "Scheduled members of this process and shift who still have no machine and are not on full-day leave. Click any person to enter their ID and scan them in automatically."
 }

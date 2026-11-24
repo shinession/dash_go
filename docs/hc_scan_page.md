@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-23 (module version 0.1.6). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Version 0.1.4 fixed the board, which showed the people of other processes on its cards, and changed what the page says about the people of the shift: leave is shown, and somebody who already has a task is no longer listed as "not scanned" (sections 2.1 and 11). Version 0.1.5 added the bilingual end-user guide at `/dash_go/hc_scan/help` (opened from the header Documentation button) and the step-by-step page tour for both the process picker and the main scan board (with automatic first-visit start via `localStorage`, focus/polling pause while open, and replay from the header Guide button). Version 0.1.6 made `dash_go.exe -check` test the connections (PostgreSQL, Redis, the Dash API) and end with exit code 1 when one does not work (sections 10 and 11); the page is unchanged. Section 12 says what was verified and what was not.
+**Updated:** 2026-11-24 (module version 0.1.7). This describes the current code of `internal/mods/hc_scan` and of the Python side in the `dash` repository. Version 0.1.1 put the page into the shell (header with logo, light / dark theme, English / Chinese, login page): that part is described in [shell_and_login.md](shell_and_login.md). Version 0.1.2 made a wrong or outdated Python API visible in the log (sections 9 and 11). Version 0.1.3 changed nothing in the page; the header got a Back button and the program can update itself ([auto_update.md](auto_update.md)). Version 0.1.4 fixed the board, which showed the people of other processes on its cards, and changed what the page says about the people of the shift: leave is shown, and somebody who already has a task is no longer listed as "not scanned" (sections 2.1 and 11). Version 0.1.5 added the bilingual end-user guide at `/dash_go/hc_scan/help` (opened from the header Documentation button) and the step-by-step page tour for both the process picker and the main scan board (with automatic first-visit start via `localStorage`, focus/polling pause while open, and replay from the header Guide button). Version 0.1.6 made `dash_go.exe -check` test the connections (PostgreSQL, Redis, the Dash API) and end with exit code 1 when one does not work (sections 10 and 11); the page is unchanged. Version 0.1.7 unified right-column person cards to a two-line layout (photo on the left, bold name on top, employee ID below), moved **Not assigned yet** to the top of the right column above **Machines** and made each person clickable to enter their ID and scan them automatically, and grouped assigned machines (plus Leave and Elsewhere) above empty machines while keeping the original display order within each group and inside the draft drop-downs (section 2.1). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -47,7 +47,8 @@ Pending, Saved, No machine and Warnings describe the draft. When every person ha
 
 **Lists.**
 
-- **Not assigned yet:** the people who have no task: no machine in the database, no pending line with a machine, and less than a whole day of leave. The HC is shown in brackets when a part-day leave leaves less than a whole day. A person whose pending line has no machine is in it as well, because they still have no task. Somebody who already has a task, entered on another page or saved by this one, is never in it: they need no scan.
+- **Not assigned yet** (since 0.1.7 shown at the top of the right column, above **Machines**): the people who have no task: no machine in the database, no pending line with a machine, and less than a whole day of leave. Each item shows the person's photo, name on top and employee ID underneath (with HC in brackets when a part-day leave leaves less than a whole day), and is clickable: clicking enters their employee ID into the scan box and runs the normal scan flow automatically. A person whose pending line has no machine is in it as well, because they still have no task. Somebody who already has a task, entered on another page or saved by this one, is never in it: they need no scan.
+- **Machines** (since 0.1.7): machines with at least one assigned person appear first (in their `display_seq` order), followed by the dashed **Leave** and **Elsewhere** cards, then a divider (`No people assigned (N)`) and machines with no people assigned (also in `display_seq` order). The machine drop-downs inside the **Scanned** draft list keep the fixed `display_seq` order. Every person entry in Machines, Leave and Elsewhere uses the same two-line photo + name / employee ID style.
 - **Leave:** the people on leave, whatever the kind, with the code and the HC of each leave (`MCL`, `ANL 0.5`). A part-day leave also leaves the person on their machine, or in "Not assigned yet", for the rest of the day. A full-day leave that the shift leader overrides with a pending line is not leave any more (Confirm drops it).
 - **Elsewhere:** the people of the process whose task is on none of the cards: it is on a machine of another process, or its name is in no machine list of the process (a name that was written wrongly in the record is shown as it is).
 
@@ -248,6 +249,9 @@ Done (2026-11-19):
   - Unit tests: the call of the Dash API that `-check` makes (`dashapi.Client.Check`: 202 and 200 pass, 401 is tried once more and reported, 204 names the backend, 500 and an address that cannot be reached fail; the call is signed and names no user), the probes (`module.RunProbes` runs them at the same time and keeps their order, `module.Report` writes the lines and counts the failures, the Redis and PostgreSQL probes fail without a server and never show a password) and the probe of `hc_scan`.
   - The real 0.1.6 binary on the development machine, against the real local PostgreSQL, Redis and Dash API (read only): all four checks passed with exit code 0 and `-check` took about 1.3 seconds; with a wrong `api.salt_3` in the environment of that one process the two API checks failed with `dash api rejected the request signature` and the exit code was 1, while PostgreSQL and Redis passed; with a scratch configuration whose servers do not exist all four failed in about a second with exit code 1, and no password was in the output or the log.
   - `go vet ./...` and `go test ./...` pass.
+- 0.1.7 (2026-11-24): updated right-column person cards (avatar + name on top, employee ID below), moved **Not assigned yet** above **Machines** with click-to-scan, and grouped assigned machines + Leave/Elsewhere above empty machines:
+  - Unit tests (`catalog_test.go`, `http_test.go`, `board_scope_test.go`): new UI catalog keys (`hc.ui.missing_hint`, `hc.ui.click_to_scan`, `hc.ui.machines_unassigned`) and updated tour texts verified in both languages; `id="missing"` renders before `id="machines"` in `/dash_go/hc_scan/`; `go vet ./...` and `go test -count=1 ./...` pass across all packages.
+  - Headless Chrome verification (Playwright against an in-process `httptest.Server` with fake in-memory repo/perms): confirmed `#missing` sits visually above `#machines`; two-line Avatar + Name / ID layout verified across Not assigned yet, Machines, Leave and Elsewhere; clicking an unassigned person scanned them (`AB12C02 -> Winder_520`, then `AB12C01 -> Winder_515`), removed them from Not assigned yet and returned focus to `#scan`; card order confirmed as assigned machines in `display_seq` order → `Leave` → `Elsewhere` → divider → empty machines in `display_seq` order while the draft `<select>` kept fixed `display_seq` order; Chinese UI, dark theme, tour step order (`尚未分派` before `机台卡片`) and 390 px narrow screen (zero horizontal overflow) passed with zero JS/CSP errors.
 
 **Not verified:**
 
@@ -259,6 +263,7 @@ Done (2026-11-19):
 - 0.1.4: the real binary and the real database. The page was driven through a temporary service on the copy. The day of the screenshot that led to 0.1.4 (2026-11-20) is not in the copy (5 records), so the defect was reproduced on 2026-11-17, which has the same pattern. Confirm itself did not change in 0.1.4 (only the condition that switches its button on); it was not run against a real database again. The Chinese texts of the new cards and counters have not been reviewed by the users.
 - 0.1.5: PostgreSQL integration tests (`DASH_GO_TEST_PG`) were not re-run (no database SQL or write logic changed); the locked-month tour step (`hc.tour.locked`) was verified by template/unit tests rather than a locked-month browser session.
 - 0.1.6: `-check` was only run on the development machine. The connection tests were not run on s2 (where PostgreSQL is on another host), the update of a running service from 0.1.5 to 0.1.6 was not rehearsed (no release was built or published), and the PostgreSQL integration tests (`DASH_GO_TEST_PG`) were not re-run: no SQL or write logic changed.
+- 0.1.7: PostgreSQL integration tests (`DASH_GO_TEST_PG`) were not re-run (frontend layout/interaction change only; no SQL or write logic changed); real employee photos in the 34 px two-line cards and a release build (`scripts/release.ps1`) were not run.
 
 ## 13. Decisions and known limits
 
@@ -281,7 +286,7 @@ Done (2026-11-19):
 
 # 中文
 
-**更新日期：** 2026-11-23（模块版本 0.1.6）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。0.1.4 版修复了看板（它的卡片上出现了其他 process 的人），并改变了页面对本班人员的说明：显示请假，已经有任务的人不再被列为“未扫描”（第 2.1 节和第 11 节）。0.1.5 版新增了面向领班的中英文使用手册 `/dash_go/hc_scan/help`（通过顶栏文档按钮在新标签页打开），并为选工序界面和扫码主看板加入了交互式分步导览（支持首次访问经 `localStorage` 自动引导、导览期间暂停扫码框抢焦点与自动轮询，并可随时通过顶栏导览按钮重看）。0.1.6 版让 `dash_go.exe -check` 测试连接（PostgreSQL、Redis、Dash API），有连接失败时以退出码 1 结束（第 10 节和第 11 节）；页面没有改动。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-24（模块版本 0.1.7）。本文描述 `internal/mods/hc_scan` 以及 `dash` 仓库中 Python 一侧的当前代码。0.1.1 版把页面放进了 shell（带 logo 的顶栏、浅色 / 深色主题、中英文、登录页）：这一部分见 [shell_and_login.md](shell_and_login.md)。0.1.2 版让错误的或过旧的 Python API 在日志中变得可见（第 9 节和第 11 节）。0.1.3 版没有改动页面；顶栏多了返回按钮，程序可以自己更新（[auto_update.md](auto_update.md)）。0.1.4 版修复了看板（它的卡片上出现了其他 process 的人），并改变了页面对本班人员的说明：显示请假，已经有任务的人不再被列为“未扫描”（第 2.1 节和第 11 节）。0.1.5 版新增了面向领班的中英文使用手册 `/dash_go/hc_scan/help`（通过顶栏文档按钮在新标签页打开），并为选工序界面和扫码主看板加入了交互式分步导览（支持首次访问经 `localStorage` 自动引导、导览期间暂停扫码框抢焦点与自动轮询，并可随时通过顶栏导览按钮重看）。0.1.6 版让 `dash_go.exe -check` 测试连接（PostgreSQL、Redis、Dash API），有连接失败时以退出码 1 结束（第 10 节和第 11 节）；页面没有改动。0.1.7 版统一将右侧人员显示改为两行样式（左头像、上加粗姓名、下工号），把 **Not assigned yet（尚未分派）** 移到右侧顶部（机台卡片上方）并支持点击人员直接将工号输入扫码框并完成分派，同时在机台卡片区将已有人员的机台（及请假、其他去向卡片）排在无人员机台上方，各自组内与草稿下拉框均保持原有 `display_seq` 顺序（第 2.1 节）。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -328,7 +333,8 @@ Pending、Saved、No machine 和 Warnings 描述的是草稿。每个人恰好�
 
 **列表。**
 
-- **Not assigned yet（尚未分派）：** 没有任务的人：数据库里没有 machine，没有带 machine 的待确认行，请假不足一整天。半天假留下不足一天时，括号里会显示 HC。待确认行没有 machine 的人也在其中，因为他仍然没有任务。已经有任务的人（在其他页面录入的，或由本页保存的）永远不在其中：他们不需要扫描。
+- **Not assigned yet（尚未分派）**（自 0.1.7 起显示在右侧顶部，机台卡片上方）：没有任务的人：数据库里没有 machine，没有带 machine 的待确认行，请假不足一整天。每位人员显示头像、上方姓名与下方工号（半天假留下不足一天时，姓名旁括号里会显示 HC），且可点击：点击后直接将工号填入扫码框并按扫码流程自动分派。待确认行没有 machine 的人也在其中，因为他仍然没有任务。已经有任务的人（在其他页面录入的，或由本页保存的）永远不在其中：他们不需要扫描。
+- **Machines（机台卡片）**（自 0.1.7 起）：至少有一名已分派人员的机台排在上方（按 `display_seq` 顺序），紧随其后是 **Leave** 和 **Elsewhere** 虚线卡片，再下方用分隔栏（`暂未分派人员的机台（N）`）接上暂无人员的空机台（同样保持 `display_seq` 顺序）。左侧“已扫描”草稿下拉框内的机台列表保持原有固定 `display_seq` 顺序。机台、请假及其他去向卡片中的人员统一使用相同的两行“头像 + 姓名 / 工号”样式。
 - **Leave（请假）：** 请假的人，不分假别，显示每种假的代码和 HC（`MCL`、`ANL 0.5`）。半天假会让此人剩余的时间仍然在他的 machine 上，或在 “Not assigned yet” 中。被领班用待确认行覆盖的全天假不再算请假（Confirm 会去掉它）。
 - **Elsewhere（其他去向）：** 本 process 中任务不在任何卡片上的人：任务在其他 process 的 machine 上，或者名称不在该 process 的任何 machine 列表中（记录里写错的名称会原样显示）。
 
@@ -529,6 +535,9 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
   - 单元测试：`-check` 所做的 Dash API 调用（`dashapi.Client.Check`：202 和 200 通过，401 会再试一次并报告，204 会指出后端，500 和无法到达的地址会失败；调用带签名且不指定用户）、各项探测（`module.RunProbes` 同时运行它们并保持顺序，`module.Report` 写出各行并统计失败数，Redis 和 PostgreSQL 的探测在没有服务器时失败，且从不显示密码）以及 `hc_scan` 的探测。
   - 真实的 0.1.6 可执行文件在开发机上，对真实的本地 PostgreSQL、Redis 和 Dash API（只读）：四项检查全部通过，退出码 0，`-check` 用时约 1.3 秒；在那个进程的环境里设置了错误的 `api.salt_3` 时，两项 API 检查以 `dash api rejected the request signature` 失败，退出码为 1，而 PostgreSQL 和 Redis 通过；使用服务器都不存在的临时配置时，四项都在约一秒内失败，退出码 1，输出和日志中都没有出现密码。
   - `go vet ./...` 和 `go test ./...` 通过。
+- 0.1.7（2026-11-24）：统一右侧人员卡片为两行“头像 + 姓名在上 / 工号在下”样式、将 **Not assigned yet（尚未分派）** 移至机台上方并支持点击扫码，以及将已有人员的机台（含请假/其他去向）排在空机台上方：
+  - 单元测试（`catalog_test.go`、`http_test.go`、`board_scope_test.go`）：新增前端词条（`hc.ui.missing_hint`、`hc.ui.click_to_scan`、`hc.ui.machines_unassigned`）与更新后的导览文案在两种语言下校验通过；`/dash_go/hc_scan/` 中 `id="missing"` 位于 `id="machines"` 之前；全部包的 `go vet ./...` 与 `go test -count=1 ./...` 均通过。
+  - 无头 Chrome 端到端验证（Playwright 对接进程内 `httptest.Server` 与内存假数据）：确认 `#missing` 位于 `#machines` 上方；确认尚未分派、机台成员、请假、其他去向四类卡片均为“头像 + 姓名在上 / 工号在下”两行样式；点击未分派员工自动扫码（`AB12C02 -> Winder_520`，再点 `AB12C01 -> Winder_515`）、从尚未分派移除并把焦点回到 `#scan`；卡片顺序确认为“有人机台（保持 `display_seq`）→ `Leave` → `Elsewhere` → 分隔栏 → 空机台（保持 `display_seq`）”，且草稿下拉框保持原有 `display_seq` 顺序；中文界面、深色主题、导览顺序（`尚未分派` 在 `机台卡片` 之前）及 390 px 窄屏（无横向溢出）均通过，零 JS/CSP 报错。
 
 **没有验证：**
 
@@ -540,6 +549,7 @@ Python 一侧：`config.json` 的可选 key `dash_go_url`（默认 `/dash_go/`�
 - 0.1.4：真实的可执行文件和真实的数据库。页面是通过副本上的一个临时服务操作的。
 - 0.1.5：未重新运行 PostgreSQL 集成测试（`DASH_GO_TEST_PG`，本次未改动任何数据库 SQL 或写入逻辑）；月份锁定导览步骤（`hc.tour.locked`）仅经模板与单元测试验证，未在锁定月份的浏览器会话中实测。导致 0.1.4 的那张截图所在的日期（2026-11-20）不在副本里（只有 5 条记录），所以缺陷是在 2026-11-17 复现的，那一天是同样的情形。Confirm 本身在 0.1.4 中没有改动（只改了让它的按钮亮起的条件）；没有再对真实数据库运行过。新卡片和新计数的中文文字没有经过使用者审阅。
 - 0.1.6：`-check` 只在开发机上运行过。连接测试没有在 s2 上运行（那里的 PostgreSQL 在另一台主机上），从 0.1.5 到 0.1.6 的运行中服务的更新没有演练过（没有构建也没有发布任何版本），PostgreSQL 集成测试（`DASH_GO_TEST_PG`）没有重新运行：没有改动任何 SQL 或写入逻辑。
+- 0.1.7：未重新运行 PostgreSQL 集成测试（`DASH_GO_TEST_PG`，本次仅改动前端排版与交互，未改动 SQL 或写入逻辑）；未对真实员工头像在 34 px 两行卡片中的显示做实测，也未执行发布脚本（`scripts/release.ps1`）。
 
 ## 13. 决定与已知限制
 

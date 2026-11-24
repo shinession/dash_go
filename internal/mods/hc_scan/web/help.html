@@ -31,7 +31,7 @@
       <ol>
         <li><strong>Choose a process:</strong> after signing in, click the process you are working on. You only see processes you have permission to manage.</li>
         <li><strong>Check date and shift:</strong> the production date (production day starts at 07:00) and <strong>AM</strong> / <strong>PM</strong> shift are preselected automatically. Change them at the top bar if needed.</li>
-        <li><strong>Scan badges:</strong> keep the cursor in the <strong>Scan badge</strong> box (it focuses automatically). Scan a badge with the barcode scanner — no Enter key is required — or type an employee ID and press <kbd>Enter</kbd>.</li>
+        <li><strong>Scan badges:</strong> keep the cursor in the <strong>Scan badge</strong> box (it focuses automatically). Scan a badge with the barcode scanner — no Enter key is required — type an employee ID and press <kbd>Enter</kbd>, or simply click a person in <strong>Not assigned yet</strong> at the top right.</li>
         <li><strong>Check the result card and sound:</strong>
           <ul>
             <li><span class="dg-doc-chip ok">Green</span> + one high beep: clean assignment.</li>
@@ -65,20 +65,23 @@
         </table>
       </div>
 
+      <h3>Not assigned yet</h3>
+      <p>Shown at the top of the right panel: scheduled people who still have no machine and are not on full-day leave. Each card shows the person's photo, name and employee ID; a number in brackets (such as <code>(0.5)</code>) means part of their day is leave. Click any person to enter their ID into the scan box and scan them in automatically.</p>
+
       <h3>Machine cards</h3>
       <ul>
+        <li>Machines with assigned people appear first (in their normal display order), followed by the dashed <strong>Leave</strong> and <strong>Elsewhere</strong> cards, and then machines with no people assigned below.</li>
         <li>The header shows <strong>used / budget</strong> head count. A green border means the machine is full; a red border means it is over budget.</li>
-        <li>Names in <em>italics</em> are pending in the draft; names marked <span class="dg-doc-chip ok">saved</span> are already saved in the database.</li>
+        <li>Each person row shows their photo, name on top and employee ID underneath. Names in <em>italics</em> are pending in the draft; names marked <span class="dg-doc-chip ok">saved</span> are already saved in the database.</li>
         <li>Each person on a routine machine shows an MTR level badge: <span class="dg-doc-chip ok">Lv3</span>, <span class="dg-doc-chip warn">Lv2</span>, <span class="dg-doc-chip err">Lv1</span>, <span class="dg-doc-chip">No Rec</span> (no MTR record), or <span class="dg-doc-chip info">Activity</span>.</li>
         <li>A person from another process working on a machine here carries a process tag next to their name (support). They count toward the machine's budget, but not toward this process's shift counters.</li>
         <li>Tags under the machine name explain special status: <span class="dg-doc-chip">activity</span> (non-routine activity), <span class="dg-doc-chip warn">no MTR mapping</span> (never assigned automatically), or <span class="dg-doc-chip">no budget</span>.</li>
       </ul>
 
-      <h3>Special cards and Not assigned yet</h3>
+      <h3>Leave and Elsewhere cards</h3>
       <ul>
         <li><strong>Leave</strong> (dashed card): people on full-day or part-day leave with their leave codes. Someone on part-day leave also appears on their machine (or in <em>Not assigned yet</em>) for the rest of the day.</li>
         <li><strong>Elsewhere</strong> (dashed card): members of this process whose saved task is on a machine of another process, or on a name not listed in this process's machines.</li>
-        <li><strong>Not assigned yet</strong>: scheduled people who still have no machine and are not on full-day leave. A number in brackets (such as <code>(0.5)</code>) means part of their day is leave.</li>
       </ul>
     </section>
 
@@ -176,7 +179,7 @@
       <ol>
         <li><strong>选择工序：</strong>登录后点击你要操作的工序。页面只会显示你有权限管理的工序。</li>
         <li><strong>核对日期和班次：</strong>生产日期（生产日从 07:00 开始）和 <strong>AM</strong> / <strong>PM</strong> 班次会根据时间自动预选，必要时可在页面栏修改。</li>
-        <li><strong>扫描工牌：</strong>保持焦点在<strong>扫描工牌</strong>输入框内（页面会自动聚焦）。用扫码枪直接扫工牌（不需要按回车），或手动输入工号后按 <kbd>Enter</kbd>。</li>
+        <li><strong>扫描工牌：</strong>保持焦点在<strong>扫描工牌</strong>输入框内（页面会自动聚焦）。用扫码枪直接扫工牌（不需要按回车）、手动输入工号后按 <kbd>Enter</kbd>，或直接点击右上角<strong>尚未分派</strong>里的人员。</li>
         <li><strong>查看大卡片与提示音：</strong>
           <ul>
             <li><span class="dg-doc-chip ok">绿色</span> + 一声高音：正常分派成功。</li>
@@ -210,20 +213,23 @@
         </table>
       </div>
 
+      <h3>尚未分派</h3>
+      <p>显示在右侧栏顶部：本班次排班中还没有机台且未全天请假的人员。每张人员卡片显示头像、姓名和工号；括号里的数字（例如 <code>(0.5)</code>）表示该员工请了半天假、还剩半天需要安排。点击任意人员即可自动将工号输入扫码框并完成分派。</p>
+
       <h3>机台卡片</h3>
       <ul>
+        <li>已有人员的机台会排在上方（保持原有显示顺序），紧随其后是<strong>请假</strong>和<strong>其他去向</strong>虚线卡片，暂未分派人员的空机台排在下方。</li>
         <li>卡片标题显示<strong>已用 / 预算</strong>人力：绿色边框表示已满员，红色边框表示超出预算。</li>
-        <li><em>斜体</em>姓名表示待确认草稿；带有 <span class="dg-doc-chip ok">已保存</span> 标记的表示已保存在数据库中。</li>
+        <li>每位人员显示头像、上方姓名与下方工号。<em>斜体</em>姓名表示待确认草稿；带有 <span class="dg-doc-chip ok">已保存</span> 标记的表示已保存在数据库中。</li>
         <li>常规机台上会显示 MTR 等级徽章：<span class="dg-doc-chip ok">Lv3</span>、<span class="dg-doc-chip warn">Lv2</span>、<span class="dg-doc-chip err">Lv1</span>、<span class="dg-doc-chip">无记录</span>（无 MTR 记录）或 <span class="dg-doc-chip info">活动</span>。</li>
         <li>其他工序来支援本工序机台的人员，名字旁边会显示其所属工序标签；他们会计入该机台的已用人数与预算，但不计入本工序的班次计数。</li>
         <li>机台名称下的小标签说明特殊属性：<span class="dg-doc-chip">活动</span>（非日常活动）、<span class="dg-doc-chip warn">无 MTR 对应</span>（不会自动分派）或 <span class="dg-doc-chip">无预算</span>。</li>
       </ul>
 
-      <h3>特殊卡片与“尚未分派”</h3>
+      <h3>请假与其他去向卡片</h3>
       <ul>
         <li><strong>请假</strong>（虚线卡片）：显示全天请假和部分时间请假人员及其请假代码。部分时间请假的人员，剩余时段仍会出现在机台卡片或“尚未分派”中。</li>
         <li><strong>其他去向</strong>（虚线卡片）：属于本工序、但任务记录在其他工序的机台上，或任务名称不在本工序机台列表中的人员。</li>
-        <li><strong>尚未分派</strong>：本班次排班中还没有机台且未全天请假的人员。括号里的数字（例如 <code>(0.5)</code>）表示该员工请了半天假、还剩半天需要安排。</li>
       </ul>
     </section>
 
