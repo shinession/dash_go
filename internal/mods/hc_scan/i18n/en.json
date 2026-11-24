@@ -166,7 +166,7 @@
   "hc.tour.actions.title": "Clear draft and Confirm",
   "hc.tour.actions.text": "Nothing is written to the database until you press Confirm. Lines with yellow warnings will ask for acknowledgement first. Clear draft removes pending lines only; saved records are never touched.",
   "hc.tour.entries.title": "Scanned draft list",
-  "hc.tour.entries.text": "Every pending scan appears here. Use the drop-down list to change a person's machine manually, or press x to remove a line from the draft.",
+  "hc.tour.entries.text": "Every pending scan appears here. Use the drop-down list to change a person's machine manually (machines with an MTR record first, activities next, routine machines without an MTR record last), or press x to remove a line from the draft.",
   "hc.tour.machines.title": "Machine cards",
   "hc.tour.machines.text": "Machines with assigned people appear first, followed by dashed Leave and Elsewhere cards, and then machines without assignments. Each person shows their name and employee ID, MTR level badge, and saved or italic pending status.",
   "hc.tour.missing.title": "Not assigned yet",

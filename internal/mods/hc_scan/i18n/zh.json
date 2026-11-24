@@ -166,7 +166,7 @@
   "hc.tour.actions.title": "清空草稿与确认",
   "hc.tour.actions.text": "点击“确认”之前不会写入数据库。带有黄色警告的行会先弹窗确认。“清空草稿”只会清除未确认的行，不会影响已保存的数据。",
   "hc.tour.entries.title": "已扫描草稿列表",
-  "hc.tour.entries.text": "所有待确认的扫描记录都在这里。可以用下拉列表手动调整机台，或点击 x 将该行移出草稿。",
+  "hc.tour.entries.text": "所有待确认的扫描记录都在这里。可以用下拉列表手动调整机台（有 MTR 记录的机台排最上，活动居中，无 MTR 记录的常规机台排最下），或点击 x 将该行移出草稿。",
   "hc.tour.machines.title": "机台卡片",
   "hc.tour.machines.text": "已有人员的机台排在上方，紧随其后是“请假”和“其他去向”虚线卡片，暂未分派人员的机台排在下方。每位人员显示姓名和工号、MTR 等级徽章及已保存 / 斜体待确认状态。",
   "hc.tour.missing.title": "尚未分派",

@@ -307,13 +307,30 @@
     return `${m.name} - ${levelText(level)} (${fmt(m.used)}/${fmt(m.budget)})`;
   }
 
+  // Order machine options for one person's drop-down: routine machines with an MTR record (Lv1+) first,
+  // non-routine activities next, and routine machines without an MTR record (or mapping) last, keeping the
+  // existing display_seq order within each group.
+  function sortEntryMachines(machines, levels) {
+    const withMtr = [];
+    const activity = [];
+    const noMtr = [];
+    for (const m of machines) {
+      const lv = levels[m.id];
+      if (m.routine === false || lv < 0) activity.push(m);
+      else if (lv >= 1) withMtr.push(m);
+      else noMtr.push(m);
+    }
+    return [...withMtr, ...activity, ...noMtr];
+  }
+
   function renderEntry(e) {
     const cls = ['entry'];
     if (e.warn) cls.push('warn');
     if (!e.machine_id) cls.push('none');
+    const levels = e.levels || {};
     const select = el('select', { 'aria-label': t('hc.ui.machine_of', { name: e.name }), onchange: (ev) => assign(e, ev.target.value) },
       el('option', { value: '', selected: !e.machine_id }, t('hc.ui.no_machine_option')),
-      list(state.board.machines).map((m) => el('option', { value: m.id, selected: m.id === e.machine_id }, machineLabel(m, (e.levels || {})[m.id]))),
+      sortEntryMachines(list(state.board.machines), levels).map((m) => el('option', { value: m.id, selected: m.id === e.machine_id }, machineLabel(m, levels[m.id]))),
     );
     const flags = list(e.flags);
     const reason = flags.some((f) => f.text === e.reason) ? '' : (e.reason || ''); // a warning that says the same is enough

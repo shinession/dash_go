@@ -1,7 +1,7 @@
 {
   "name": "hc_scan",
   "title": "HC Scan Assign",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Scan employee badges to assign machines and activities by MTR level; the shift leader confirms before anything is written.",
   "docs": [
     "docs/hc_scan_page.md"
