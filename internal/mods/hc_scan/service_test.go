@@ -201,6 +201,65 @@ func TestManualAssignmentFlags(t *testing.T) {
 	wantErr(t, err, 404, "not_in_draft")
 }
 
+func TestMultiSelectAssignmentSplitsHCEvenlyAndChecksAllMachines(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.scan(t, "AB12C01") // Lv3 on 515, Lv2 on 520
+
+	// 2 machines -> 0.5 HC each
+	v, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"Winder_520", "Winder_515", "Winder_515"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Source != SourceManual || len(v.MachineIDs) != 2 || v.MachineIDs[0] != "Winder_515" || v.MachineIDs[1] != "Winder_520" || v.MachineName != "Winder_515, Winder_520" {
+		t.Fatalf("2 machines should be deduplicated and in display_seq order: %+v", v)
+	}
+	if hasWarnFlags(v.Flags) {
+		t.Fatalf("Lv3 + Lv2 within budget must have no warnings: %+v", v.Flags)
+	}
+	b, _ := env.svc.Board(ctx, testUser, testKey)
+	if b.Machines[0].Used != 0.5 || b.Machines[1].Used != 0.5 || b.Machines[0].Members[0].HC != 0.5 || b.Machines[1].Members[0].HC != 0.5 {
+		t.Fatalf("2-machine split on board: m0=%+v m1=%+v", b.Machines[0], b.Machines[1])
+	}
+
+	// 3 machines including unmapped Winder_525 -> 0.3333333333 each and NO_MTR warning for Winder_525
+	v, err = env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"Winder_515", "Winder_520", "Winder_525"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.MachineIDs) != 3 || !hasCode(v.Flags, FlagNoMTR) || !strings.Contains(flagText(v.Flags, FlagNoMTR), "Winder_525") {
+		t.Fatalf("3-machine selection must flag unmapped Winder_525: %+v", v.Flags)
+	}
+	b, _ = env.svc.Board(ctx, testUser, testKey)
+	if b.Machines[0].Members[0].HC != 0.3333333333 || b.Machines[0].Used != 0.33 {
+		t.Fatalf("3-machine HC share: member=%+v used=%v", b.Machines[0].Members[0], b.Machines[0].Used)
+	}
+
+	// Empty slice clears assignment
+	v, err = env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Source != SourceNone || len(v.MachineIDs) != 0 || v.MachineID != "" {
+		t.Fatalf("empty selection must clear assignment: %+v", v)
+	}
+}
+
+func TestScanKeepsExistingMultiMachineRecord(t *testing.T) {
+	env := newTestEnv(t)
+	env.repo.records = append(env.repo.records, DayRecord{
+		UID: "AB12C01_20261119", EE: "AB12C01", Date: testDate, Actual: "AM", Schedule: "W",
+		Entries: []HCEntry{
+			{Process: "Winder", Machine: "Winder_515", HC: 0.5},
+			{Process: "Winder", Machine: "Winder_520", HC: 0.5},
+		},
+	})
+	res := env.scan(t, "AB12C01")
+	if res.Status != "existing" || len(res.Entry.MachineIDs) != 2 || res.Entry.MachineIDs[0] != "Winder_515" || res.Entry.MachineIDs[1] != "Winder_520" || res.Entry.MachineName != "Winder_515, Winder_520" {
+		t.Fatalf("existing multi-machine record: %+v", res.Entry)
+	}
+}
+
 func TestRemoveAndResetForgetTheScan(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()

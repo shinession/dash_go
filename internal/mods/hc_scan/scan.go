@@ -121,25 +121,36 @@ func (s *Service) baseEntry(u auth.User, d *dayData, p Person, rec *DayRecord, n
 	return e, nil
 }
 
-// useExisting shows the machine of an existing record: the biggest share of the day on a machine of this process, or,
+// useExisting shows the machine(s) of an existing record: all machines of this process in the record, or,
 // when the person works only on machines of other processes, the name of the biggest share.
 func (s *Service) useExisting(d *dayData, e *Entry) {
-	var best, bestHere HCEntry
-	var hereMachine Machine
-	haveHere := false
+	var best HCEntry
+	var ids, names []string
+	seen := map[string]bool{}
+	bestHereHC := -1.0
+	var bestHere Machine
 	for _, h := range e.Existing {
 		e.HC += h.HC
 		if h.HC > best.HC {
 			best = h
 		}
-		if m, ok := d.resolve(h, e.Process); ok && (!haveHere || h.HC > bestHere.HC) {
-			bestHere, hereMachine, haveHere = h, m, true
+		if m, ok := d.resolve(h, e.Process); ok {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				ids = append(ids, m.ID)
+				names = append(names, m.Name)
+			}
+			if h.HC > bestHereHC {
+				bestHereHC, bestHere = h.HC, m
+			}
 		}
 	}
 	e.HC = round2(e.HC)
-	if haveHere {
-		e.MachineID, e.MachineName, e.Level = hereMachine.ID, hereMachine.Name, d.levelOn(e.EE, hereMachine)
+	if len(ids) > 0 {
+		e.MachineIDs, e.MachineNames = ids, names
+		e.MachineID, e.MachineName, e.Level = ids[0], strings.Join(names, ", "), d.levelOn(e.EE, bestHere)
 	} else {
+		e.MachineIDs, e.MachineNames = nil, nil
 		e.MachineName = best.Machine // a machine outside this process
 	}
 }
@@ -161,12 +172,13 @@ func (s *Service) autoAssign(ctx context.Context, d *dayData, e *Entry, p Person
 	}
 	ranked := RankMachines(d.machines.machines, func(m Machine) int { return d.levelOn(e.EE, m) }, recent, remaining, e.HC)
 	if len(ranked) == 0 {
-		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceNone, "", "", 0, 0
+		e.Source, e.MachineID, e.MachineName, e.MachineIDs, e.MachineNames, e.Level, e.RecentDays = SourceNone, "", "", nil, nil, 0, 0
 		e.ReasonMsg = s.noMachineReason(d, e.EE, e.HC)
 		return nil
 	}
 	best := ranked[0]
 	e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceAuto, best.Machine.ID, best.Machine.Name, best.Level, best.Recent
+	e.MachineIDs, e.MachineNames = []string{best.Machine.ID}, []string{best.Machine.Name}
 	level := strconv.Itoa(best.Level)
 	if best.Recent > 0 {
 		e.ReasonMsg = msg("hc.reason.auto_recent", "level", level, "machine", best.Machine.Name, "days", strconv.Itoa(best.Recent), "window", strconv.Itoa(s.Settings.RecentDays))
@@ -179,7 +191,7 @@ func (s *Service) autoAssign(ctx context.Context, d *dayData, e *Entry, p Person
 // placeLeader puts a leader on the leader row, or explains why that is not possible.
 func (s *Service) placeLeader(d *dayData, e *Entry, row Machine, why Msg, recent map[string]int, used map[string]float64) error {
 	if row.Budget > 0 && row.Budget-used[row.ID]+eps < e.HC {
-		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceNone, "", "", 0, 0
+		e.Source, e.MachineID, e.MachineName, e.MachineIDs, e.MachineNames, e.Level, e.RecentDays = SourceNone, "", "", nil, nil, 0, 0
 		full := Msg{Key: why.Key + "_full", Args: map[string]string{"row": row.Name, "used": trimFloat(used[row.ID]), "budget": trimFloat(row.Budget)}}
 		for k, v := range why.Args {
 			full.Args[k] = v
@@ -188,6 +200,7 @@ func (s *Service) placeLeader(d *dayData, e *Entry, row Machine, why Msg, recent
 		return nil
 	}
 	e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays = SourceAuto, row.ID, row.Name, d.levelOn(e.EE, row), recent[row.ID]
+	e.MachineIDs, e.MachineNames = []string{row.ID}, []string{row.Name}
 	e.ReasonMsg = why
 	return nil
 }
@@ -227,8 +240,18 @@ func (s *Service) scanMessage(ctx context.Context, e Entry, status string) strin
 	}
 }
 
-// Assign lets the shift leader change the machine of a pending line. An empty machine id removes the assignment.
+// Assign lets the shift leader set a single machine on a pending line. An empty machine id removes the assignment.
 func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID string) (*EntryView, error) {
+	if strings.TrimSpace(machineID) == "" {
+		return s.AssignMany(ctx, u, k, ee, nil)
+	}
+	return s.AssignMany(ctx, u, k, ee, []string{machineID})
+}
+
+// AssignMany lets the shift leader set zero, one or multiple machines/activities on a pending line. When multiple are
+// selected, the person's available working HC is split evenly across them (e.g. 0.5 each for 2, 0.3333333333 for 3).
+// An empty slice removes the assignment.
+func (s *Service) AssignMany(ctx context.Context, u auth.User, k Key, ee string, machineIDs []string) (*EntryView, error) {
 	if err := s.check(ctx, u, k, false); err != nil {
 		return nil, err
 	}
@@ -247,20 +270,42 @@ func (s *Service) Assign(ctx context.Context, u auth.User, k Key, ee, machineID 
 	if err != nil {
 		return nil, s.internal("load session data", err)
 	}
-	if machineID == "" {
-		e.Source, e.MachineID, e.MachineName, e.Level, e.RecentDays, e.HC = SourceNone, "", "", 0, 0, availHC(e.LeaveHC)
+	wanted := map[string]bool{}
+	for _, raw := range machineIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := d.machines.byID[id]; !ok {
+			return nil, newError(400, "bad_machine", i18n.P{"machine": clip(id, 40), "process": k.Process})
+		}
+		wanted[id] = true
+	}
+	// keep selected machines in display_seq order for deterministic labels and storage
+	var chosen []Machine
+	for _, m := range d.machines.machines {
+		if wanted[m.ID] {
+			chosen = append(chosen, m)
+		}
+	}
+	if len(chosen) == 0 {
+		e.Source, e.MachineID, e.MachineName, e.MachineIDs, e.MachineNames, e.Level, e.RecentDays, e.HC = SourceNone, "", "", nil, nil, 0, 0, availHC(e.LeaveHC)
 		e.ReasonMsg = msg("hc.reason.removed")
 	} else {
-		m, ok := d.machines.byID[machineID]
-		if !ok {
-			return nil, newError(400, "bad_machine", i18n.P{"machine": clip(machineID, 40), "process": k.Process})
-		}
 		history, err := s.Repo.History(ctx, []string{e.EE}, k.Date.AddDate(0, 0, -s.Settings.RecentDays), k.Date)
 		if err != nil {
 			return nil, s.internal("read assignment history", err)
 		}
-		e.Source, e.MachineID, e.MachineName, e.HC = SourceManual, m.ID, m.Name, availHC(e.LeaveHC)
-		e.Level, e.RecentDays = d.levelOn(e.EE, m), s.recentDays(d, history, e.Process)[m.ID]
+		ids := make([]string, len(chosen))
+		names := make([]string, len(chosen))
+		for i, m := range chosen {
+			ids[i], names[i] = m.ID, m.Name
+		}
+		e.Source = SourceManual
+		e.MachineIDs, e.MachineNames = ids, names
+		e.MachineID, e.MachineName = ids[0], strings.Join(names, ", ")
+		e.HC = availHC(e.LeaveHC)
+		e.Level, e.RecentDays = d.levelOn(e.EE, chosen[0]), s.recentDays(d, history, e.Process)[chosen[0].ID]
 		e.ReasonMsg = msg("hc.reason.chosen", "name", u.Name)
 	}
 	if err := s.Drafts.PutEntry(ctx, k, e); err != nil {

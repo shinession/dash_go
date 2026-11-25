@@ -332,7 +332,7 @@ func TestTheBoardJSONHasTheKeysThePageReads(t *testing.T) {
 	h := newHTTPEnv(t)
 	h.addRecord("AB12C03", "MCL - Medical Leave", "W", HCEntry{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1})
 	board := decode(t, h.do(http.MethodGet, httpPrefix+"/api/board?process=Winder&date=2026-11-19&shift=AM", "", true))
-	for _, k := range []string{"machines", "entries", "not_assigned", "leave", "elsewhere"} {
+	for _, k := range []string{"machines", "entries", "not_assigned", "other_shift", "off_day", "leave", "elsewhere"} {
 		if _, ok := board[k].([]any); !ok {
 			t.Errorf("%q must be a list, never null: %v", k, board[k])
 		}
@@ -378,5 +378,111 @@ func TestTheScriptReadsOnlyKeysTheBoardHas(t *testing.T) {
 	}
 	if seen < 15 {
 		t.Fatalf("only %d reads found: the test no longer sees the script", seen)
+	}
+}
+
+// Version 0.1.9: supplementary candidate popups list unassigned people from the other shift and off/rest/PH days,
+// marking anyone who already worked 6 consecutive previous days as blocked (cannot work a 7th day in a row).
+func TestBoardCandidatesOtherShiftAndOffDayWithSixDayRule(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.repo.cal["RB"] = "R"
+	env.repo.cal["RC"] = "PHO"
+	env.repo.cal["RD"] = "PHR"
+	env.repo.cal["RE"] = "PH"
+	env.repo.cal["RF"] = "" // blank schedule: excluded
+	mes := func(ee, name, shift string) MESRow {
+		return MESRow{EE: ee, Name: name, CostCenter: "2085", Shift: shift, EffectiveMth: d(2026, 11, 1)}
+	}
+	env.repo.mes = append(env.repo.mes,
+		mes("AB12C11", "Kira Blocked6", "RB"),     // R, worked all 6 previous days -> blocked
+		mes("AB12C12", "Liam FiveDays", "RC"),     // PHO, worked 5 previous days (missed day -6) -> eligible
+		mes("AB12C13", "Mona LeaveBreak", "RD"),   // PHR, full-day leave on day -3 breaks 6-day streak -> eligible
+		mes("AB12C14", "Noah HalfDayWork", "RE"),  // PH, worked 6 days incl. 0.5 leave + 0.5 work -> blocked
+		mes("AB12C15", "Owen BlankSched", "RF"),   // blank schedule -> excluded
+		mes("AB12C16", "Pia PMPartLeave", "PB"),   // PM with 0.5 leave, no work -> other_shift with HC 0.5
+		mes("AB12C17", "Quin PMFullLeave", "PB"),  // PM with full-day leave -> excluded
+		mes("AB12C18", "Rita PMAssigned", "PB"),   // PM already assigned in DB -> excluded
+		mes("AB12C19", "Sam PMDraft", "PB"),       // PM placed in PM draft -> excluded
+	)
+	// Previous 6 days: testDate - 6 .. testDate - 1
+	for i := 1; i <= 6; i++ {
+		day := testDate.AddDate(0, 0, -i)
+		uid := func(ee string) string { return ee + "_" + day.Format("20060102") }
+		// Kira: worked all 6 days (day -2 on Slitter to verify cross-process check)
+		proc, mach := "Winder", "Winder_515"
+		if i == 2 {
+			proc, mach = "Slitter", "Slitter_105"
+		}
+		env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C11"), EE: "AB12C11", Date: day, Actual: "AM", Entries: []HCEntry{{Process: proc, Machine: mach, HC: 1}}})
+		// Liam: worked days -1..-5 only
+		if i <= 5 {
+			env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C12"), EE: "AB12C12", Date: day, Actual: "AM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_515", HC: 1}}})
+		}
+		// Mona: worked 5 days, full-day MCL on day -3
+		if i == 3 {
+			env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C13"), EE: "AB12C13", Date: day, Actual: "MCL - Medical Leave", Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1}}})
+		} else {
+			env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C13"), EE: "AB12C13", Date: day, Actual: "AM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_515", HC: 1}}})
+		}
+		// Noah: worked all 6 days, day -4 had 0.5 ANL + 0.5 work
+		if i == 4 {
+			env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C14"), EE: "AB12C14", Date: day, Actual: "AM", Entries: []HCEntry{{Process: "Winder", Machine: "ANL - Annual Leave", HC: 0.5}, {Process: "Winder", Machine: "Winder_520", HC: 0.5}}})
+		} else {
+			env.repo.records = append(env.repo.records, DayRecord{UID: uid("AB12C14"), EE: "AB12C14", Date: day, Actual: "AM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1}}})
+		}
+	}
+	// Today's records for PM members
+	env.addRecord("AB12C16", "PM", "PM", HCEntry{Process: "Winder", Machine: "ANL - Annual Leave", HC: 0.5})
+	env.addRecord("AB12C17", "MCL - Medical Leave", "PM", HCEntry{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1})
+	env.addRecord("AB12C18", "PM", "PM", HCEntry{Process: "Winder", Machine: "Winder_520", HC: 1})
+	// Place Sam in PM draft
+	pmKey := Key{Process: "Winder", Date: testDate, Shift: ShiftPM}
+	if err := env.svc.Drafts.PutEntry(ctx, pmKey, Entry{EE: "AB12C19", Name: "Sam PMDraft", Source: SourceManual, MachineID: "Winder_520", MachineIDs: []string{"Winder_520"}, HC: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := env.board(t)
+	// OtherShift: Finn Six (AB12C06, HC 1) and Pia PMPartLeave (AB12C16, HC 0.5)
+	if len(b.OtherShift) != 2 || b.OtherShift[0].EE != "AB12C06" || b.OtherShift[0].HC != 1 || b.OtherShift[1].EE != "AB12C16" || b.OtherShift[1].HC != 0.5 {
+		t.Fatalf("other_shift: %+v", b.OtherShift)
+	}
+	// OffDay: eligible first (Gus AB12C07, Liam AB12C12, Mona AB12C13), then blocked (Kira AB12C11, Noah AB12C14). Owen (blank) excluded.
+	if len(b.OffDay) != 5 {
+		t.Fatalf("off_day len=%d: %+v", len(b.OffDay), b.OffDay)
+	}
+	wantOff := []struct {
+		ee      string
+		blocked bool
+		days    int
+	}{
+		{"AB12C07", false, 0},
+		{"AB12C12", false, 5},
+		{"AB12C13", false, 2},
+		{"AB12C11", true, 6},
+		{"AB12C14", true, 6},
+	}
+	for i, w := range wantOff {
+		got := b.OffDay[i]
+		if got.EE != w.ee || got.Blocked != w.blocked || got.ConsecutiveDays != w.days {
+			t.Errorf("off_day[%d] = %+v, want ee=%s blocked=%v days=%d", i, got, w.ee, w.blocked, w.days)
+		}
+	}
+
+	// Clicking/scanning an other-shift person with NO MTR record (SourceNone) removes them immediately from other_shift
+	res := env.scan(t, "AB12C06")
+	if res.Status != "unassigned" || !hasCode(res.Entry.Flags, FlagShiftMismatch) {
+		t.Fatalf("expected unassigned with shift mismatch: %s %+v", res.Status, res.Entry.Flags)
+	}
+	b2 := env.board(t)
+	if len(b2.OtherShift) != 1 || b2.OtherShift[0].EE != "AB12C16" {
+		t.Fatalf("AB12C06 must disappear from other_shift once scanned into draft: %+v", b2.OtherShift)
+	}
+	// Removing AB12C06 from draft returns them to other_shift
+	if err := env.svc.Remove(ctx, testUser, testKey, "AB12C06"); err != nil {
+		t.Fatal(err)
+	}
+	if b3 := env.board(t); len(b3.OtherShift) != 2 {
+		t.Fatalf("AB12C06 must reappear after Remove: %+v", b3.OtherShift)
 	}
 }

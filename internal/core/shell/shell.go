@@ -31,9 +31,9 @@ type ModuleLink struct {
 	Name           string
 	Title          string
 	TitleKey       string
+	Icon           string
 	Description    string
 	DescriptionKey string
-	Version        string
 	Href           string
 	HelpHref       string
 }
@@ -168,13 +168,13 @@ type landingData struct {
 }
 
 type landingModule struct {
-	Title, Description, Version, Href, HelpHref string
+	Title, Description, Icon, Href, HelpHref string
 }
 
 func (s *Shell) landingViewData(lang i18n.Lang) landingData {
 	d := landingData{Version: s.opts.Version}
 	for _, m := range s.opts.Modules {
-		lm := landingModule{Title: m.Title, Description: m.Description, Version: m.Version, Href: m.Href, HelpHref: m.HelpHref}
+		lm := landingModule{Title: m.Title, Description: m.Description, Icon: m.Icon, Href: m.Href, HelpHref: m.HelpHref}
 		if m.TitleKey != "" {
 			lm.Title = i18n.Std().T(lang, m.TitleKey, nil)
 		}
@@ -198,6 +198,7 @@ func (s *Shell) handleHelp(w http.ResponseWriter, r *http.Request) {
 type PageSpec struct {
 	TitleKey string // catalog key of the title of the browser tab
 	AppKey   string // catalog key of the name shown next to the logo; empty for none
+	AppIcon  string // optional symbol name in icons.svg shown next to AppKey in the header
 	// Styles and Scripts are the URLs of the stylesheets and scripts of the page, after those of the shell.
 	Styles  []string
 	Scripts []string
@@ -281,6 +282,7 @@ type view struct {
 	AssetVer      string
 	Title         string
 	App           string
+	AppIcon       string
 	HelpHref      string
 	Guide         bool
 	TourAutoKey   string
@@ -318,6 +320,7 @@ func (s *Shell) newView(r *http.Request, spec PageSpec, data any) *view {
 	}
 	if spec.AppKey != "" {
 		v.App = std.T(lang, spec.AppKey, nil)
+		v.AppIcon = spec.AppIcon
 	}
 	if u, ok := s.opts.Auth.Session(r); ok {
 		v.User = &userView{EE: u.EE, Name: u.Name, Initials: initials(u.Name)}

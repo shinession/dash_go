@@ -29,7 +29,7 @@
 {{define "header"}}<header class="dg-header" id="dg-header">
   <div class="dg-header-inner">
     <a class="dg-brand" href="{{.Base}}/" title="{{.T "ui.home"}}">{{template "logo"}}</a>
-    {{if .App}}<span class="dg-app">{{.App}}</span>
+    {{if .App}}<span class="dg-app">{{if .AppIcon}}{{template "icon" (.Icon .AppIcon)}}{{end}}{{.App}}</span>
     <a class="dg-btn dg-btn-small dg-back" href="/" title="{{.T "ui.back_title"}}"{{.Tour "tour.back"}}>{{template "icon" (.Icon "back")}} {{.T "ui.back"}}</a>{{end}}
     <div class="dg-tools">
       <button type="button" class="dg-iconbtn" data-theme-toggle title="{{.T "ui.theme_toggle"}}" aria-label="{{.T "ui.theme_toggle"}}"{{.Tour "tour.theme"}}>

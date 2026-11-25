@@ -38,7 +38,7 @@ func TestPageNeedsALoginAndCarriesTheTextsOfItsLanguage(t *testing.T) {
 	}
 
 	en := h.do(http.MethodGet, httpPrefix+"/", "", true).Body.String()
-	for _, want := range []string{`<html lang="en"`, `<span class="dg-app">HC Scan Assign</span>`, "Scan badge", `data-logout`, `class="dg-user" title="Lead Er (LD01A01)"`,
+	for _, want := range []string{`<html lang="en"`, `<span class="dg-app">`, `/dash_go/_shell/icons.svg#scanner`, `HC Scan Assign</span>`, "Scan badge", `data-logout`, `class="dg-user" title="Lead Er (LD01A01)"`,
 		`/dash_go/hc_scan/static/app.js?v=` + version.Version, `/dash_go/hc_scan/static/app.css?v=` + version.Version, `id="pagebar"`} {
 		if !strings.Contains(en, want) {
 			t.Errorf("the English page lacks %q", want)
@@ -62,7 +62,7 @@ func TestPageNeedsALoginAndCarriesTheTextsOfItsLanguage(t *testing.T) {
 	}
 
 	zh := h.doLang(http.MethodGet, httpPrefix+"/", "", "zh").Body.String()
-	for _, want := range []string{`<html lang="zh"`, `<span class="dg-app">HC 扫码分派</span>`, "扫描工牌", "清空草稿"} {
+	for _, want := range []string{`<html lang="zh"`, `<span class="dg-app">`, `HC 扫码分派</span>`, "扫描工牌", "清空草稿"} {
 		if !strings.Contains(zh, want) {
 			t.Errorf("the Chinese page lacks %q", want)
 		}

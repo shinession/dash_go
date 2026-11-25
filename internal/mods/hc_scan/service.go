@@ -101,6 +101,7 @@ type Service struct {
 	mtrC      *ttlCache[MTRData]
 	calC      *ttlCache[map[string]string]
 	dirC      *ttlCache[*Directory]
+	streakC   *ttlCache[map[string]int]
 }
 
 // NewService validates the dependencies and returns the service.
@@ -126,6 +127,7 @@ func NewService(d Deps) (*Service, error) {
 	s.mtrC = newTTLCache[MTRData](time.Minute, d.Now, d.Log)
 	s.calC = newTTLCache[map[string]string](5*time.Minute, d.Now, d.Log)
 	s.dirC = newTTLCache[*Directory](time.Minute, d.Now, d.Log)
+	s.streakC = newTTLCache[map[string]int](time.Minute, d.Now, d.Log)
 	return s, nil
 }
 
@@ -384,11 +386,67 @@ func (s *Service) usage(d *dayData, pending map[string]Entry) map[string]float64
 		}
 	}
 	for _, e := range pending {
-		if (e.Source == SourceAuto || e.Source == SourceManual) && e.MachineID != "" {
-			used[e.MachineID] += e.HC
+		if (e.Source == SourceAuto || e.Source == SourceManual) && e.HasMachine() {
+			ids := e.SelectedMachineIDs()
+			share := splitHC(e.HC, len(ids))
+			for _, id := range ids {
+				used[id] += share
+			}
 		}
 	}
 	return used
+}
+
+const maxConsecutiveWorkDays = 6
+
+// consecutiveWorkDays counts how many consecutive days immediately before date (up to maxDays) each employee had at
+// least one non-leave work entry in t_daily_attn_data (across all processes). Full-day leave or no record breaks the streak.
+func (s *Service) consecutiveWorkDays(history []DayRecord, date time.Time, maxDays int) map[string]int {
+	worked := map[string]map[time.Time]bool{}
+	for _, r := range history {
+		work, _, _ := s.splitEntries(r.Entries)
+		if len(work) == 0 {
+			continue
+		}
+		ee := strings.ToUpper(strings.TrimSpace(r.EE))
+		if worked[ee] == nil {
+			worked[ee] = map[time.Time]bool{}
+		}
+		worked[ee][DateOnly(r.Date)] = true
+	}
+	out := make(map[string]int, len(worked))
+	for ee, days := range worked {
+		streak := 0
+		for i := 1; i <= maxDays; i++ {
+			if days[DateOnly(date.AddDate(0, 0, -i))] {
+				streak++
+			} else {
+				break
+			}
+		}
+		out[ee] = streak
+	}
+	return out
+}
+
+// rosterStreaks loads and caches the previous 6-day consecutive work streaks for the roster of d.key.Process.
+func (s *Service) rosterStreaks(ctx context.Context, d *dayData) (map[string]int, error) {
+	key := d.key.Process + ":" + d.key.Date.Format("2006-01-02")
+	return s.streakC.get(key, func() (map[string]int, error) {
+		roster := d.dir.Roster(d.key.Process)
+		ees := make([]string, 0, len(roster))
+		for _, p := range roster {
+			ees = append(ees, p.EE)
+		}
+		if len(ees) == 0 {
+			return map[string]int{}, nil
+		}
+		history, err := s.Repo.History(ctx, ees, d.key.Date.AddDate(0, 0, -maxConsecutiveWorkDays), d.key.Date)
+		if err != nil {
+			return nil, err
+		}
+		return s.consecutiveWorkDays(history, d.key.Date, maxConsecutiveWorkDays), nil
+	})
 }
 
 // recentDays counts, per machine of the process, the days of the history the person (a member of personProcess) worked

@@ -41,9 +41,9 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 	var toWrite []Entry
 	for _, e := range pending {
 		switch {
-		case (e.Source == SourceAuto || e.Source == SourceManual) && e.MachineID != "":
+		case (e.Source == SourceAuto || e.Source == SourceManual) && e.HasMachine():
 			toWrite = append(toWrite, e)
-		case e.Source == SourceNone || e.MachineID == "":
+		case e.Source == SourceNone || !e.HasMachine():
 			res.Unassigned++
 		}
 		// existing lines have nothing to save: the database already holds their record
@@ -131,9 +131,17 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 // buildRow creates the t_daily_attn_data row of one pending line from the freshly locked database state. It
 // returns a reason (a message of the catalog) instead of a row when the line must not be saved.
 func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRecord) (DayRecord, Msg) {
-	m, ok := d.machines.byID[e.MachineID]
-	if !ok {
+	ids := e.SelectedMachineIDs()
+	if len(ids) == 0 {
 		return DayRecord{}, msg("hc.skip.machine_gone")
+	}
+	machines := make([]Machine, 0, len(ids))
+	for _, id := range ids {
+		m, ok := d.machines.byID[id]
+		if !ok {
+			return DayRecord{}, msg("hc.skip.machine_gone")
+		}
+		machines = append(machines, m)
 	}
 	cur, hasCur := current[e.EE]
 	var work, leave []HCEntry
@@ -169,9 +177,12 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		return DayRecord{}, msg("hc.skip.no_shift")
 	}
 
-	entries := make([]HCEntry, 0, len(leave)+1)
+	share := splitHC(workHC, len(machines))
+	entries := make([]HCEntry, 0, len(leave)+len(machines))
 	entries = append(entries, leave...)
-	entries = append(entries, HCEntry{Process: k.Process, Machine: m.Name, HC: workHC})
+	for _, m := range machines {
+		entries = append(entries, HCEntry{Process: k.Process, Machine: m.Name, HC: share})
+	}
 	row := DayRecord{
 		UID: fmt.Sprintf("%s_%s", e.EE, k.Date.Format("20060102")), EE: e.EE, Date: k.Date,
 		Shift: shift, Schedule: schedule, Actual: k.Shift, Entries: entries,

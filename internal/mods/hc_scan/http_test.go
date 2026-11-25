@@ -126,6 +126,20 @@ func TestScanFlowOverHTTP(t *testing.T) {
 	if rec := h.do(http.MethodPost, httpPrefix+"/api/assign", `{`+sessionBody+`,"ee":"AB12C01","machine_id":"Winder_520"}`, true); rec.Code != 200 {
 		t.Fatalf("assign: %d %s", rec.Code, rec.Body.String())
 	}
+	if rec := h.do(http.MethodPost, httpPrefix+"/api/assign", `{`+sessionBody+`,"ee":"AB12C01","machine_ids":["Winder_515","Winder_520"]}`, true); rec.Code != 200 {
+		t.Fatalf("assign many: %d %s", rec.Code, rec.Body.String())
+	} else {
+		ev := decode(t, rec)
+		ids := ev["machine_ids"].([]any)
+		if len(ids) != 2 || ids[0] != "Winder_515" || ids[1] != "Winder_520" {
+			t.Fatalf("assign many response: %v", ev)
+		}
+	}
+	if rec := h.do(http.MethodPost, httpPrefix+"/api/assign", `{`+sessionBody+`,"ee":"AB12C01","machine_ids":[]}`, true); rec.Code != 200 {
+		t.Fatalf("assign clear: %d %s", rec.Code, rec.Body.String())
+	} else if ev := decode(t, rec); len(ev["machine_ids"].([]any)) != 0 || ev["source"] != SourceNone {
+		t.Fatalf("assign clear response: %v", ev)
+	}
 	if rec := h.do(http.MethodPost, httpPrefix+"/api/remove", `{`+sessionBody+`,"ee":"AB12C01"}`, true); rec.Code != 200 {
 		t.Fatalf("remove: %d", rec.Code)
 	}
@@ -173,7 +187,8 @@ func TestHCScanPageHasDocsGuideAndTourSteps(t *testing.T) {
 		`data-tour-screen="hc_scan.picker"`, `data-tour-screen="hc_scan.board"`,
 		`data-tour="hc.tour.picker"`, `data-tour="hc.tour.controls"`, `data-tour="hc.tour.counters"`,
 		`data-tour="hc.tour.scan"`, `data-tour="hc.tour.result"`, `data-tour="hc.tour.actions"`,
-		`data-tour="hc.tour.entries"`, `data-tour="hc.tour.machines"`, `data-tour="hc.tour.missing"`,
+		`data-tour="hc.tour.entries"`, `data-tour="hc.tour.machines"`, `data-tour="hc.tour.missing"`, `data-tour="hc.tour.candidates"`,
+		`/dash_go/_shell/icons.svg#scanner`, `id="btn-other-shift"`, `id="btn-off-day"`, `id="candidate-dialog"`,
 		`data-tour="tour.back"`, `data-tour="tour.help"`,
 	} {
 		if !strings.Contains(en, want) {
@@ -189,9 +204,12 @@ func TestHCScanPageHasDocsGuideAndTourSteps(t *testing.T) {
 	if !(iLang >= 0 && iHelp > iLang && iUser > iHelp) {
 		t.Errorf("expected order dg-lang (%d) < dg-helptools (%d) < dg-userbox (%d)", iLang, iHelp, iUser)
 	}
-	// Not assigned yet appears above Machines in the right column (since 0.1.7).
-	if iMissing, iMachines := strings.Index(en, `id="missing"`), strings.Index(en, `id="machines"`); !(iMissing >= 0 && iMachines > iMissing) {
-		t.Errorf("expected id=missing (%d) before id=machines (%d)", iMissing, iMachines)
+	// Not assigned yet appears above candidate buttons, which appear above Machines in the right column (since 0.1.7 / 0.1.9).
+	iMissing := strings.Index(en, `id="missing"`)
+	iCand := strings.Index(en, `id="candidate-bar"`)
+	iMachines := strings.Index(en, `id="machines"`)
+	if !(iMissing >= 0 && iCand > iMissing && iMachines > iCand) {
+		t.Errorf("expected order id=missing (%d) < id=candidate-bar (%d) < id=machines (%d)", iMissing, iCand, iMachines)
 	}
 	zh := h.doLang(http.MethodGet, httpPrefix+"/", "", "zh").Body.String()
 	for _, want := range []string{`data-tour-title="选择工序"`, `data-tour-title="扫描工牌"`, `data-tour-title="机台卡片"`} {

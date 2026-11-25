@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-23 (dash_go version 0.1.6). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Version 0.1.5 added the **Documentation** and **Guide** buttons to the header between the language switch and the user box, the bilingual `/dash_go/help` user guide page, and the step-by-step page tour (`tour.js`, with first-visit auto-start via `localStorage`, section 2). Section 12 says what was verified and what was not.
+**Updated:** 2026-11-25 (dash_go version 0.1.9). This describes the current code of `internal/core/shell`, `internal/core/i18n`, `internal/core/auth`, `internal/core/pyobj` and the Python calls in `internal/core/dashapi`. Version 0.1.2 changed one rule of the Windows sign-in (a browser on the computer that runs dash_go, section 7.2) and put the address of the Python API in use into the log (sections 8 and 10). Version 0.1.3 made the name of the module in the header stand out and added a **Back** button next to it (section 2); the automatic update of the same version is described in [auto_update.md](auto_update.md). Version 0.1.5 added the **Documentation** and **Guide** buttons to the header between the language switch and the user box, the bilingual `/dash_go/help` user guide page, and the step-by-step page tour (`tour.js`, with first-visit auto-start via `localStorage`, section 2). Version 0.1.9 added module icon support (`module.Info.Icon` on landing cards and `PageSpec.AppIcon` next to the module name in the header, starting with the `scanner` barcode-scanner icon for `hc_scan`) and removed per-module version numbers so the version is maintained once at the repository level (`VERSION`). Section 12 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -27,7 +27,7 @@ The shell lives in `internal/core`, so every module (and the landing page `/dash
  Winder  [date] [AM|PM] [Change process]             Scheduled 20  Assigned 14  Leave 3  To assign 3  Pending 2 ...    <- page bar of the module
 ```
 
-- The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page). Since 0.1.3 it is in the accent colour of the theme (`--accent`: `#0b63c5` in the light theme, `#4da3ff` in the dark one), 1.3 rem and weight 600; before it was the muted grey, which was too dim on the dark header. The contrast of the accent on the header is covered by `palette_test.go`.
+- The logo is a link to `/dash_go/`. The name of the module is shown next to it (`AppKey` of the page), optionally preceded by its sprite icon (`AppIcon`, since 0.1.9). Since 0.1.3 it is in the accent colour of the theme (`--accent`: `#0b63c5` in the light theme, `#4da3ff` in the dark one), 1.3 rem and weight 600; before it was the muted grey, which was too dim on the dark header. The contrast of the accent on the header is covered by `palette_test.go`.
 - The **Back** button (since 0.1.3, only on the pages of a module: the landing page and the login page have no module name and no button) is the link `/`, the root of the server the page was opened on, not `dash_home`. The link has no host, so it follows the address the person typed: `http://127.0.0.1/` on the development machine, `http://<s2>/` on s2, and the host of s1 when the page was opened through s1. Its texts are `ui.back` and `ui.back_title`.
 - The theme button shows the icon of the theme that is on now: the sun in the light theme, the moon in the dark one.
 - The language switch is a link: it sets the cookie and comes back to the same page (query string included).
@@ -216,7 +216,7 @@ Done (2026-11-23, version 0.1.5):
 
 # 中文
 
-**更新日期：** 2026-11-23（dash_go 版本 0.1.6）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。0.1.5 版在顶栏的语言切换和用户框之间加入了**文档**和**导览**按钮、中英文 `/dash_go/help` 使用手册页面以及交互式分步导览（`tour.js`，支持首次访问经 `localStorage` 自动引导，第 2 节）。第 12 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-25（dash_go 版本 0.1.9）。本文描述 `internal/core/shell`、`internal/core/i18n`、`internal/core/auth`、`internal/core/pyobj` 的当前代码，以及 `internal/core/dashapi` 中对 Python 的调用。0.1.2 版修改了 Windows 登录的一条规则（运行 dash_go 的那台电脑上的浏览器，第 7.2 节），并把正在使用的 Python API 的地址写进了日志（第 8 节和第 10 节）。0.1.3 版让顶栏中的模块名称更醒目，并在它旁边加了**返回**按钮（第 2 节）；同一版本的自动更新见 [auto_update.md](auto_update.md)。0.1.5 版在顶栏的语言切换和用户框之间加入了**文档**和**导览**按钮、中英文 `/dash_go/help` 使用手册页面以及交互式分步导览（`tour.js`，支持首次访问经 `localStorage` 自动引导，第 2 节）。0.1.9 版新增模块图标支持（首页卡片的 `module.Info.Icon` 和顶栏模块名旁的 `PageSpec.AppIcon`，率先为 `hc_scan` 加入了 `scanner` 扫码枪图标），并移除了各模块独立的版本号显示与字段，版本号统一由仓库级 `VERSION` 维护。第 12 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -243,7 +243,7 @@ shell 放在 `internal/core` 中，所以每个模块（以及首页 `/dash_go/`
  Winder  [日期] [AM|PM] [切换工序]                  排班 20  已分派 14  请假 3  待分派 3  待确认 2 ...        <- 模块自己的页面栏
 ```
 
-- logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`）。自 0.1.3 起它使用主题的强调色（`--accent`：浅色主题 `#0b63c5`，深色主题 `#4da3ff`），1.3 rem，字重 600；之前它是暗淡的灰色，在深色顶栏上太不显眼。强调色在顶栏上的对比度由 `palette_test.go` 覆盖。
+- logo 是指向 `/dash_go/` 的链接，旁边显示模块名称（页面的 `AppKey`），自 0.1.9 起可在名称前显示模块图标（`AppIcon`）。自 0.1.3 起它使用主题的强调色（`--accent`：浅色主题 `#0b63c5`，深色主题 `#4da3ff`），1.3 rem，字重 600；之前它是暗淡的灰色，在深色顶栏上太不显眼。强调色在顶栏上的对比度由 `palette_test.go` 覆盖。
 - **返回**按钮（自 0.1.3 起，只出现在模块的页面上：首页和登录页没有模块名称，也没有这个按钮）是链接 `/`，即打开页面时所在服务器的根路径，而不是 `dash_home`。链接里没有主机，所以它跟随使用者输入的地址：开发机上是 `http://127.0.0.1/`，s2 上是 `http://<s2>/`，经由 s1 打开页面时则是 s1 的主机。它的文字是 `ui.back` 和 `ui.back_title`。
 - 主题按钮显示当前主题的图标：浅色主题是太阳，深色主题是月亮。
 - 语言切换是一个链接：设置 cookie 后回到同一页面（包括查询字符串）。

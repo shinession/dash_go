@@ -113,7 +113,7 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 		defer m.Close()
 		i := m.Info()
 		mods = append(mods, m)
-		link := shell.ModuleLink{Name: i.Name, Title: i.Title, TitleKey: i.TitleKey, Description: i.Description, DescriptionKey: i.DescriptionKey, Version: i.Version, Href: cfg.BasePath + "/" + i.Name + "/"}
+		link := shell.ModuleLink{Name: i.Name, Title: i.Title, TitleKey: i.TitleKey, Icon: i.Icon, Description: i.Description, DescriptionKey: i.DescriptionKey, Href: cfg.BasePath + "/" + i.Name + "/"}
 		if i.HasHelp {
 			link.HelpHref = cfg.BasePath + "/" + i.Name + "/help"
 		}
@@ -133,7 +133,7 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 			log.Error("cannot start module", "module", m.Info().Name, "error", err)
 			return 2, nil
 		}
-		log.Info("module ready", "module", m.Info().Name, "version", m.Info().Version)
+		log.Info("module ready", "module", m.Info().Name)
 	}
 	server.MountCommon(mux, cfg.BasePath)
 

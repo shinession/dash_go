@@ -109,15 +109,17 @@ type HCEntry struct {
 
 // Entry is the draft line of one scanned person. It is stored as JSON in the draft store.
 type Entry struct {
-	EE          string  `json:"ee"`
-	Name        string  `json:"name"`
-	Process     string  `json:"process"` // member process on the date
-	Source      string  `json:"source"`
-	MachineID   string  `json:"machine_id"`
-	MachineName string  `json:"machine_name"`
-	HC          float64 `json:"hc"` // HC the person puts on the machine (1 minus part-day leave)
-	Level       int     `json:"level"`
-	RecentDays  int     `json:"recent_days"`
+	EE           string   `json:"ee"`
+	Name         string   `json:"name"`
+	Process      string   `json:"process"` // member process on the date
+	Source       string   `json:"source"`
+	MachineID    string   `json:"machine_id"`
+	MachineName  string   `json:"machine_name"`
+	MachineIDs   []string `json:"machine_ids,omitempty"`
+	MachineNames []string `json:"machine_names,omitempty"`
+	HC           float64  `json:"hc"` // total working HC of the person (1 minus part-day leave), split evenly across MachineIDs
+	Level        int      `json:"level"`
+	RecentDays   int      `json:"recent_days"`
 	// Reason says why the line was placed or left without a machine. ReasonMsg is the message of a line made since
 	// version 0.1.1; Reason is the English sentence that drafts of version 0.1.0 stored.
 	Reason    string    `json:"reason,omitempty"`
@@ -129,6 +131,22 @@ type Entry struct {
 	Flags     []Flag    `json:"flags"` // facts found at scan time (roster, shift, leave)
 	ScannedAt time.Time `json:"scanned_at"`
 	ScannedBy string    `json:"scanned_by"`
+}
+
+// SelectedMachineIDs returns all assigned machine IDs, falling back to MachineID for drafts saved before 0.1.9.
+func (e Entry) SelectedMachineIDs() []string {
+	if len(e.MachineIDs) > 0 {
+		return e.MachineIDs
+	}
+	if e.MachineID != "" {
+		return []string{e.MachineID}
+	}
+	return nil
+}
+
+// HasMachine reports whether the entry has at least one assigned machine.
+func (e Entry) HasMachine() bool {
+	return len(e.MachineIDs) > 0 || e.MachineID != ""
 }
 
 // ScanRecord remembers that a person scanned in a session, also after the entry was saved.

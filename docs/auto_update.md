@@ -63,7 +63,7 @@ The launcher is the process that was started first, and it runs from `dash_go.ol
 
 ## 5. Publishing a release
 
-1. Raise the version everywhere it is written (the places listed in the commit of a version: `VERSION`, `internal/version/version.go`, `internal/mods/<name>/manifest.json` and `ModuleVersion` of the module, `README.md`, the "Updated" line of the documents).
+1. Raise the version everywhere it is written (`VERSION`, `internal/version/version.go`, `README.md`, and the "Updated" line of the documents).
 2. Run the script with the folder that the Dash API serves as `static/cd`. On the development machine that is `D:\Programs\Python\static\cd`. A server reads the API that its `update_url` names: the API of s2 serves the `static\cd` folder of s2, so give `-OutDir` the path of that folder (for example a share), or publish into a scratch folder and copy the two files there, the program first and the manifest last:
 
 ```powershell
@@ -232,7 +232,7 @@ Not verified:
 
 ## 5. 发布一个版本
 
-1. 在写有版本号的所有地方提高版本（版本提交里列出的地方：`VERSION`、`internal/version/version.go`、`internal/mods/<name>/manifest.json` 以及模块的 `ModuleVersion`、`README.md`、各文档的“更新日期”行）。
+1. 在写有版本号的所有地方提高版本（`VERSION`、`internal/version/version.go`、`README.md` 以及各文档的“更新日期”行）。
 2. 运行脚本，指定 Dash API 作为 `static/cd` 提供的文件夹。在开发机上是 `D:\Programs\Python\static\cd`。服务器读取的是它的 `update_url` 所指的 API：s2 的 API 提供的是 s2 自己的 `static\cd` 文件夹，所以要把 `-OutDir` 指向那个文件夹的路径（例如共享路径），或者先发布到一个临时文件夹，再把两个文件复制过去，先复制程序，最后复制清单：
 
 ```powershell

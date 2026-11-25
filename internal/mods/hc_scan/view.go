@@ -32,11 +32,12 @@ type MeView struct {
 // the request.
 type EntryView struct {
 	Entry
-	Reason string         `json:"reason"`
-	Photo  string         `json:"photo"`
-	Flags  []FlagView     `json:"flags"` // facts found at scan time plus the checks of the current assignment
-	Levels map[string]int `json:"levels"`
-	Warn   bool           `json:"warn"`
+	MachineIDs []string       `json:"machine_ids"` // always a JSON array (empty when unassigned)
+	Reason     string         `json:"reason"`
+	Photo      string         `json:"photo"`
+	Flags      []FlagView     `json:"flags"` // facts found at scan time plus the checks of the current assignment
+	Levels     map[string]int `json:"levels"`
+	Warn       bool           `json:"warn"`
 }
 
 // MemberView is a person on a machine card.
@@ -74,6 +75,19 @@ type PersonView struct {
 	Schedule string  `json:"schedule"`
 	Photo    string  `json:"photo"`
 	HC       float64 `json:"hc"` // HC still to place: 1, or what a part-day leave leaves
+}
+
+// CandidateView is a roster member of this process who belongs to the other shift or an off/rest day today and still
+// has no task. Blocked is true for an off/rest-day member who worked all 6 previous consecutive days.
+type CandidateView struct {
+	EE              string  `json:"ee"`
+	Name            string  `json:"name"`
+	Shift           string  `json:"shift"`
+	Schedule        string  `json:"schedule"`
+	Photo           string  `json:"photo"`
+	HC              float64 `json:"hc"`
+	ConsecutiveDays int     `json:"consecutive_days,omitempty"`
+	Blocked         bool    `json:"blocked,omitempty"`
 }
 
 // LeaveItem is one leave option of a person on the day.
@@ -135,6 +149,8 @@ type BoardView struct {
 	Machines    []MachineView   `json:"machines"`
 	Entries     []EntryView     `json:"entries"`
 	NotAssigned []PersonView    `json:"not_assigned"`
+	OtherShift  []CandidateView `json:"other_shift"`
+	OffDay      []CandidateView `json:"off_day"`
 	Leave       []LeaveView     `json:"leave"`
 	Elsewhere   []ElsewhereView `json:"elsewhere"`
 	Totals      Totals          `json:"totals"`

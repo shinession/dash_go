@@ -60,7 +60,7 @@ func newFixture(t *testing.T, password, sso bool) *fixture {
 	svc := auth.NewService(signer, auth.NewMemoryNonces(), set)
 	sh, err := New(Options{
 		Base: "/dash_go", Version: "9.9.9", PhotoURLTemplate: "/api/static/hr/{ee_code}.webp", Auth: svc,
-		Modules: []ModuleLink{{Name: "demo", TitleKey: "ui.landing_title", Description: "A demo module", Version: "1.2.3", Href: "/dash_go/demo/", HelpHref: "/dash_go/demo/help"}},
+		Modules: []ModuleLink{{Name: "demo", TitleKey: "ui.landing_title", Icon: "scanner", Description: "A demo module", Href: "/dash_go/demo/", HelpHref: "/dash_go/demo/help"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestLandingPageForAVisitorWhoIsNotSignedIn(t *testing.T) {
 		`<html lang="en"`, `class="dg-logo"`, `aria-label="CIM EDGE"`, `href="/dash_go/"`, // the logo leads home
 		`data-theme-toggle`, `class="dg-lang"`, `lang="en" href="/dash_go/lang?set=en&amp;next=%2Fdash_go%2F"`,
 		`href="/dash_go/login?next=%2Fdash_go%2F"`, "Sign in",
-		`<a class="dg-module" href="/dash_go/demo/"><strong>dash_go</strong><span>A demo module · v1.2.3</span>`, "Version 9.9.9",
+		`<a class="dg-module" href="/dash_go/demo/"><span class="dg-module-icon">`, `/dash_go/_shell/icons.svg#scanner`, `<strong>dash_go</strong><span>A demo module</span>`, "Version 9.9.9",
 		`/dash_go/_shell/theme-init.js?v=9.9.9`, `/dash_go/_shell/shell.css?v=9.9.9`, `/dash_go/_shell/shell.js?v=9.9.9`,
 	} {
 		if !strings.Contains(body, want) {
@@ -335,7 +335,7 @@ func TestModulePagesBringTheirOwnContentStylesAndScripts(t *testing.T) {
 	f := newFixture(t, true, true)
 	files := fstest.MapFS{"web/index.html": {Data: []byte(`{{define "content"}}<main id="mine">{{.T "login.submit"}} {{.Data}} {{.Base}}</main>{{end}}`)}}
 	page, err := f.sh.NewPage(PageSpec{
-		TitleKey: "ui.landing_title", AppKey: "ui.sign_out", RequireLogin: true,
+		TitleKey: "ui.landing_title", AppKey: "ui.sign_out", AppIcon: "scanner", RequireLogin: true,
 		Styles: []string{"/dash_go/demo/static/app.css"}, Scripts: []string{"/dash_go/demo/static/app.js"}, ClientPrefixes: []string{"login."},
 	}, files, "web/index.html")
 	if err != nil {
@@ -354,7 +354,7 @@ func TestModulePagesBringTheirOwnContentStylesAndScripts(t *testing.T) {
 	}
 	body := f.get("/dash_go/demo/", f.cookie("AB12C34", "Yan Shi")).Body.String()
 	for _, want := range []string{
-		`<main id="mine">Sign in payload /dash_go</main>`, `<span class="dg-app">Sign out</span>`, `<title>dash_go · CIM EDGE</title>`,
+		`<main id="mine">Sign in payload /dash_go</main>`, `<span class="dg-app"><svg class="dg-icon"`, `/dash_go/_shell/icons.svg#scanner`, `Sign out</span>`, `<title>dash_go · CIM EDGE</title>`,
 		`href="/dash_go/demo/static/app.css?v=9.9.9"`, `src="/dash_go/demo/static/app.js?v=9.9.9"`,
 	} {
 		if !strings.Contains(body, want) {

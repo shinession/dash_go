@@ -21,7 +21,7 @@ var webFS embed.FS
 // the page, and the prefixes of the catalog its script needs (hc.ui. holds the texts of the page itself).
 func pageSpec(prefix string) shell.PageSpec {
 	return shell.PageSpec{
-		TitleKey: "hc.title", AppKey: "hc.title", RequireLogin: true,
+		TitleKey: "hc.title", AppKey: "hc.title", AppIcon: "scanner", RequireLogin: true,
 		HelpHref:       prefix + "/help",
 		Guide:          true,
 		Styles:         []string{prefix + "/static/app.css"},
@@ -32,7 +32,7 @@ func pageSpec(prefix string) shell.PageSpec {
 
 func helpPageSpec(prefix string) shell.PageSpec {
 	return shell.PageSpec{
-		TitleKey: "hc.help.title", AppKey: "hc.title",
+		TitleKey: "hc.help.title", AppKey: "hc.title", AppIcon: "scanner",
 		HelpHref: prefix + "/help",
 		Guide:    true,
 	}
@@ -88,13 +88,14 @@ func noStore(h http.HandlerFunc) http.Handler {
 }
 
 type sessionRequest struct {
-	Process string `json:"process"`
-	Date    string `json:"date"`
-	Shift   string `json:"shift"`
-	Input   string `json:"input"`
-	EE      string `json:"ee"`
-	Machine string `json:"machine_id"`
-	Ack     bool   `json:"ack"`
+	Process    string   `json:"process"`
+	Date       string   `json:"date"`
+	Shift      string   `json:"shift"`
+	Input      string   `json:"input"`
+	EE         string   `json:"ee"`
+	Machine    string   `json:"machine_id"`
+	MachineIDs []string `json:"machine_ids"`
+	Ack        bool     `json:"ack"`
 }
 
 func (s *Service) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +127,11 @@ func (s *Service) handleScan(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleAssign(w http.ResponseWriter, r *http.Request) {
 	u, req, k, ok := s.session(w, r)
 	if !ok {
+		return
+	}
+	if req.MachineIDs != nil {
+		e, err := s.AssignMany(r.Context(), u, k, req.EE, req.MachineIDs)
+		respond(w, r, e, err)
 		return
 	}
 	e, err := s.Assign(r.Context(), u, k, req.EE, req.Machine)

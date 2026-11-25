@@ -56,6 +56,10 @@ func (s *Service) Board(ctx context.Context, u auth.User, k Key) (*BoardView, er
 	if err != nil {
 		return nil, s.internal("read draft", err)
 	}
+	otherPending, err := s.Drafts.Entries(ctx, Key{Process: k.Process, Date: k.Date, Shift: oppositeShift(k.Shift)})
+	if err != nil {
+		return nil, s.internal("read draft", err)
+	}
 	scans, err := s.Drafts.Scans(ctx, k)
 	if err != nil {
 		return nil, s.internal("read scan log", err)
@@ -64,7 +68,11 @@ func (s *Service) Board(ctx context.Context, u auth.User, k Key) (*BoardView, er
 	if err != nil {
 		return nil, s.internal("load session data", err)
 	}
-	return s.buildBoard(ctx, d, pending, scans), nil
+	bv := s.buildBoard(ctx, d, pending, scans)
+	if err := s.boardCandidates(ctx, d, pending, otherPending, bv); err != nil {
+		return nil, s.internal("read assignment history", err)
+	}
+	return bv, nil
 }
 
 // entryView adds the current warnings and the MTR level of the person on every machine to a draft line. The
@@ -75,14 +83,15 @@ func (s *Service) entryView(ctx context.Context, d *dayData, e Entry, used map[s
 	for _, m := range d.machines.machines {
 		levels[m.ID] = d.levelOn(e.EE, m)
 	}
-	return EntryView{Entry: e, Reason: say(ctx, e.ReasonMsg, e.Reason), Photo: s.photo(e.EE), Flags: flagViews(ctx, flags), Levels: levels, Warn: hasWarn(flags)}
+	ids := append([]string{}, e.SelectedMachineIDs()...)
+	return EntryView{Entry: e, MachineIDs: ids, Reason: say(ctx, e.ReasonMsg, e.Reason), Photo: s.photo(e.EE), Flags: flagViews(ctx, flags), Levels: levels, Warn: hasWarn(flags)}
 }
 
-// placing reports whether the draft line puts its person on a machine. Such a line replaces the saved record of the
-// person on this page, until it is confirmed.
+// placing reports whether the draft line puts its person on at least one machine. Such a line replaces the saved
+// record of the person on this page, until it is confirmed.
 func placing(pending map[string]Entry, ee string) (Entry, bool) {
 	e, ok := pending[ee]
-	return e, ok && (e.Source == SourceAuto || e.Source == SourceManual) && e.MachineID != ""
+	return e, ok && (e.Source == SourceAuto || e.Source == SourceManual) && e.HasMachine()
 }
 
 func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string]Entry, scans map[string]ScanRecord) *BoardView {
@@ -117,8 +126,12 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 		if _, ok := placing(pending, e.EE); !ok {
 			continue
 		}
-		if m, ok := d.machines.byID[e.MachineID]; ok {
-			members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: e.HC, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true, From: d.foreign(e.Process)})
+		ids := e.SelectedMachineIDs()
+		share := splitHC(e.HC, len(ids))
+		for _, id := range ids {
+			if m, ok := d.machines.byID[id]; ok {
+				members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: share, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true, From: d.foreign(e.Process)})
+			}
 		}
 	}
 	unmapped := 0
@@ -143,7 +156,7 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 		bv.Entries = append(bv.Entries, v)
 		bv.Totals.Pending++
 		switch {
-		case e.Source == SourceNone || e.MachineID == "":
+		case e.Source == SourceNone || !e.HasMachine():
 			bv.Totals.Unassigned++
 		case e.Source == SourceAuto || e.Source == SourceManual:
 			bv.Totals.Assigned++ // a line of an existing record has nothing to save: scanning such a person only shows their task
@@ -256,6 +269,78 @@ func (s *Service) shiftPeople(d *dayData, pending map[string]Entry, bv *BoardVie
 	if bv.Elsewhere == nil {
 		bv.Elsewhere = []ElsewhereView{}
 	}
+}
+
+// boardCandidates populates the two supplementary unassigned candidate lists of this process:
+//   - OtherShift: roster members scheduled for the opposite AM/PM shift today who have no task yet;
+//   - OffDay: roster members whose calendar day type today is a non-empty non-AM/PM code (O, R, PHO, PHR, PH, ...)
+//     who have no task yet; those who worked all 6 previous consecutive days in t_daily_attn_data are marked Blocked
+//     and listed after the selectable members so leaders cannot assign a 7th consecutive work day.
+func (s *Service) boardCandidates(ctx context.Context, d *dayData, pending, otherPending map[string]Entry, bv *BoardView) error {
+	other := oppositeShift(d.key.Shift)
+	var offPending []CandidateView
+	for _, p := range d.dir.Roster(d.key.Process) {
+		var rec *DayRecord
+		var work []HCEntry
+		var leaveOfDay float64
+		if r, ok := d.recByEE[p.EE]; ok {
+			rec = &r
+			work, _, leaveOfDay = s.splitEntries(r.Entries)
+		}
+		if len(work) > 0 {
+			continue
+		}
+		if _, inDraft := pending[p.EE]; inDraft {
+			continue
+		}
+		if _, inOther := placing(otherPending, p.EE); inOther {
+			continue
+		}
+		if leaveOfDay >= 1-eps {
+			continue
+		}
+		sched := strings.TrimSpace(d.schedule(p.Shift))
+		if sched == "" && rec != nil {
+			sched = strings.TrimSpace(rec.Schedule)
+		}
+		if sched == "" {
+			continue
+		}
+		calShift := NormShift(sched)
+		if calShift == d.key.Shift {
+			continue
+		}
+		cand := CandidateView{EE: p.EE, Name: p.Name, Shift: p.Shift, Schedule: sched, Photo: s.photo(p.EE), HC: availHC(leaveOfDay)}
+		if calShift == other {
+			bv.OtherShift = append(bv.OtherShift, cand)
+		} else {
+			offPending = append(offPending, cand)
+		}
+	}
+	if len(offPending) > 0 {
+		streaks, err := s.rosterStreaks(ctx, d)
+		if err != nil {
+			return err
+		}
+		var eligible, blocked []CandidateView
+		for _, c := range offPending {
+			c.ConsecutiveDays = streaks[c.EE]
+			if c.ConsecutiveDays >= maxConsecutiveWorkDays {
+				c.Blocked = true
+				blocked = append(blocked, c)
+			} else {
+				eligible = append(eligible, c)
+			}
+		}
+		bv.OffDay = append(eligible, blocked...)
+	}
+	if bv.OtherShift == nil {
+		bv.OtherShift = []CandidateView{}
+	}
+	if bv.OffDay == nil {
+		bv.OffDay = []CandidateView{}
+	}
+	return nil
 }
 
 // calendarShift is the AM/PM session the calendar gives the person on the date. When the calendar has no day type for

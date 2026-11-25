@@ -62,7 +62,7 @@ foreach ($dir in Get-ChildItem (Join-Path $root 'internal\mods') -Directory | So
 
 if ($List) {
     Write-Output 'Available modules:'
-    foreach ($m in $available.Values) { Write-Output ('  {0,-14} v{1}  {2}' -f $m.name, $m.version, $m.title) }
+    foreach ($m in $available.Values) { Write-Output ('  {0,-14} {1}' -f $m.name, $m.title) }
     return
 }
 
@@ -131,7 +131,7 @@ Copy-Item (Join-Path $root 'docs\shell_and_login.md') $docsDir
 Copy-Item (Join-Path $root 'docs\auto_update.md') $docsDir
 if (Test-Path (Join-Path $root 'README.md')) { Copy-Item (Join-Path $root 'README.md') $pkgDir }
 Set-Content (Join-Path $pkgDir 'VERSION') $Version -Encoding ASCII
-$lines = @("dash_go $Version", "target: $GOOS/$GOARCH", 'modules:') + @($selected | ForEach-Object { "  - $_ v$($available[$_].version): $($available[$_].title)" })
+$lines = @("dash_go $Version", "target: $GOOS/$GOARCH", 'modules:') + @($selected | ForEach-Object { "  - ${_}: $($available[$_].title)" })
 Set-Content (Join-Path $pkgDir 'MODULES.txt') $lines -Encoding UTF8
 
 if (-not $NoZip) {

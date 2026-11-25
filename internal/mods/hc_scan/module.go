@@ -20,9 +20,6 @@ import (
 // Name is the module name used in the URL, the build script and the configuration.
 const Name = "hc_scan"
 
-// ModuleVersion is the version of this module.
-const ModuleVersion = "0.1.8"
-
 func init() {
 	i18n.Register(webFS, "i18n") // the texts of the page, the warnings and the messages, in English and Chinese
 	module.Register(Name, func() module.Module { return &Module{} })
@@ -42,7 +39,7 @@ func (m *Module) Info() module.Info {
 		Name:           Name,
 		Title:          "HC Scan Assign",
 		TitleKey:       "hc.title",
-		Version:        ModuleVersion,
+		Icon:           "scanner",
 		Description:    "Scan employee badges to assign machines and activities by MTR level",
 		DescriptionKey: "hc.description",
 		HasHelp:        true,

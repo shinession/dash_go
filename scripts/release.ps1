@@ -23,7 +23,7 @@
   size or a hash that does not match and tries again later.)
 
   The version is the one in the file VERSION. A release with the version of the one before it is not an update to any
-  service: raise it first (VERSION, internal\version\version.go and the module versions, see README.md). The script
+  service: raise it first (VERSION and internal\version\version.go, see README.md). The script
   warns when it sees that.
 
   Publish into the static folder of the Dash API and the services read it from http://<host>/api/static/cd/dash_go.json:

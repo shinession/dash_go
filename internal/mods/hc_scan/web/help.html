@@ -39,7 +39,7 @@
             <li><span class="dg-doc-chip err">Red</span> + one low tone: invalid employee ID or employee not found.</li>
           </ul>
         </li>
-        <li><strong>Adjust if needed:</strong> in the <strong>Scanned</strong> list, use the drop-down menu on any line to pick another machine or activity (options list machines with an MTR record first, then activities, then routine machines without an MTR record, keeping display order within each group), or click <strong>x</strong> to remove the line from the draft.</li>
+        <li><strong>Adjust if needed:</strong> in the <strong>Scanned</strong> list, open the multi-select drop-down on any line to check one or more machines or activities (options list machines with an MTR record first, then activities, then routine machines without an MTR record, keeping display order within each group). When multiple machines are selected, the employee's available head count is split evenly (for example <code>0.5</code> each for 2, <code>0.33</code> each for 3). Closing the drop-down saves automatically; click <strong>x</strong> to remove the line from the draft.</li>
         <li><strong>Confirm:</strong> press <strong>Confirm</strong> to save all pending lines that have a machine. If any line has a yellow warning, a confirmation dialog lists them so you can review and choose <strong>Submit anyway</strong> or <strong>Go back</strong>.</li>
       </ol>
     </section>
@@ -67,6 +67,12 @@
 
       <h3>Not assigned yet</h3>
       <p>Shown at the top of the right panel: scheduled people who still have no machine and are not on full-day leave. Each card shows the person's photo, name and employee ID; a number in brackets (such as <code>(0.5)</code>) means part of their day is leave. Click any person to enter their ID into the scan box and scan them in automatically.</p>
+      <p>Two buttons right below <strong>Not assigned yet</strong> (above <strong>Machines</strong>) open popups for supplementary people of this process who still have no task today:</p>
+      <ul>
+        <li><strong>Other shift (AM / PM):</strong> unassigned roster members scheduled in the opposite shift today.</li>
+        <li><strong>Off / Rest day:</strong> unassigned roster members whose calendar day type today is a rest or holiday code (such as <code>O</code>, <code>R</code>, <code>PHO</code>, <code>PHR</code>, <code>PH</code>). Anyone who already worked all 6 previous consecutive days in <code>t_daily_attn_data</code> is shown greyed out and disabled (cannot work a 7th consecutive day).</li>
+      </ul>
+      <p>Clicking an available person inside either popup scans them into the current shift (with the yellow shift-mismatch warning), removes them from the list and updates the count while keeping the popup open so you can select multiple people. Close with the top-right <strong>×</strong> button or <kbd>Esc</kbd>.</p>
 
       <h3>Machine cards</h3>
       <ul>
@@ -187,7 +193,7 @@
             <li><span class="dg-doc-chip err">红色</span> + 一声低音：工号格式无效，或在员工名单中找不到该工号。</li>
           </ul>
         </li>
-        <li><strong>按需微调：</strong>在<strong>已扫描</strong>列表中，可以通过下拉框手动改选机台或活动（下拉选项会把有 MTR 记录的机台排在最上，活动居中，无 MTR 记录的常规机台排在最下，各组内保持原有显示顺序），或点击 <strong>x</strong> 把该行从草稿中移除。</li>
+        <li><strong>按需微调：</strong>在<strong>已扫描</strong>列表中，展开多选下拉面板即可勾选一台或多台机台/活动（下拉选项会把有 MTR 记录的机台排在最上，活动居中，无 MTR 记录的常规机台排在最下，各组内保持原有显示顺序）。多选时会按可用人力均分（例如 2 台各 <code>0.5</code>，3 台各 <code>0.33</code>），关闭下拉框即自动保存；点击 <strong>x</strong> 把该行从草稿中移除。</li>
         <li><strong>确认提交：</strong>点击<strong>确认</strong>保存所有已分派机台的待确认记录。如果有带黄色警告的行，会先弹出确认窗口列出详情，可选择<strong>仍然提交</strong>或<strong>返回</strong>修改。</li>
       </ol>
     </section>
@@ -215,6 +221,12 @@
 
       <h3>尚未分派</h3>
       <p>显示在右侧栏顶部：本班次排班中还没有机台且未全天请假的人员。每张人员卡片显示头像、姓名和工号；括号里的数字（例如 <code>(0.5)</code>）表示该员工请了半天假、还剩半天需要安排。点击任意人员即可自动将工号输入扫码框并完成分派。</p>
+      <p><strong>尚未分派</strong>下方（<strong>机台</strong>上方）提供两个按钮，点击可弹窗查看本工序当天其他未分派人员：</p>
+      <ul>
+        <li><strong>其他班次（AM / PM）：</strong>当天排在另一班次且尚未分派机台的名册人员。</li>
+        <li><strong>休息 / 公休日：</strong>当天排班为 <code>O</code>、<code>R</code>、<code>PHO</code>、<code>PHR</code>、<code>PH</code> 等休息/公休日且尚未分派的人员。此前已连续工作 6 天的员工会灰显标注并禁止选择（避免连续工作第 7 天）。</li>
+      </ul>
+      <p>在弹窗中点击可安排人员即可直接扫码分派到本班次（带班次不匹配黄色警告），人员会即时从列表移除并更新人数，同时弹窗保持打开以便连续点选；点击右上角 <strong>×</strong> 或按 <kbd>Esc</kbd> 关闭。</p>
 
       <h3>机台卡片</h3>
       <ul>

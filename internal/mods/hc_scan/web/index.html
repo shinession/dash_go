@@ -57,6 +57,10 @@
     <aside class="right">
       <div class="panel-head"><h2>{{.T "hc.ui.not_assigned"}} <span id="missing-count" class="pill">0</span></h2><span class="muted small">{{.T "hc.ui.missing_hint"}}</span></div>
       <div id="missing" class="missing"{{.Tour "hc.tour.missing"}}></div>
+      <div class="candidate-bar" id="candidate-bar"{{.Tour "hc.tour.candidates"}}>
+        <button id="btn-other-shift" type="button" class="btn ghost candidate-btn"><span id="other-shift-label">{{.T "hc.ui.other_shift_btn_base"}}</span> <span id="other-shift-count" class="pill">0</span></button>
+        <button id="btn-off-day" type="button" class="btn ghost candidate-btn">{{.T "hc.ui.off_day_btn"}} <span id="off-day-count" class="pill">0</span></button>
+      </div>
       <div class="panel-head"><h2>{{.T "hc.ui.machines"}}</h2><span id="mtr-info" class="muted small"></span></div>
       <div id="machines" class="machines"{{.Tour "hc.tour.machines"}}></div>
     </aside>
@@ -64,4 +68,5 @@
 </div>
 
 <dialog id="dialog"></dialog>
+<dialog id="candidate-dialog" class="candidate-dialog"></dialog>
 {{end}}

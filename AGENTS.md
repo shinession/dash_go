@@ -166,6 +166,12 @@ Do not claim that a test passed unless it was actually executed and passed.
 
 If verification cannot be completed, clearly state what was not verified and why.
 
+For any non-daemon terminal command or background verification task expected to terminate (tests, builds, browser runs):
+
+- Always configure a bounded timeout / progress notification (for example `NotificationTimeoutSeconds` on `run_command`, plus inner timeouts such as `launch(timeout=...)` and `page.set_default_timeout(...)` in browser scripts) so a stalled task wakes the agent promptly instead of running indefinitely.
+- When a timeout notification fires, inspect the task's log and status (`manage_task` `status`), report or diagnose the stall, and cancel stuck tasks (`manage_task` `kill`) rather than leaving them running in the background.
+- Keep fast unit tests separate from browser / external-process E2E scripts instead of chaining them into one background command.
+
 ## 10. Dependency Management
 
 Do not add a new dependency when the existing stack already provides equivalent functionality.
@@ -605,6 +611,30 @@ for host, family in (("::1", socket.AF_INET6), ("127.0.0.1", socket.AF_INET)):
 
 Ruled out, so do not spend time on them first: Redis itself, its password, the network, the connection pool of redis-py, and `socket_connect_timeout` (a blocking socket takes the same 2 seconds).
 
+### 14.8 Background tasks: a Playwright / headless browser command hangs indefinitely in the Windows terminal sandbox when launched without a timeout notification
+
+Found on 2026-11-24 and 2026-11-25 while running Playwright headless Chromium verification scripts for `hc_scan` (`v0.1.8` and `v0.1.9`). The earlier Go tests chained in the same command finished in ~10 seconds, after which the task remained `RUNNING` for 20+ minutes (or hours) with no output because no timeout notification was configured.
+
+Symptoms:
+
+- A background `run_command` task stays in `RUNNING` state indefinitely after earlier fast steps (such as `go vet` / `go test`) finish and print `ok`.
+- The task log shows zero further progress (`Last progress: ... ago`), and the agent is never woken up to inspect or stop it because `NotificationTimeoutSeconds` was omitted.
+
+Root cause:
+
+- Launching Playwright headless Chromium inside the Windows terminal sandbox blocks on Chromium's sandbox/IPC/loopback initialization instead of failing fast with an error.
+- Because `NotificationTimeoutSeconds` was not set on `run_command` (and no `timeout` was passed to `chromium.launch(...)`), the background task waited silently until the user intervened or the server restarted.
+
+Rule:
+
+- Always set `NotificationTimeoutSeconds` (for example `30` to `60` seconds) on every non-daemon `run_command` call that is expected to finish, and always set explicit inner timeouts in Playwright scripts (`browser = p.chromium.launch(headless=True, timeout=15000)` and `page.set_default_timeout(10000)`).
+- Never chain Playwright / browser E2E scripts onto `go vet` / `go test` in the same command; run them as separate commands so unit-test results are not masked by a browser hang.
+- When a timeout notification fires, check `manage_task` (`status`) immediately; if the task is stuck with no progress in the sandbox, cancel it (`kill`) and re-run only the blocked browser/loopback step outside the sandbox with a timeout still enabled.
+
+How to confirm: check `manage_task` with `Action: "status"` on the running task ID; the log shows all prior unit tests passing followed by no new output and a growing `Last progress` age.
+
+Ruled out, so do not spend time on them first: Go unit test deadlocks (`go test` already printed `ok` before Python/Playwright started) and application JavaScript infinite loops (the exact same Playwright script passes in ~10 seconds once run outside the Windows sandbox).
+
 ---
 
 # 中文
@@ -766,6 +796,12 @@ Ruled out, so do not spend time on them first: Redis itself, its password, the n
 除非测试实际执行并通过，否则不得声称测试已经通过。
 
 如果无法完成某项验证，应明确说明未验证的内容及原因。
+
+对于所有预期会自动结束的非守护进程终端命令或后台验证任务（测试、构建、浏览器脚本等）：
+
+- 必须设置明确的超时与进度监控（例如在 `run_command` 上设置 `NotificationTimeoutSeconds`，并在浏览器脚本中设置内部超时如 `launch(timeout=...)` 和 `page.set_default_timeout(...)`），确保任务卡住时能及时唤醒并处理，而不会无限期挂起。
+- 收到超时通知后，应及时查看任务状态和日志（`manage_task` 的 `status`），定位卡住的原因，并终止确实卡死的任务（`manage_task` 的 `kill`），不得让无效任务长期残留在后台。
+- 将快速的单元测试与浏览器 / 外部进程端到端脚本拆分为独立命令运行，不要串在同一个后台命令里。
 
 ## 10. 依赖管理
 
@@ -1205,3 +1241,27 @@ for host, family in (("::1", socket.AF_INET6), ("127.0.0.1", socket.AF_INET)):
 ```
 
 已排除，所以不要优先在这些方向上花时间：Redis 本身、它的密码、网络、redis-py 的连接池，以及 `socket_connect_timeout`（阻塞套接字同样要 2 秒）。
+
+### 14.8 后台任务：在 Windows 终端沙盒中运行 Playwright / 无头浏览器命令且未设置超时通知时，会无限期挂起
+
+发现于 2026-11-24 与 2026-11-25，在为 `hc_scan`（`v0.1.8` 和 `v0.1.9`）运行 Playwright 无头 Chromium 验证脚本时出现。串在同一个命令前面的 Go 单元测试在约 10 秒内即已通过，随后任务停留在 `RUNNING` 状态超过 20 分钟（甚至数小时）且无任何输出，因为没有配置超时通知。
+
+现象：
+
+- 后台 `run_command` 任务在前面的快速步骤（如 `go vet` / `go test`）打印 `ok` 后一直停留在 `RUNNING` 状态。
+- 任务日志不再有任何进展（`Last progress: ... ago`），由于未设置 `NotificationTimeoutSeconds`，Agent 永远不会被唤醒去检查或终止它。
+
+根因：
+
+- 在 Windows 终端沙盒内启动 Playwright 无头 Chromium 时，会在 Chromium 的沙盒 / IPC / 本地回环初始化阶段阻塞，而不是快速报错退出。
+- 由于 `run_command` 未设置 `NotificationTimeoutSeconds`（且未给 `chromium.launch(...)` 传入 `timeout`），后台任务会一直静默等待，直到用户手动介入或服务重启。
+
+规则：
+
+- 对所有预期会结束的非守护 `run_command` 调用，必须设置 `NotificationTimeoutSeconds`（例如 `30` 到 `60` 秒），并在 Playwright 脚本中显式设置内部超时（`browser = p.chromium.launch(headless=True, timeout=15000)` 与 `page.set_default_timeout(10000)`）。
+- 不要把 Playwright / 浏览器端到端脚本与 `go vet` / `go test` 串在同一条命令中执行；拆分运行，避免浏览器挂起掩盖单元测试结果。
+- 收到超时通知后立即通过 `manage_task`（`status`）查看进度；若确认在沙盒中无进展卡死，立即取消（`kill`），并仅将受沙盒阻塞的浏览器或回环测试步骤在沙盒外单独重试（仍须保持超时配置）。
+
+如何确认：对运行中的任务 ID 调用 `manage_task`（`Action: "status"`），日志会显示前面的单元测试已全部通过，随后无新输出且 `Last progress` 时间持续增长。
+
+已排除，所以不要优先在这些方向上花时间：Go 单元测试死锁（`go test` 在 Python/Playwright 启动前已打印 `ok`），以及应用前端 JavaScript 死循环（同一份 Playwright 脚本在沙盒外约 10 秒即可通过）。

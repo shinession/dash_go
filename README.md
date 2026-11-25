@@ -4,7 +4,7 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.8** (see `VERSION`).
+Current version: **0.1.9** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
@@ -49,7 +49,7 @@ The script runs the tests, builds with a `nomod_<name>` tag for every module tha
 
 A plain `go build ./cmd/dash_go` includes every module.
 
-To publish a version for the servers that update themselves, raise the version (`VERSION`, `internal/version/version.go`, the `version` of `manifest.json` and `ModuleVersion` of the module, the two lines "Current version" below, the "Updated" line of the documents) and run `release.ps1`. It runs the tests, builds like `build.ps1` and writes `dash_go.exe` and the manifest `dash_go.json` into the release folder, the manifest last:
+To publish a version for the servers that update themselves, raise the version (`VERSION`, `internal/version/version.go`, the two lines "Current version" below, the "Updated" line of the documents) and run `release.ps1`. It runs the tests, builds like `build.ps1` and writes `dash_go.exe` and the manifest `dash_go.json` into the release folder, the manifest last:
 
 ```powershell
 .\scripts\release.ps1 -OutDir D:\Programs\Python\static\cd     # the folder the Dash API serves as /api/static/cd/
@@ -87,7 +87,7 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.8**（见 `VERSION`）。
+当前版本：**0.1.9**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
@@ -132,7 +132,7 @@ docs/                      文档，每个模块一个文件
 
 直接 `go build ./cmd/dash_go` 会包含所有模块。
 
-要为会自己更新的服务器发布一个版本，先提高版本号（`VERSION`、`internal/version/version.go`、模块 `manifest.json` 的 `version` 和 `ModuleVersion`、下面两行“当前版本”、各文档的“更新日期”行），再运行 `release.ps1`。它会运行测试，像 `build.ps1` 一样构建，并把 `dash_go.exe` 和清单 `dash_go.json` 写进发布文件夹，清单最后写：
+要为会自己更新的服务器发布一个版本，先提高版本号（`VERSION`、`internal/version/version.go`、下面两行“当前版本”、各文档的“更新日期”行），再运行 `release.ps1`。它会运行测试，像 `build.ps1` 一样构建，并把 `dash_go.exe` 和清单 `dash_go.json` 写进发布文件夹，清单最后写：
 
 ```powershell
 .\scripts\release.ps1 -OutDir D:\Programs\Python\static\cd     # Dash API 作为 /api/static/cd/ 提供的文件夹

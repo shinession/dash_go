@@ -29,7 +29,7 @@ type Info struct {
 	Name           string
 	Title          string
 	TitleKey       string
-	Version        string
+	Icon           string // optional symbol name in the shell sprite (icons.svg)
 	Description    string
 	DescriptionKey string
 	HasHelp        bool

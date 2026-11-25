@@ -90,19 +90,20 @@ func (s *Service) staticFlags(d *dayData, p Person, rec *DayRecord, schedule str
 
 // dynamicFlags check the current assignment of a draft line, so they follow every manual change.
 func (s *Service) dynamicFlags(d *dayData, e Entry, used map[string]float64) []Flag {
-	switch {
-	case e.Source == SourceNone || e.MachineID == "":
+	ids := e.SelectedMachineIDs()
+	if e.Source == SourceNone || len(ids) == 0 {
 		f := Flag{Code: FlagNoMachine, Severity: SeverityWarn, Msg: e.ReasonMsg, Text: e.Reason}
 		if f.Key == "" && strings.TrimSpace(f.Text) == "" {
 			f.Msg = msg("hc.flag.no_machine")
 		}
 		return []Flag{f}
-	default:
-		m, ok := d.machines.byID[e.MachineID]
+	}
+	var flags []Flag
+	for _, id := range ids {
+		m, ok := d.machines.byID[id]
 		if !ok {
-			return nil
+			continue
 		}
-		var flags []Flag
 		if e.Source != SourceExisting {
 			switch {
 			case m.Budget > 0 && used[m.ID] > m.Budget+eps:
@@ -118,8 +119,8 @@ func (s *Service) dynamicFlags(d *dayData, e Entry, used map[string]float64) []F
 				flags = append(flags, Flag{Code: FlagNoMTR, Severity: SeverityWarn, Msg: msg("hc.flag.no_mtr_record", "name", e.Name, "machine", m.Name)})
 			}
 		}
-		return flags
 	}
+	return flags
 }
 
 func shortLeave(name string) string {

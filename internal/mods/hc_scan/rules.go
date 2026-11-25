@@ -13,7 +13,14 @@ const (
 	ShiftPM = "PM"
 )
 
-const eps = 1e-9
+const eps = 1e-7
+
+func oppositeShift(shift string) string {
+	if shift == ShiftAM {
+		return ShiftPM
+	}
+	return ShiftAM
+}
 
 // NormShift maps a day type or an actual shift to the AM/PM session it belongs to. The map is the one the Python
 // Area Assign page uses (shift_norm_map); every other value (days off, public holidays, leave names) gives "".
@@ -169,4 +176,14 @@ func inProcesses(list []string, process string) bool {
 	return false
 }
 
-func round2(v float64) float64 { return math.Round(v*100) / 100 }
+func round2(v float64) float64  { return math.Round(v*100) / 100 }
+func round10(v float64) float64 { return math.Round(v*1e10) / 1e10 }
+
+// splitHC divides a person's available working HC evenly across count selected machines (10-decimal precision so
+// e.g. 3 machines get 0.3333333333 each and sum back to 1).
+func splitHC(total float64, count int) float64 {
+	if count <= 1 {
+		return round10(total)
+	}
+	return round10(total / float64(count))
+}

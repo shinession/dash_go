@@ -139,6 +139,53 @@ func TestConfirmRefusalsAndFailures(t *testing.T) {
 	}
 }
 
+func TestConfirmWritesMultiSelectMachinesWithEqualHCSplit(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	// AB12C02 has 0.5 part-day leave, leaving 0.5 HC to split across 2 machines -> 0.25 each
+	env.repo.records = append(env.repo.records, DayRecord{
+		UID: "AB12C02_20261119", EE: "AB12C02", Date: testDate, Actual: "AM", Schedule: "W",
+		Entries: []HCEntry{{Process: "Winder", Machine: "ANL - Annual Leave", HC: 0.5}},
+	})
+	env.scan(t, "AB12C01")
+	env.scan(t, "AB12C02")
+	// AB12C01 -> 3 machines (0.3333333333 each, includes activity Winder_9014)
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"Winder_515", "Winder_520", "Winder_9014"}); err != nil {
+		t.Fatal(err)
+	}
+	// AB12C02 -> 2 machines with 0.5 leave -> 0.25 each
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C02", []string{"Winder_515", "Winder_520"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := env.svc.Confirm(ctx, testUser, testKey, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Written) != 2 || len(res.NeedsAck) != 0 {
+		t.Fatalf("confirm result: %+v", res)
+	}
+	byEE := map[string]DayRecord{}
+	for _, r := range env.repo.written[0] {
+		byEE[r.EE] = r
+	}
+	r1 := byEE["AB12C01"]
+	if len(r1.Entries) != 3 || r1.BuildIn != 1 {
+		t.Fatalf("3-machine row: %+v", r1)
+	}
+	for i, wantMach := range []string{"Winder_515", "Winder_520", "Winder_9014"} {
+		if r1.Entries[i].Machine != wantMach || r1.Entries[i].HC != 0.3333333333 {
+			t.Fatalf("r1.Entries[%d] = %+v, want %s 0.3333333333", i, r1.Entries[i], wantMach)
+		}
+	}
+	r2 := byEE["AB12C02"]
+	if len(r2.Entries) != 3 || r2.Entries[0].Machine != "ANL - Annual Leave" || r2.Entries[0].HC != 0.5 ||
+		r2.Entries[1].Machine != "Winder_515" || r2.Entries[1].HC != 0.25 ||
+		r2.Entries[2].Machine != "Winder_520" || r2.Entries[2].HC != 0.25 ||
+		r2.BuildIn != 0.5 {
+		t.Fatalf("part-day leave 2-machine row: %+v", r2)
+	}
+}
+
 func containsAny(s string, parts ...string) bool {
 	for _, p := range parts {
 		if len(p) > 0 && strings.Contains(s, p) {

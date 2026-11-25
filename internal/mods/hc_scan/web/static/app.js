@@ -99,11 +99,14 @@
 
   // ---- state ---------------------------------------------------------------------------------------------------
 
-  const state = { me: null, process: null, date: null, shift: null, board: null, seq: 0, timer: null, idRe: null, last: { id: '', at: 0 }, chain: Promise.resolve() };
+  const state = { me: null, process: null, date: null, shift: null, board: null, seq: 0, timer: null, idRe: null, last: { id: '', at: 0 }, chain: Promise.resolve(), openMS: null, candidateModal: null };
   const tourOpen = () => !!(dg.tour && dg.tour.isActive());
+  const candidateDialogOpen = () => !!($('candidate-dialog') && $('candidate-dialog').open);
 
   function show(name) {
     if (tourOpen()) dg.tour.stop();
+    if (state.openMS) closeMultiSelect(false);
+    if (candidateDialogOpen()) $('candidate-dialog').close();
     for (const id of ['screen-message', 'screen-picker', 'screen-app']) $(id).classList.toggle('hidden', id !== 'screen-' + name);
   }
 
@@ -127,7 +130,7 @@
   }
 
   const key = () => ({ process: state.process, date: state.date, shift: state.shift });
-  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open && !tourOpen()) $('scan').focus({ preventScroll: true }); };
+  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open && !candidateDialogOpen() && !state.openMS && !tourOpen()) $('scan').focus({ preventScroll: true }); };
 
   // The page bar and the scan panel stick below the header and below each other; they need each other's height.
   function trackBars() {
@@ -237,7 +240,7 @@
       const board = await call('GET', `api/board?process=${encodeURIComponent(k.process)}&date=${k.date}&shift=${k.shift}`);
       if (seq !== state.seq || k.process !== state.process || k.date !== state.date || k.shift !== state.shift) return;
       const active = document.activeElement;
-      if (quiet && active && active.tagName === 'SELECT') return; // do not close a list the leader is using
+      if (quiet && (state.openMS || (active && active.tagName === 'SELECT'))) return; // do not close a list the leader is using
       const sig = JSON.stringify({ ...board, server_time: null });
       if (state.board && state.board.sig === sig) return;
       board.sig = sig;
@@ -255,6 +258,7 @@
   function renderBoard(b) {
     const counters = $('counters');
     const entries = $('entries');
+    if (state.openMS) closeMultiSelect(false);
     if (!b) {
       counters.replaceChildren();
       entries.replaceChildren(el('div', { class: 'empty', text: t('hc.ui.loading') }));
@@ -262,11 +266,19 @@
       $('missing').replaceChildren();
       $('pending-count').textContent = '0';
       $('missing-count').textContent = '0';
+      const otherShift = state.shift === 'AM' ? 'PM' : 'AM';
+      if ($('other-shift-label')) $('other-shift-label').textContent = t('hc.ui.other_shift_btn', { shift: otherShift });
+      if ($('other-shift-count')) $('other-shift-count').textContent = '0';
+      if ($('off-day-count')) $('off-day-count').textContent = '0';
+      if (candidateDialogOpen()) $('candidate-dialog').close();
       return;
     }
     const totals = b.totals;
     const entryList = list(b.entries);
     const missingList = list(b.not_assigned);
+    const otherList = list(b.other_shift);
+    const offList = list(b.off_day);
+    const otherShift = state.shift === 'AM' ? 'PM' : 'AM';
     const counter = (label, value, warn) => el('span', { class: 'counter' + (warn ? ' warn' : '') }, label + ' ', el('b', { text: value }));
     // the first four are the people of the shift in HC, like the Daily Attn Summary of the Dash application; the rest is the draft
     counters.replaceChildren(...[
@@ -284,6 +296,9 @@
     $('reset').disabled = totals.pending === 0;
     $('pending-count').textContent = totals.pending;
     $('missing-count').textContent = missingList.length;
+    if ($('other-shift-label')) $('other-shift-label').textContent = t('hc.ui.other_shift_btn', { shift: otherShift });
+    if ($('other-shift-count')) $('other-shift-count').textContent = otherList.length;
+    if ($('off-day-count')) $('off-day-count').textContent = offList.filter((p) => !p.blocked).length;
     $('mtr-info').textContent = t('hc.ui.mtr_info', { time: b.mtr.data_time || t('hc.ui.unknown') })
       + (b.mtr.unmapped_machines ? ' | ' + t('hc.ui.mtr_unmapped', { n: b.mtr.unmapped_machines }) : '');
 
@@ -300,7 +315,20 @@
     }
     $('machines').replaceChildren(...cards);
     $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_assigned') })]));
+    if (candidateDialogOpen() && state.candidateModal) renderCandidateDialog();
     if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.board', { skipHeaderIfSeen: true }));
+  }
+
+  function entryMachineIDs(e) {
+    const ids = list(e.machine_ids).filter(Boolean);
+    if (ids.length) return ids;
+    return e.machine_id ? [e.machine_id] : [];
+  }
+
+  function sameSet(a, c) {
+    if (a.size !== c.size) return false;
+    for (const v of a) if (!c.has(v)) return false;
+    return true;
   }
 
   function machineLabel(m, level) {
@@ -323,22 +351,143 @@
     return [...withMtr, ...activity, ...noMtr];
   }
 
+  function msSummary(selectedIds, allMachines, levels, hc) {
+    const chosen = allMachines.filter((m) => selectedIds.has(m.id));
+    if (chosen.length === 0) {
+      const txt = t('hc.ui.no_machine_option');
+      return { label: txt, badge: '', title: txt, empty: true };
+    }
+    if (chosen.length === 1) {
+      const txt = machineLabel(chosen[0], levels[chosen[0].id]);
+      return { label: txt, badge: '', title: txt, empty: false };
+    }
+    const share = fmt((hc || 1) / chosen.length);
+    return {
+      label: chosen.map((m) => m.name).join(', '),
+      badge: t('hc.ui.ms_count', { n: chosen.length, share: share }),
+      title: chosen.map((m) => machineLabel(m, levels[m.id])).join('\n'),
+      empty: false,
+    };
+  }
+
+  function closeMultiSelect(commit) {
+    const open = state.openMS;
+    if (!open) return Promise.resolve();
+    state.openMS = null;
+    open.root.classList.remove('is-open');
+    open.trigger.setAttribute('aria-expanded', 'false');
+    if (commit && !sameSet(open.initialIds, open.currentIds)) {
+      const nextIds = list(state.board && state.board.machines).filter((m) => open.currentIds.has(m.id)).map((m) => m.id);
+      return assign(open.entry, nextIds);
+    }
+    focusScan();
+    return Promise.resolve();
+  }
+
+  function buildMultiSelect(e) {
+    const allMachines = list(state.board.machines);
+    const levels = e.levels || {};
+    const initialIds = new Set(entryMachineIDs(e));
+    const currentIds = new Set(initialIds);
+    const textEl = el('span', { class: 'ms-text' });
+    const badgeEl = el('span', { class: 'ms-badge hidden' });
+    const trigger = el('button', {
+      type: 'button',
+      class: 'ms-trigger',
+      'data-ms-ee': e.ee,
+      'aria-label': t('hc.ui.machine_of', { name: e.name }),
+      'aria-haspopup': 'listbox',
+      'aria-expanded': 'false',
+    }, textEl, badgeEl, el('span', { class: 'ms-caret', 'aria-hidden': 'true', text: '▾' }));
+
+    function syncTrigger() {
+      const s = msSummary(currentIds, allMachines, levels, e.hc);
+      textEl.textContent = s.label;
+      textEl.classList.toggle('empty', s.empty);
+      badgeEl.textContent = s.badge;
+      badgeEl.classList.toggle('hidden', !s.badge);
+      trigger.title = s.title;
+    }
+    syncTrigger();
+
+    const checkboxes = [];
+    const sortedMachines = sortEntryMachines(allMachines, levels);
+    const optList = el('div', { class: 'ms-list', role: 'listbox', 'aria-multiselectable': 'true' },
+      sortedMachines.map((m) => {
+        const checked = currentIds.has(m.id);
+        const cb = el('input', { type: 'checkbox', value: m.id, checked });
+        const row = el('label', { class: 'ms-opt' + (checked ? ' checked' : '') }, cb, el('span', { class: 'ms-opt-label', text: machineLabel(m, levels[m.id]) }));
+        cb.addEventListener('change', () => {
+          if (cb.checked) currentIds.add(m.id); else currentIds.delete(m.id);
+          row.classList.toggle('checked', cb.checked);
+          syncTrigger();
+        });
+        checkboxes.push({ cb, row });
+        return row;
+      }),
+    );
+
+    const clearBtn = el('button', {
+      type: 'button',
+      class: 'ms-clear',
+      text: t('hc.ui.no_machine_option'),
+      onclick: () => {
+        currentIds.clear();
+        for (const item of checkboxes) { item.cb.checked = false; item.row.classList.remove('checked'); }
+        syncTrigger();
+        closeMultiSelect(true);
+      },
+    });
+    const menu = el('div', { class: 'ms-menu' },
+      el('div', { class: 'ms-menu-head' }, clearBtn, el('span', { class: 'ms-hint', text: t('hc.ui.ms_hint') })),
+      optList,
+    );
+    const root = el('div', { class: 'ms', 'data-ee': e.ee }, trigger, menu);
+
+    function openSelf() {
+      const rect = trigger.getBoundingClientRect ? trigger.getBoundingClientRect() : { top: 200, bottom: 240 };
+      const vh = window.innerHeight || 900;
+      const spaceBelow = vh - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      menu.classList.toggle('up', spaceBelow < 260 && spaceAbove > spaceBelow);
+      root.classList.add('is-open');
+      trigger.setAttribute('aria-expanded', 'true');
+      state.openMS = { ee: e.ee, entry: e, initialIds, currentIds, root, menu, trigger };
+    }
+
+    trigger.addEventListener('click', async () => {
+      if (state.openMS && state.openMS.ee === e.ee) {
+        await closeMultiSelect(true);
+        return;
+      }
+      if (state.openMS) {
+        const dirty = !sameSet(state.openMS.initialIds, state.openMS.currentIds);
+        await closeMultiSelect(true);
+        if (dirty) {
+          // entries were re-rendered after saving the previous row; open this entry's fresh trigger
+          const next = $('entries').querySelector(`.ms-trigger[data-ms-ee="${e.ee}"]`);
+          if (next) next.click();
+          return;
+        }
+      }
+      openSelf();
+    });
+
+    return root;
+  }
+
   function renderEntry(e) {
     const cls = ['entry'];
     if (e.warn) cls.push('warn');
-    if (!e.machine_id) cls.push('none');
-    const levels = e.levels || {};
-    const select = el('select', { 'aria-label': t('hc.ui.machine_of', { name: e.name }), onchange: (ev) => assign(e, ev.target.value) },
-      el('option', { value: '', selected: !e.machine_id }, t('hc.ui.no_machine_option')),
-      sortEntryMachines(list(state.board.machines), levels).map((m) => el('option', { value: m.id, selected: m.id === e.machine_id }, machineLabel(m, levels[m.id]))),
-    );
+    if (entryMachineIDs(e).length === 0) cls.push('none');
+    const picker = buildMultiSelect(e);
     const flags = list(e.flags);
     const reason = flags.some((f) => f.text === e.reason) ? '' : (e.reason || ''); // a warning that says the same is enough
     const sub = [e.ee, e.shift ? t('hc.ui.shift_n', { shift: e.shift }) : null, e.schedule ? t('hc.ui.day_n', { day: e.schedule }) : null].filter(Boolean).join(' | ');
     return el('div', { class: cls.join(' ') },
       avatar(e.name, e.photo, 'sm'),
       el('div', { class: 'entry-main' }, el('div', { class: 'entry-name', text: e.name, title: e.name }), el('div', { class: 'entry-sub', text: sub })),
-      el('div', { class: 'entry-main' }, select, el('div', { class: 'entry-sub', text: reason, title: reason })),
+      el('div', { class: 'entry-main' }, picker, el('div', { class: 'entry-sub', text: reason, title: reason })),
       el('button', { class: 'icon-btn', type: 'button', title: t('hc.ui.remove_title', { name: e.name }), 'aria-label': t('hc.ui.remove_aria', { name: e.name }), text: 'x', onclick: () => remove(e) }),
       flags.length ? el('div', { class: 'entry-flags' }, flags.map((f) => el('span', { class: `flag ${f.severity}`, text: f.text }))) : null,
     );
@@ -414,6 +563,93 @@
     setTimeout(() => { if (btn && btn.isConnected) btn.disabled = false; }, 1600);
   }
 
+  // ---- candidate popups (other shift & off/rest day) -----------------------------------------------------------
+
+  function renderCandidateChip(p) {
+    const schedTag = [p.shift, p.schedule].filter(Boolean).join(' · ');
+    if (p.blocked) {
+      return el('button', {
+        type: 'button',
+        class: 'chip blocked',
+        disabled: true,
+        'data-ee': p.ee,
+        title: t('hc.ui.blocked_6_days_title', { name: p.name, ee: p.ee }),
+      },
+        avatar(p.name, p.photo, 'sm'),
+        personInfo(p.name, p.ee, p.hc),
+        schedTag ? el('span', { class: 'tag cand-sched', text: schedTag }) : null,
+        el('span', { class: 'tag blocked-tag', text: t('hc.ui.blocked_6_days') }),
+      );
+    }
+    const title = [t('hc.ui.click_to_scan', { name: p.name, ee: p.ee }), t('hc.ui.shift_n', { shift: p.shift || '?' }), t('hc.ui.day_n', { day: p.schedule || '?' })].join(' | ');
+    return el('button', {
+      type: 'button',
+      class: 'chip',
+      'data-ee': p.ee,
+      title,
+      onclick: (ev) => scanFromCandidate(p.ee, ev.currentTarget),
+    },
+      avatar(p.name, p.photo, 'sm'),
+      personInfo(p.name, p.ee, p.hc),
+      schedTag ? el('span', { class: 'tag cand-sched', text: schedTag }) : null,
+    );
+  }
+
+  function scanFromCandidate(ee, btn) {
+    if (!ee || !state.process) return;
+    if (btn) btn.disabled = true;
+    enqueueScan(ee);
+    setTimeout(() => { if (btn && btn.isConnected) btn.disabled = false; }, 1600);
+  }
+
+  function renderCandidateDialog() {
+    const dlg = $('candidate-dialog');
+    const board = state.board;
+    if (!dlg || !board || !state.candidateModal) return;
+    const kind = state.candidateModal;
+    const otherShift = state.shift === 'AM' ? 'PM' : 'AM';
+    let title = '';
+    let bodyNodes = [];
+    if (kind === 'other_shift') {
+      const people = list(board.other_shift);
+      title = t('hc.ui.other_shift_title', { shift: otherShift, n: people.length });
+      bodyNodes = people.length
+        ? [el('div', { class: 'candidate-list' }, people.map(renderCandidateChip))]
+        : [el('div', { class: 'empty', text: t('hc.ui.other_shift_empty') })];
+    } else {
+      const people = list(board.off_day);
+      const eligible = people.filter((p) => !p.blocked);
+      const blocked = people.filter((p) => p.blocked);
+      title = t('hc.ui.off_day_title', { n: eligible.length });
+      if (eligible.length) {
+        bodyNodes.push(el('div', { class: 'candidate-list' }, eligible.map(renderCandidateChip)));
+      } else {
+        bodyNodes.push(el('div', { class: 'empty', text: t('hc.ui.off_day_empty') }));
+      }
+      if (blocked.length) {
+        bodyNodes.push(el('div', { class: 'machines-sep', text: t('hc.ui.off_day_blocked_sep', { n: blocked.length }) }));
+        bodyNodes.push(el('div', { class: 'candidate-list' }, blocked.map(renderCandidateChip)));
+      }
+    }
+    dlg.replaceChildren(
+      el('div', { class: 'dlg-head' },
+        el('h3', { text: title }),
+        el('button', { type: 'button', class: 'icon-btn dlg-close', title: t('hc.ui.candidate_close'), 'aria-label': t('hc.ui.candidate_close'), text: '×', onclick: () => dlg.close() }),
+      ),
+      el('p', { class: 'muted small candidate-hint', text: t('hc.ui.candidate_hint') }),
+      el('div', { class: 'dlg-body' }, ...bodyNodes),
+    );
+  }
+
+  async function openCandidateDialog(kind) {
+    if (!state.board) return;
+    if (state.openMS) await closeMultiSelect(true);
+    state.candidateModal = kind;
+    renderCandidateDialog();
+    const dlg = $('candidate-dialog');
+    if (dlg && !dlg.open) dlg.showModal();
+  }
+
   // ---- scanning ------------------------------------------------------------------------------------------------
 
   let debounce = null;
@@ -472,7 +708,8 @@
     }
     const e = res.entry;
     const flags = list(e.flags);
-    const assigned = !!e.machine_id;
+    const ids = entryMachineIDs(e);
+    const assigned = ids.length > 0;
     const kind = assigned && !e.warn && res.status !== 'duplicate' ? 'ok' : 'warn';
     box.className = 'result ' + kind;
     box.replaceChildren(el('div', { class: 'result-body' },
@@ -484,16 +721,17 @@
         el('div', { class: 'result-reason', text: res.status === 'duplicate' || res.status === 'saved' ? res.message : (flags.some((f) => f.text === e.reason) ? '' : (e.reason || '')) }),
         flags.length ? el('div', { class: 'entry-flags' }, flags.map((f) => el('span', { class: `flag ${f.severity}`, text: f.text }))) : null,
       ),
-      assigned ? lvBadge(e.level) : null,
+      assigned && ids.length === 1 ? lvBadge(e.level) : null,
     ));
     beep(kind === 'ok' ? 'ok' : 'warn');
   }
 
   // ---- changes by the shift leader -----------------------------------------------------------------------------
 
-  async function assign(entry, machineId) {
+  async function assign(entry, machineIds) {
+    const ids = Array.isArray(machineIds) ? machineIds : (machineIds ? [machineIds] : []);
     try {
-      await call('POST', 'api/assign', { ...key(), ee: entry.ee, machine_id: machineId });
+      await call('POST', 'api/assign', { ...key(), ee: entry.ee, machine_ids: ids });
     } catch (err) {
       if (err.status === 401) { sessionExpired(); return; }
       toast(err.message, 'err');
@@ -529,6 +767,7 @@
   }
 
   async function confirm(ack) {
+    if (state.openMS) await closeMultiSelect(true);
     $('confirm').disabled = true;
     try {
       const res = await call('POST', 'api/confirm', { ...key(), ack: !!ack });
@@ -578,8 +817,33 @@
       if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(debounce); tryScan(true); }
     });
     input.addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; if (!a || a === document.body) focusScan(); }, 250));
-    document.addEventListener('click', (ev) => { if (!tourOpen() && !ev.target.closest('select, button, input, dialog, a, .dg-tour')) focusScan(); });
+    document.addEventListener('click', (ev) => {
+      if (state.openMS && !state.openMS.root.contains(ev.target)) {
+        if (!ev.target.closest('.ms-trigger')) closeMultiSelect(true);
+        return;
+      }
+      if (!tourOpen() && !state.openMS && !candidateDialogOpen() && !ev.target.closest('.ms, select, button, input, dialog, a, .dg-tour')) focusScan();
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && state.openMS) {
+        ev.preventDefault();
+        closeMultiSelect(true);
+      }
+    });
     document.addEventListener('dg:tour-stop', () => focusScan());
+
+    if ($('btn-other-shift')) $('btn-other-shift').addEventListener('click', () => openCandidateDialog('other_shift'));
+    if ($('btn-off-day')) $('btn-off-day').addEventListener('click', () => openCandidateDialog('off_day'));
+    const candDlg = $('candidate-dialog');
+    if (candDlg) {
+      candDlg.addEventListener('close', () => { state.candidateModal = null; focusScan(); });
+      candDlg.addEventListener('click', (ev) => {
+        if (ev.target === candDlg) {
+          const r = candDlg.getBoundingClientRect();
+          if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) candDlg.close();
+        }
+      });
+    }
 
     $('date').addEventListener('change', (ev) => {
       if (!ev.target.value) return;
