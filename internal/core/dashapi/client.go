@@ -34,7 +34,14 @@ var (
 type Profile struct {
 	Name      string   `json:"name"`
 	EECode    string   `json:"ee_code"`
+	Type      string   `json:"type,omitempty"`
 	Processes []string `json:"processes"`
+}
+
+// IsAdmin reports whether the Dash user profile has Type "admin" (case-insensitive).
+// An older backend that omits "type" defaults safely to non-admin.
+func (p Profile) IsAdmin() bool {
+	return strings.EqualFold(strings.TrimSpace(p.Type), "admin")
 }
 
 // Client calls the Python API.

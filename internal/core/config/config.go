@@ -120,7 +120,10 @@ type Config struct {
 	// DashAPISource is the key DashAPIURL was taken from, "dash_api_url" or "api_server": the log says it, because the
 	// api_server of a development machine's patch file may point at the production server.
 	DashAPISource string
-	Login         Login
+	// DashDataDir is the data folder of the Python dash app (top-level dash_data_dir), where change log files such as
+	// DailyAttnData.log and MQPDHeadCount.log live. A module may still override it under modules.<name>.dash_data_dir.
+	DashDataDir string
+	Login       Login
 	Update        Update
 	Dash          Dash
 	Sources       []string // configuration files that were loaded (paths only)
@@ -167,6 +170,7 @@ func Load(opts Options) (*Config, error) {
 		BasePath:         normalizeBasePath(firstNonEmpty(rawString(merged["base_path"]), "/dash_go")),
 		LogDir:           firstNonEmpty(rawString(merged["log_dir"]), "logs"),
 		DashHome:         firstNonEmpty(rawString(merged["dash_home"]), "/ie/"),
+		DashDataDir:      strings.TrimSpace(rawString(merged["dash_data_dir"])),
 		SessionHours:     12,
 		PhotoURLTemplate: firstNonEmpty(rawString(merged["photo_url_template"]), DefaultPhotoURLTemplate),
 		Login:            Login{Password: true, SSORequireSameIP: true},

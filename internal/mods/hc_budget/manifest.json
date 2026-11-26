@@ -1,0 +1,17 @@
+{
+  "name": "hc_budget",
+  "title": "HC Budget Setting",
+  "description": "Maintain machine and activity head count budgets per process; administrators can add entries, toggle hidden status, and reorder display sequence.",
+  "docs": [
+    "docs/hc_budget_page.md"
+  ],
+  "reads": [
+    "t_mqpd_hc_table"
+  ],
+  "writes": [
+    "t_mqpd_hc_table"
+  ],
+  "settings_example": {
+    "dash_data_dir": "C:\\path\\to\\dash\\data"
+  }
+}

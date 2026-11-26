@@ -25,6 +25,13 @@
 
 {{define "icon"}}<svg class="dg-icon" aria-hidden="true" focusable="false"><use href="{{.Base}}/_shell/icons.svg#{{.Name}}"></use></svg>{{end}}
 
+{{/* Full-page status message screen shared by modules (no permission, session expired, startup error). */}}
+{{define "message_screen"}}<section id="screen-message" class="screen hidden">
+  <h1 id="message-title"></h1>
+  <p id="message-text"></p>
+  <p id="message-action" class="hidden"><a id="message-link" class="dg-btn dg-btn-primary" href="#"></a></p>
+</section>{{end}}
+
 {{/* The bar of every page: the logo, the name of the module with the way back to the root of the server, the theme button, the language switch, documentation and guide buttons, and the user. */}}
 {{define "header"}}<header class="dg-header" id="dg-header">
   <div class="dg-header-inner">

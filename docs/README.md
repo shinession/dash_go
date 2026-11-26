@@ -20,7 +20,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | Document | Covers |
 |---|---|
-| [shell_and_login.md](shell_and_login.md) | The frame of every page (`/dash_go/_shell/`): the header with the CIM EDGE logo, the name of the module with the Back button to the root of the server, the light / dark theme, English / Chinese (catalogs, how a module adds texts), the Documentation and Page Guide buttons (user guide pages and interactive tour with first-visit auto-start), the user box and the pictures of people, and the sign-in of dash_go itself (link from Dash, account and password, Windows sign-in, limits, configuration, deployment behind proxies, troubleshooting, verification status) |
+| [shell_and_login.md](shell_and_login.md) | The frame of every page (`/dash_go/_shell/`): the header with the CIM EDGE logo, the name of the module with the Back button to the root of the server, the light / dark theme, English / Chinese (catalogs, how a module adds texts), the Documentation and Page Guide buttons (user guide pages and interactive tour with first-visit auto-start), the shared HC process picker (`dashGo.picker`) and module icons (`scanner`, `budget`), the user box and the pictures of people, and the sign-in of dash_go itself (link from Dash, account and password, Windows sign-in, limits, configuration, deployment behind proxies, troubleshooting, verification status) |
 | [auto_update.md](auto_update.md) | The automatic update (since 0.1.3): a release is `dash_go.exe` and `dash_go.json` in the static folder of the Dash API (`scripts/release.ps1`); a server with `update_url` reads the manifest, downloads and checks the new program, waits until nobody is clicking or submitting, puts it in place and restarts (launcher or exit code 75). Settings, publishing, going back, troubleshooting by log line, limits and verification status |
 
 ### Modules
@@ -28,6 +28,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 | Document | Covers |
 |---|---|
 | [hc_scan_page.md](hc_scan_page.md) | `hc_scan`: the HC Scan Assign page (`/dash_go/hc_scan/`). A shift leader scans employee badges, every scan assigns a machine or activity by the MTR level of the person (at least Lv1, Lv3 before Lv2 before Lv1, the last 7 days second; leaders go to the Group Leader row), the result is a draft that is saved to `t_daily_attn_data` only when the leader confirms. The board (which entries count for a process, support from other processes, the counters Scheduled / Assigned / Leave / To assign, the Leave and Elsewhere cards), warnings, write rules, login hand-over from Dash, configuration, deployment on s2, troubleshooting and verification status |
+| [hc_budget_page.md](hc_budget_page.md) | `hc_budget`: the HC Budget Setting page (`/dash_go/hc_budget/`, since 0.2.0). Authorized users share the process picker and HeadCount permissions with `hc_scan` to edit machine/activity names, types, categories, and head count budgets in `t_mqpd_hc_table`; administrators (`type=admin`) can additionally add new machines/activities, toggle hidden visibility, and reorder per-process `display_seq` via drag-and-drop. Batch Confirm in one PostgreSQL transaction, `MQPDHeadCount.log` cache invalidation, configuration, troubleshooting and verification status |
 
 ---
 
@@ -53,7 +54,7 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 
 | 文档 | 内容 |
 |---|---|
-| [shell_and_login.md](shell_and_login.md) | 每个页面的外框（`/dash_go/_shell/`）：带 CIM EDGE logo 的顶栏、模块名称及其旁边通向服务器根路径的返回按钮、浅色 / 深色主题、中英文（词条文件、模块如何添加文字）、文档与页面导览按钮（使用手册页面和支持首次访问自动引导的交互式导览）、用户框和人员头像，以及 dash_go 自己的登录（Dash 的链接、账号密码、Windows 登录、限流、配置、代理之后的部署、故障排查、验证状态） |
+| [shell_and_login.md](shell_and_login.md) | 每个页面的外框（`/dash_go/_shell/`）：带 CIM EDGE logo 的顶栏、模块名称及其旁边通向服务器根路径的返回按钮、浅色 / 深色主题、中英文（词条文件、模块如何添加文字）、文档与页面导览按钮（使用手册页面和支持首次访问自动引导的交互式导览）、共用 HC 工序选择器（`dashGo.picker`）及模块图标（`scanner`、`budget`）、用户框和人员头像，以及 dash_go 自己的登录（Dash 的链接、账号密码、Windows 登录、限流、配置、代理之后的部署、故障排查、验证状态） |
 | [auto_update.md](auto_update.md) | 自动更新（自 0.1.3 起）：一个发布就是 Dash API 静态文件夹中的 `dash_go.exe` 和 `dash_go.json`（`scripts/release.ps1`）；设置了 `update_url` 的服务器读取清单，下载并检查新程序，等到没有人在点击或提交，再就位并重启（启动器或退出码 75）。设置、发布、回退、按日志行排查、限制和验证状态 |
 
 ### 模块
@@ -61,3 +62,4 @@ This folder holds the documentation of the modules of `dash_go`. [AGENTS.md](../
 | 文档 | 内容 |
 |---|---|
 | [hc_scan_page.md](hc_scan_page.md) | `hc_scan`：HC Scan Assign 页面（`/dash_go/hc_scan/`）。领班扫描员工工牌，每次扫描根据此人的 MTR 等级分派 machine 或 activity（至少 Lv1，Lv3 优先于 Lv2 优先于 Lv1，其次是最近 7 天；leader 去 Group Leader 行），结果是草稿，只有领班确认后才保存到 `t_daily_attn_data`。包括看板（哪些 entry 算在某个 process 上、其他 process 的支援、Scheduled / Assigned / Leave / To assign 计数、Leave 和 Elsewhere 卡片）、警告、写入规则、从 Dash 的登录交接、配置、s2 上的部署、故障排查和验证状态 |
+| [hc_budget_page.md](hc_budget_page.md) | `hc_budget`：HC 预算设置页面（`/dash_go/hc_budget/`，自 0.2.0 起）。与 `hc_scan` 共用工序选择器和 HeadCount 权限，支持维护 `t_mqpd_hc_table` 中的机台/活动名称、类型、分类与预算人力；管理员（`type=admin`）可额外新增机台/活动、切换隐藏状态，并拖动调整本工序内的 `display_seq` 显示顺序。包括单事务批量确认、`MQPDHeadCount.log` 缓存刷新、配置、故障排查和验证状态 |

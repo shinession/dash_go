@@ -1,9 +1,5 @@
 {{define "content"}}
-<section id="screen-message" class="screen hidden">
-  <h1 id="message-title"></h1>
-  <p id="message-text"></p>
-  <p id="message-action" class="hidden"><a id="message-link" class="dg-btn dg-btn-primary" href="#"></a></p>
-</section>
+{{template "message_screen" .}}
 
 <section id="screen-picker" class="screen hidden" data-tour-screen="hc_scan.picker">
   <h1>{{.T "hc.title"}}</h1>

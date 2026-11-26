@@ -1,13 +1,5 @@
-/* The HC Scan Assign page. The colours of both themes, the base, the buttons, the pictures of people, the toast and
-   the dialog come from the shell (shell.css); only what is special to this page is here. */
-
-.screen { max-width: 760px; margin: 8vh auto; padding: 0 1.5rem; text-align: center; }
-.process-buttons { display: flex; flex-wrap: wrap; gap: .9rem; justify-content: center; margin: 1.5rem 0; }
-.process-buttons button {
-  min-width: 9rem; padding: 1.1rem 1.6rem; font-size: 1.4rem; border-radius: 12px;
-  border: 2px solid var(--line); background: var(--panel); cursor: pointer;
-}
-.process-buttons button:hover, .process-buttons button:focus-visible { border-color: var(--accent); outline: none; }
+/* The HC Scan Assign page. The colours of both themes, the base, the buttons, the shared process picker, the pictures
+   of people, the toast and the dialog come from the shell (shell.css); only what is special to this page is here. */
 
 /* the bar of the page: below the header of the shell, it sticks to the bottom edge of it */
 .pagebar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.5rem; padding: .6rem 1.2rem; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: var(--dg-header-h, 3.5rem); z-index: 5; }

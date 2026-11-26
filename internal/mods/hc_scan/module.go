@@ -58,6 +58,9 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 	if set.PhotoURLTemplate == "" {
 		set.PhotoURLTemplate = env.Cfg.PhotoURLTemplate
 	}
+	if set.DashDataDir == "" {
+		set.DashDataDir = env.Cfg.DashDataDir
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pool, err := env.PG(ctx)

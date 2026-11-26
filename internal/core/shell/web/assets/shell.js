@@ -137,6 +137,60 @@
     try { window.localStorage.setItem(key, next); } catch (e) { /* the choice just does not survive a reload */ }
   }
 
+  // ---- shared HC process picker --------------------------------------------------------------------------------
+
+  var PROCESS_KEY = 'hc.process';
+  var LEGACY_PROCESS_KEY = 'hcscan.process';
+
+  // getProcess reads the remembered HC process from sessionStorage, migrating the legacy hcscan.process key.
+  function getProcess() {
+    try {
+      var v = window.sessionStorage.getItem(PROCESS_KEY);
+      if (v) { return v; }
+      var legacy = window.sessionStorage.getItem(LEGACY_PROCESS_KEY);
+      if (legacy) {
+        window.sessionStorage.setItem(PROCESS_KEY, legacy);
+        return legacy;
+      }
+    } catch (e) { /* storage may be blocked */ }
+    return null;
+  }
+
+  // setProcess stores or clears the remembered HC process shared across HC modules (hc_scan, hc_budget, ...).
+  function setProcess(v) {
+    try {
+      if (v == null || v === '') {
+        window.sessionStorage.removeItem(PROCESS_KEY);
+        window.sessionStorage.removeItem(LEGACY_PROCESS_KEY);
+      } else {
+        window.sessionStorage.setItem(PROCESS_KEY, v);
+      }
+    } catch (e) { /* storage may be blocked */ }
+  }
+
+  // renderProcessPicker fills the shared #process-buttons list and #picker-user caption.
+  function renderProcessPicker(opts) {
+    opts = opts || {};
+    var box = doc.getElementById(opts.buttonsId || 'process-buttons');
+    if (box) {
+      var frag = doc.createDocumentFragment();
+      (Array.isArray(opts.processes) ? opts.processes : []).forEach(function (p) {
+        var btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.textContent = p;
+        btn.addEventListener('click', function () {
+          if (opts.onSelect) { opts.onSelect(p); }
+        });
+        frag.appendChild(btn);
+      });
+      box.replaceChildren(frag);
+    }
+    var userEl = doc.getElementById(opts.userId || 'picker-user');
+    if (userEl && opts.signedInText != null) {
+      userEl.textContent = opts.signedInText;
+    }
+  }
+
   // ---- header --------------------------------------------------------------------------------------------------
 
   // The pages below the header stick to its bottom edge, so they need its height.
@@ -165,7 +219,8 @@
 
   window.dashGo = {
     t: t, call: call, toast: toast, avatar: avatar, photoURL: photoURL, initials: initials,
-    loginURL: loginURL, logout: logout, signedOut: signedOut, base: BASE, lang: doc.documentElement.lang
+    loginURL: loginURL, logout: logout, signedOut: signedOut, base: BASE, lang: doc.documentElement.lang,
+    picker: { get: getProcess, set: setProcess, render: renderProcessPicker }
   };
 
   if (doc.readyState === 'loading') { doc.addEventListener('DOMContentLoaded', initHeader); } else { initHeader(); }

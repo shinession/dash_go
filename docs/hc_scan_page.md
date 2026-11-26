@@ -179,7 +179,7 @@ Module keys (`modules.hc_scan`):
 | `leader_by_history` | `true` | Recognise leaders by their most recent record until their direct type is `Shift Leader`. Set `false` once the direct types are maintained. |
 | `photo_url_template` | the service setting of the same name (`/api/static/hr/{ee_code}.webp`) | Photo of the employee; initials are shown when it is missing. Set it here only to override the service setting. |
 | `dash_api_url` | the service setting of the same name (`http://<api_server>/api`) | Root of the Python API. Set it here only to override the service setting. |
-| `dash_data_dir` | none | Data folder of the Python application that holds `DailyAttnData.log`. Set it on every host where Python pages cache the data. |
+| `dash_data_dir` | top-level `dash_data_dir` (if set) | Data folder of the Python application that holds `DailyAttnData.log`. Set at the top level of `dash_go.json` to share across `hc_scan` and `hc_budget`, or here to override for `hc_scan` only. |
 | `production_day_offset_hours` | 7 | The production day starts at 07:00. |
 | `am_from_hour`, `pm_from_hour` | 7, 19 | Default shift by the clock. |
 | `poll_ms` | 3000 | Refresh rate of the page. |
@@ -476,7 +476,7 @@ POST 请求需要请求头 `X-Requested-With: dash_go`，浏览器标记为跨�
 | `leader_by_history` | `true` | 在 direct type 变成 `Shift Leader` 之前，用最近一条记录来识别 leader。direct type 维护好之后设为 `false`。 |
 | `photo_url_template` | 同名的服务设置（`/api/static/hr/{ee_code}.webp`） | 员工照片；缺失时显示姓名首字母。只有想覆盖服务设置时才在这里设置。 |
 | `dash_api_url` | 同名的服务设置（`http://<api_server>/api`） | Python API 的根地址。只有想覆盖服务设置时才在这里设置。 |
-| `dash_data_dir` | 无 | 存放 `DailyAttnData.log` 的 Python 应用 data 文件夹。在每台由 Python 页面缓存数据的主机上都要设置。 |
+| `dash_data_dir` | 顶层 `dash_data_dir`（若已设置） | 存放 `DailyAttnData.log` 的 Python 应用 data 文件夹。可在 `dash_go.json` 顶层统一配置供 `hc_scan` 与 `hc_budget` 共用，或在此仅覆盖 `hc_scan`。 |
 | `production_day_offset_hours` | 7 | 生产日从 07:00 开始。 |
 | `am_from_hour`、`pm_from_hour` | 7、19 | 按时钟决定的默认班次。 |
 | `poll_ms` | 3000 | 页面刷新间隔。 |

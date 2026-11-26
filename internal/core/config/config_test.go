@@ -292,3 +292,16 @@ func TestSessionHours(t *testing.T) {
 		}
 	}
 }
+
+func TestDashDataDirTopLevel(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashDataDir != "" {
+		t.Fatalf("default: %q %v", cfg.DashDataDir, err)
+	}
+	write(t, dir, "dash_go.json", `{"dash_data_dir": " C:\\dash\\data "}`)
+	cfg, err = Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
+	if err != nil || cfg.DashDataDir != `C:\dash\data` {
+		t.Fatalf("configured: %q %v", cfg.DashDataDir, err)
+	}
+}

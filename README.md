@@ -4,11 +4,12 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.1.9** (see `VERSION`).
+Current version: **0.2.0** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
 | `hc_scan` | A shift leader scans employee badges; every scan assigns a machine or activity by the MTR record of the person. The result is a draft that the leader checks and confirms. | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
+| `hc_budget` | Maintain per-process machine and activity head count budgets in `t_mqpd_hc_table`; administrators can also add entries, toggle hidden status, and reorder display sequence. | [docs/hc_budget_page.md](docs/hc_budget_page.md) |
 
 Every page has the same frame, the **shell**: the header with the CIM EDGE logo, a light / dark theme button, an English / Chinese switch, a Documentation button (user guide for the current page) and a Guide button (interactive step-by-step tour), the signed-in user and sign-in / sign-out; plus a login page of its own (account and password, or the Windows sign-in) next to the link that Dash builds. The pages of a module also show the name of the module and a **Back** button to the root of the server. It is described in [docs/shell_and_login.md](docs/shell_and_login.md).
 
@@ -21,8 +22,9 @@ The documents of the core and of all modules are indexed in [docs/README.md](doc
 ```text
 cmd/dash_go/               entry point; mod_<name>.go links one module in (build tag !nomod_<name>)
 internal/core/             shared infrastructure: config, auth (login, session), dashapi (Python backend client),
-                           pyobj (reader of the Python pickle), i18n (English / Chinese texts), shell (header,
-                           theme, login page, landing page), module registry, HTTP server helpers, logging
+                           hc (shared HeadCount permissions and process ordering), pyobj (reader of the Python pickle),
+                           i18n (English / Chinese texts), shell (header, theme, shared process picker, login page,
+                           landing page), module registry, HTTP server helpers, logging
 internal/mods/<name>/      one folder per module: code, tests, web files (embedded), manifest.json
 internal/version/          version of the binary (set by the build script)
 scripts/build.ps1          test, build and package the selected modules
@@ -77,7 +79,7 @@ go vet ./...
 go test ./...
 ```
 
-The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** PostgreSQL (they create and drop the schema `hcscan_it`), for example `postgres://postgres@127.0.0.1:55432/Auth?sslmode=disable`. A page development server with demo data: see the comment of `TestDevServer` in `internal/mods/hc_scan/devserver_test.go`.
+The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** PostgreSQL (they create and drop schemas `hcscan_it` / `hcbudget_it`), for example `postgres://postgres@127.0.0.1:55432/Auth?sslmode=disable`. Page development servers with demo data: see `TestDevServer` in `internal/mods/hc_scan/devserver_test.go` and `internal/mods/hc_budget/devserver_test.go`.
 
 ---
 
@@ -87,11 +89,12 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.1.9**（见 `VERSION`）。
+当前版本：**0.2.0**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|
 | `hc_scan` | 领班扫描员工工牌；每次扫描根据此人的 MTR 记录分派 machine 或 activity。结果是草稿，由领班检查并确认。 | [docs/hc_scan_page.md](docs/hc_scan_page.md) |
+| `hc_budget` | 维护各工序在 `t_mqpd_hc_table` 中的机台与活动预算人力；管理员还可新增机台/活动、切换隐藏状态并拖动调整显示顺序。 | [docs/hc_budget_page.md](docs/hc_budget_page.md) |
 
 每个页面都有同样的外框，即 **shell**：带 CIM EDGE logo 的顶栏、浅色 / 深色主题按钮、中英文切换、文档按钮（当前页面的使用手册）和导览按钮（交互式分步导览）、当前登录用户以及登录 / 退出登录；另外还有自带的登录页（账号密码，或 Windows 登录），与 Dash 生成的链接并存。模块的页面还会显示模块名称，以及一个通向服务器根路径的**返回**按钮。详见 [docs/shell_and_login.md](docs/shell_and_login.md)。
 
@@ -104,8 +107,9 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 ```text
 cmd/dash_go/               入口；mod_<name>.go 链接一个模块（构建标签 !nomod_<name>）
 internal/core/             共享基础设施：配置、auth（登录、会话）、dashapi（Python 后端客户端）、
-                           pyobj（Python pickle 的读取器）、i18n（中英文文字）、shell（顶栏、主题、
-                           登录页、首页）、模块注册表、HTTP 服务辅助、日志
+                           hc（共享 HeadCount 权限与工序排序）、pyobj（Python pickle 的读取器）、
+                           i18n（中英文文字）、shell（顶栏、主题、共享工序选择器、登录页、首页）、
+                           模块注册表、HTTP 服务辅助、日志
 internal/mods/<name>/      每个模块一个文件夹：代码、测试、web 文件（嵌入）、manifest.json
 internal/version/          可执行文件的版本（由构建脚本设置）
 scripts/build.ps1          测试、构建并打包所选模块
@@ -160,4 +164,4 @@ go vet ./...
 go test ./...
 ```
 
-除非 `DASH_GO_TEST_PG` 指向一个**临时的** PostgreSQL（测试会创建并删除 schema `hcscan_it`），否则 PostgreSQL 测试会被跳过，例如 `postgres://postgres@127.0.0.1:55432/Auth?sslmode=disable`。带演示数据的页面开发服务器：见 `internal/mods/hc_scan/devserver_test.go` 中 `TestDevServer` 的注释。
+除非 `DASH_GO_TEST_PG` 指向一个**临时的** PostgreSQL（测试会创建并删除 schema `hcscan_it` / `hcbudget_it`），否则 PostgreSQL 测试会被跳过，例如 `postgres://postgres@127.0.0.1:55432/Auth?sslmode=disable`。带演示数据的页面开发服务器：见 `internal/mods/hc_scan/devserver_test.go` 和 `internal/mods/hc_budget/devserver_test.go` 中 `TestDevServer` 的注释。

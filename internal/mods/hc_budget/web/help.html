@@ -1,0 +1,151 @@
+{{define "content"}}
+{{if not .IsZh}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="Contents"{{.Tour "tour.help_toc"}}>
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">What HC Budget Setting is</a></li>
+      <li><a href="#permissions">Permissions and roles</a></li>
+      <li><a href="#editing">Editing budgets and machine details</a></li>
+      <li><a href="#admin">Admin actions: add, hide, and reorder</a></li>
+      <li><a href="#confirm">Saving changes and cache refresh</a></li>
+      <li><a href="#interface">Header and Page Guide</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} HC Budget Setting — User guide</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>What HC Budget Setting is</h2>
+      <p><a href="{{.Data}}/"><strong>HC Budget Setting</strong></a> maintains each process's machines, non-routine activities, and head count budgets in <code>t_mqpd_hc_table</code> — the same master table used by <strong>HC Scan Assign</strong> and the Dash HC pages.</p>
+      <ul>
+        <li><strong>Shared process picker:</strong> processes you choose are remembered across <strong>HC Budget Setting</strong> and <strong>HC Scan Assign</strong> during the browser session.</li>
+        <li><strong>Stage first, save on Confirm:</strong> all edits, new entries, visibility changes, and display-order adjustments stay on screen until you review and press <strong>Confirm</strong>.</li>
+      </ul>
+    </section>
+
+    <section id="permissions" class="dg-doc-section">
+      <h2>Permissions and roles</h2>
+      <p>Process access comes from the same HeadCount group rules as <strong>HC Scan Assign</strong>. Within each permitted process, two roles apply:</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>Capability</th><th>Authorized user</th><th>Admin (<code>Type = admin</code>)</th></tr></thead>
+          <tbody>
+            <tr><td><strong>View active rows</strong></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><strong>Edit Machine, Type, Category, Budget HC</strong></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><strong>Add Machine / Activity</strong></td><td>No</td><td>Yes</td></tr>
+            <tr><td><strong>Show hidden / Hide / Restore rows</strong></td><td>No</td><td>Yes</td></tr>
+            <tr><td><strong>Reorder Display Sequence</strong></td><td>No</td><td>Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="editing" class="dg-doc-section">
+      <h2>Editing budgets and machine details</h2>
+      <ol>
+        <li>Choose a process on the picker screen (or press <strong>Change process</strong> in the top bar).</li>
+        <li>Edit <strong>Machine / Activity</strong>, <strong>Type</strong> (<code>Routine</code> or <code>Non-routine</code>), <strong>Category</strong> (pick an existing suggestion or type a new free-text category), or <strong>Budget HC</strong> directly in the table.</li>
+        <li><strong>Budget HC</strong> accepts non-negative numbers (up to 8 integer and 12 decimal digits); leaving it blank saves as <code>0</code>. The <strong>Total Budget HC</strong> counter at the top updates immediately.</li>
+        <li>Read-only columns (<strong>Station</strong>, <strong>Cost Center</strong>, <strong>Last Updated</strong>) protect key identifiers on existing rows.</li>
+        <li>Modified rows are highlighted. Press <strong>Discard</strong> at any time to revert all unsaved edits.</li>
+      </ol>
+    </section>
+
+    <section id="admin" class="dg-doc-section">
+      <h2>Admin actions: add, hide, and reorder</h2>
+      <ul>
+        <li><strong>Add Machine / Activity:</strong> click <strong>+ Add Machine / Activity</strong>. Enter a required <strong>Station Code</strong> (positive integer <code>1–32767</code>, unique within the process across active and hidden rows) to generate the unique ID <code>&lt;process&gt;_&lt;station_code&gt;</code>. <strong>Cost Center</strong> and <strong>Process Code</strong> are pre-filled from the process's existing records and can be adjusted in the modal.</li>
+        <li><strong>Hide and restore:</strong> click <strong>Hide</strong> on an active row to mark it hidden (it will no longer appear in HC Scan Assign or standard HC views). Toggle <strong>Show hidden</strong> in the top bar to inspect hidden rows and click <strong>Restore</strong> to bring any row back.</li>
+        <li><strong>Display sequence:</strong> drag a row by its <strong>⋮⋮</strong> handle — or use the <strong>↑</strong> / <strong>↓</strong> buttons — to set the per-process order (<code>1..N</code>). Clear the filter box first if a search filter is active.</li>
+      </ul>
+      <p class="dg-doc-note"><strong>Note:</strong> Display sequence is maintained per process, because operators always pick machines within one process at a time.</p>
+    </section>
+
+    <section id="confirm" class="dg-doc-section">
+      <h2>Saving changes and cache refresh</h2>
+      <p>Press <strong>Confirm</strong> to review a summary of your staged changes and commit everything in a single database transaction. After committing, the service appends an entry to <code>MQPDHeadCount.log</code> so Python Dash pages refresh their cached table automatically.</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>Header and Page Guide</h2>
+      <p>Use the header controls to switch between light and dark theme, toggle English / 中文, open this guide, or launch the interactive page tour. See the <a href="{{.Base}}/help">dash_go user guide</a> for general sign-in and interface help.</p>
+    </section>
+  </article>
+</div>
+{{else}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="目录"{{.Tour "tour.help_toc"}}>
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#overview">HC 预算设置是什么</a></li>
+      <li><a href="#permissions">权限与角色</a></li>
+      <li><a href="#editing">编辑预算与机台信息</a></li>
+      <li><a href="#admin">管理员功能：新增、隐藏与排序</a></li>
+      <li><a href="#confirm">确认提交与缓存刷新</a></li>
+      <li><a href="#interface">页眉与页面导览</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} HC 预算设置 — 使用手册</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>HC 预算设置是什么</h2>
+      <p><a href="{{.Data}}/"><strong>HC 预算设置</strong></a>用于维护各工序在 <code>t_mqpd_hc_table</code> 中的机台、非例行活动和预算人力——这也是<strong>HC 扫码分派</strong>与 Dash HC 页面共同使用的主数据表。</p>
+      <ul>
+        <li><strong>共用工序选择：</strong>你在当前浏览器会话中选择的工序会在<strong>HC 预算设置</strong>与<strong>HC 扫码分派</strong>之间共享。</li>
+        <li><strong>先暂存、后提交：</strong>所有编辑、新增条目、隐藏切换和排序调整都会先暂存在页面中，直到你核对无误后点击<strong>确认提交</strong>才写入数据库。</li>
+      </ul>
+    </section>
+
+    <section id="permissions" class="dg-doc-section">
+      <h2>权限与角色</h2>
+      <p>工序访问权限沿用与<strong>HC 扫码分派</strong>相同的 HeadCount 权限组规则。在有权限的工序内，区分两种角色：</p>
+      <div class="dg-doc-table-wrap">
+        <table class="dg-doc-table">
+          <thead><tr><th>功能</th><th>普通授权用户</th><th>管理员（<code>Type = admin</code>）</th></tr></thead>
+          <tbody>
+            <tr><td><strong>查看启用中的记录</strong></td><td>可以</td><td>可以</td></tr>
+            <tr><td><strong>编辑机台名称、类型、分类、预算人力</strong></td><td>可以</td><td>可以</td></tr>
+            <tr><td><strong>新增机台 / 活动</strong></td><td>不可</td><td>可以</td></tr>
+            <tr><td><strong>显示已隐藏 / 隐藏 / 恢复记录</strong></td><td>不可</td><td>可以</td></tr>
+            <tr><td><strong>拖动调整显示顺序</strong></td><td>不可</td><td>可以</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="editing" class="dg-doc-section">
+      <h2>编辑预算与机台信息</h2>
+      <ol>
+        <li>在工序选择页点击要维护的工序（或在顶部栏点击<strong>切换工序</strong>）。</li>
+        <li>直接在表格中修改<strong>机台 / 活动</strong>、<strong>类型</strong>（<code>Routine</code> 或 <code>Non-routine</code>）、<strong>分类</strong>（可从已有分类下拉建议中选择，也可直接输入新文本）或<strong>预算人力</strong>。</li>
+        <li><strong>预算人力</strong>接受非负数字（最多 8 位整数和 12 位小数）；留空将按 <code>0</code> 保存。顶部的<strong>预算总人力</strong>会随编辑实时更新。</li>
+        <li>已有记录的<strong>工位号</strong>、<strong>成本中心</strong>、<strong>最后更新</strong>为只读，以保护关键主键标识。</li>
+        <li>有改动的行会自动高亮；随时可点击<strong>撤销更改</strong>一键还原所有未保存内容。</li>
+      </ol>
+    </section>
+
+    <section id="admin" class="dg-doc-section">
+      <h2>管理员功能：新增、隐藏与排序</h2>
+      <ul>
+        <li><strong>新增机台 / 活动：</strong>点击<strong>+ 新增机台 / 活动</strong>。填写必填的<strong>工位号</strong>（<code>1–32767</code> 的正整数，在同一工序的启用与已隐藏记录中必须唯一），系统会按规则生成唯一 ID <code>&lt;process&gt;_&lt;station_code&gt;</code>。<strong>成本中心</strong>与<strong>工序代码</strong>会自动预填该工序的常用值，也可在弹窗内修改。</li>
+        <li><strong>隐藏与恢复：</strong>点击启用行的<strong>隐藏</strong>即可将其标记为隐藏（不再显示在 HC 扫码分派与常规 HC 页面中）。勾选顶部栏的<strong>显示已隐藏</strong>即可查看所有隐藏行，并可点击<strong>恢复</strong>重新启用。</li>
+        <li><strong>显示顺序：</strong>按住行首的 <strong>⋮⋮</strong> 手柄拖动，或点击 <strong>↑</strong> / <strong>↓</strong> 按钮，即可设置本工序内从 <code>1..N</code> 的显示顺序。若筛选框内有关键字，请先清空筛选框再排序。</li>
+      </ul>
+      <p class="dg-doc-note"><strong>提示：</strong>显示顺序按各工序独立维护，因为日常选择机台均在同一工序内进行。</p>
+    </section>
+
+    <section id="confirm" class="dg-doc-section">
+      <h2>确认提交与缓存刷新</h2>
+      <p>点击<strong>确认提交</strong>后，页面会展示本次所有更改的汇总，确认后通过单次数据库事务原子写入。保存成功后会自动向 <code>MQPDHeadCount.log</code> 追加日志，通知 Python Dash 页面刷新缓存。</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>页眉与页面导览</h2>
+      <p>可使用页眉按钮切换浅色/深色主题、切换 English / 中文、打开本手册或重新启动分步页面导览。更多通用登录与界面说明请查看 <a href="{{.Base}}/help">dash_go 使用手册</a>。</p>
+    </section>
+  </article>
+</div>
+{{end}}
+{{end}}

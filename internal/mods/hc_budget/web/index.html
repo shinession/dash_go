@@ -1,0 +1,110 @@
+{{define "content"}}
+{{template "message_screen" .}}
+
+<section id="screen-picker" class="screen hidden" data-tour-screen="hc_budget.picker">
+  <h1>{{.T "hb.title"}}</h1>
+  <p class="muted">{{.T "hb.ui.pick_process"}}</p>
+  <div id="process-buttons" class="process-buttons"{{.Tour "hb.tour.picker"}}></div>
+  <p class="muted small" id="picker-user"></p>
+</section>
+
+<div id="screen-app" class="hidden" data-tour-screen="hc_budget.table">
+  <div class="pagebar" id="pagebar" data-tour-sticky>
+    <div class="title">
+      <span id="process-name" class="process-name"></span>
+      <span id="role-badge" class="role-badge hidden">{{.T "hb.ui.role_admin"}}</span>
+      <button id="change-process" type="button" class="btn ghost btn-compact">{{.T "hb.ui.change_process"}}</button>
+    </div>
+    <div class="controls"{{.Tour "hb.tour.controls"}}>
+      <input id="search-input" type="search" class="search-input" autocomplete="off" aria-label="{{.T "hb.ui.search_label"}}" placeholder="{{.T "hb.ui.search_placeholder"}}">
+      <label id="show-hidden-wrap" class="toggle-check hidden">
+        <input id="show-hidden" type="checkbox">
+        <span id="show-hidden-label">{{.T "hb.ui.show_hidden" "n" 0}}</span>
+      </label>
+      <button id="btn-add" type="button" class="dg-btn dg-btn-small hidden"{{.Tour "hb.tour.add"}}>{{.T "hb.ui.add_btn"}}</button>
+    </div>
+    <div class="counters" id="counters"{{.Tour "hb.tour.counters"}}></div>
+  </div>
+
+  <main class="budget-main">
+    <div class="toolbar">
+      <p id="mode-hint" class="muted small toolbar-hint"></p>
+      <div class="actions"{{.Tour "hb.tour.actions"}}>
+        <button id="btn-discard" type="button" class="btn ghost" disabled>{{.T "hb.ui.discard"}}</button>
+        <button id="btn-confirm" type="button" class="btn primary" disabled>{{.T "hb.ui.confirm"}}</button>
+      </div>
+    </div>
+
+    <div class="table-card"{{.Tour "hb.tour.table"}}>
+      <div class="table-wrap">
+        <table class="budget-table" id="budget-table">
+          <thead>
+            <tr>
+              <th id="th-order" class="col-order admin-only hidden"{{.Tour "hb.tour.reorder"}}>{{.T "hb.ui.col_order"}}</th>
+              <th class="col-station">{{.T "hb.ui.col_station"}}</th>
+              <th class="col-machine">{{.T "hb.ui.col_machine"}}</th>
+              <th class="col-type">{{.T "hb.ui.col_type"}}</th>
+              <th class="col-category">{{.T "hb.ui.col_category"}}</th>
+              <th class="col-budget">{{.T "hb.ui.col_budget"}}</th>
+              <th class="col-cc">{{.T "hb.ui.col_cost_center"}}</th>
+              <th class="col-updated">{{.T "hb.ui.col_updated"}}</th>
+              <th id="th-status" class="col-status admin-only hidden">{{.T "hb.ui.col_status"}}</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div id="table-empty" class="empty-state hidden"></div>
+    </div>
+  </main>
+</div>
+
+<datalist id="category-suggestions"></datalist>
+
+<dialog id="add-dialog" class="add-dialog">
+  <form id="add-form" method="dialog" novalidate>
+    <h3>{{.T "hb.ui.add_title"}}</h3>
+    <div id="add-error" class="dg-alert err hidden"></div>
+    <div class="form-grid">
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_station"}}</span>
+        <input id="add-station" type="number" min="1" max="32767" step="1" required>
+        <span id="add-id-preview" class="field-hint"></span>
+      </label>
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_type"}}</span>
+        <select id="add-type">
+          <option value="Routine">{{.T "hb.ui.type_routine"}}</option>
+          <option value="Non-routine">{{.T "hb.ui.type_non_routine"}}</option>
+        </select>
+      </label>
+      <label class="dg-field span-2">
+        <span>{{.T "hb.ui.add_machine"}}</span>
+        <input id="add-machine" type="text" maxlength="120" required>
+      </label>
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_budget"}}</span>
+        <input id="add-budget" type="text" inputmode="decimal" placeholder="0">
+      </label>
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_category"}}</span>
+        <input id="add-category" type="text" maxlength="80" list="category-suggestions" placeholder="{{.T "hb.ui.add_category_placeholder"}}">
+      </label>
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_cost_center"}}</span>
+        <input id="add-cost-center" type="text" maxlength="4">
+      </label>
+      <label class="dg-field">
+        <span>{{.T "hb.ui.add_process_code"}}</span>
+        <input id="add-process-code" type="number" min="-32768" max="32767" step="1">
+      </label>
+    </div>
+    <div class="dlg-actions">
+      <button id="add-cancel" type="button" class="btn">{{.T "ui.cancel"}}</button>
+      <button id="add-submit" type="submit" class="btn primary">{{.T "hb.ui.add_submit"}}</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dialog"></dialog>
+{{end}}

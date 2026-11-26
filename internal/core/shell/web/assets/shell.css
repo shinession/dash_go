@@ -187,7 +187,15 @@ dialog h3 { margin: 0 0 .6rem; font-size: 1.25rem; }
 dialog .dlg-body { max-height: 52vh; overflow: auto; margin-bottom: 1rem; }
 dialog .dlg-actions { display: flex; justify-content: flex-end; gap: .6rem; }
 
-/* ---- pages of the shell: landing, login ---------------------------------------------------------------------- */
+/* ---- pages of the shell: landing, login, shared process picker ----------------------------------------------- */
+
+.screen { max-width: 760px; margin: 8vh auto; padding: 0 1.5rem; text-align: center; }
+.process-buttons { display: flex; flex-wrap: wrap; gap: .9rem; justify-content: center; margin: 1.5rem 0; }
+.process-buttons button {
+  min-width: 9rem; padding: 1.1rem 1.6rem; font-size: 1.4rem; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--panel); cursor: pointer;
+}
+.process-buttons button:hover, .process-buttons button:focus-visible { border-color: var(--accent); outline: none; }
 
 .dg-main { padding: 1.5rem 1.2rem 2rem; }
 .dg-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }

@@ -436,6 +436,16 @@ func TestStaticFilesOfTheShell(t *testing.T) {
 	if rec := f.get("/dash_go/_shell/../shell.go"); rec.Code == 200 {
 		t.Error("only the files of web/assets are served")
 	}
+	icons := f.get("/dash_go/_shell/icons.svg").Body.String()
+	for _, sym := range []string{`id="scanner"`, `id="budget"`} {
+		if !strings.Contains(icons, sym) {
+			t.Errorf("icons.svg lacks %s", sym)
+		}
+	}
+	js := f.get("/dash_go/_shell/shell.js").Body.String()
+	if !strings.Contains(js, "picker:") || !strings.Contains(js, "'hc.process'") {
+		t.Error("shell.js must expose the shared hc.process picker helper")
+	}
 }
 
 func TestInitials(t *testing.T) {

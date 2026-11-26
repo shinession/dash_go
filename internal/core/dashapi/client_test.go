@@ -37,8 +37,34 @@ func TestHCProfileSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 	p, err := New(srv.URL+"/api", "salt", time.Second).HCProfile(context.Background(), "AB12C34")
-	if err != nil || p.Name != "Test User" || len(p.Processes) != 2 {
+	if err != nil || p.Name != "Test User" || len(p.Processes) != 2 || p.IsAdmin() {
 		t.Fatalf("%+v %v", p, err)
+	}
+}
+
+func TestHCProfileTypeAndIsAdmin(t *testing.T) {
+	cases := []struct {
+		body      string
+		wantType  string
+		wantAdmin bool
+	}{
+		{`{"Response":"ok","name":"Admin User","ee_code":"AD01","type":"admin","processes":["Winder"]}`, "admin", true},
+		{`{"Response":"ok","name":"Admin Case","ee_code":"AD02","type":" Admin ","processes":["Winder"]}`, " Admin ", true},
+		{`{"Response":"ok","name":"Normal User","ee_code":"US01","type":"user","processes":["Winder"]}`, "user", false},
+		{`{"Response":"ok","name":"Legacy Backend","ee_code":"LG01","processes":["Winder"]}`, "", false},
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		p, err := New(srv.URL+"/api", "salt", time.Second).HCProfile(context.Background(), "X")
+		srv.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.body, err)
+		}
+		if p.Type != tc.wantType || p.IsAdmin() != tc.wantAdmin {
+			t.Errorf("%s: got Type=%q IsAdmin=%v, want Type=%q IsAdmin=%v", tc.body, p.Type, p.IsAdmin(), tc.wantType, tc.wantAdmin)
+		}
 	}
 }
 

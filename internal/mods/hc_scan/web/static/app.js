@@ -163,7 +163,7 @@
       message(t('hc.ui.no_permission_title'), t('hc.ui.no_permission_text'));
       return;
     }
-    const remembered = memory.get('process');
+    const remembered = dg.picker.get();
     if (remembered && me.processes.includes(remembered)) {
       startSession(remembered, memory.get('date'), memory.get('shift'));
     } else {
@@ -173,10 +173,12 @@
 
   function renderPicker() {
     stopPolling();
-    memory.set('process', null);
-    const box = $('process-buttons');
-    box.replaceChildren(...state.me.processes.map((p) => el('button', { type: 'button', text: p, onclick: () => startSession(p) })));
-    $('picker-user').textContent = t('hc.ui.signed_in_as', { name: state.me.user.name, ee: state.me.user.ee });
+    dg.picker.set(null);
+    dg.picker.render({
+      processes: state.me.processes,
+      signedInText: t('hc.ui.signed_in_as', { name: state.me.user.name, ee: state.me.user.ee }),
+      onSelect: (p) => startSession(p),
+    });
     show('picker');
     if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.picker', { skipHeaderIfSeen: true }));
   }
@@ -186,7 +188,7 @@
     state.date = date || state.me.config.production_date;
     state.shift = shift === 'AM' || shift === 'PM' ? shift : state.me.config.default_shift;
     state.board = null;
-    memory.set('process', process);
+    dg.picker.set(process);
     $('process-name').textContent = process;
     $('date').value = state.date;
     syncShiftButtons();
