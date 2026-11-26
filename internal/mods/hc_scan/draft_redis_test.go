@@ -24,13 +24,13 @@ func TestRedisDraftsRoundTrip(t *testing.T) {
 	store, mr := newRedisDrafts(t)
 	ctx := context.Background()
 	e := Entry{EE: "AB12C01", Name: "Alice", Source: SourceAuto, MachineID: "Winder_515", HC: 0.5, Level: 3, Flags: []Flag{{Code: FlagNoMTR, Severity: SeverityWarn, Text: "x"}},
-		Existing: []HCEntry{{Machine: "M", HC: 1}}, ScannedAt: testNow, ScannedBy: "Lead Er"}
+		Existing: []HCEntry{{Process: "Winder", Machine: "M", HC: 1, MachineID: "Winder_515"}}, ScannedAt: testNow, ScannedBy: "Lead Er"}
 	if err := store.PutEntry(ctx, testKey, e); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Entries(ctx, testKey)
 	if err != nil || len(got) != 1 || got["AB12C01"].MachineID != "Winder_515" || got["AB12C01"].HC != 0.5 || len(got["AB12C01"].Flags) != 1 ||
-		!got["AB12C01"].ScannedAt.Equal(testNow) || got["AB12C01"].Existing[0].Machine != "M" {
+		!got["AB12C01"].ScannedAt.Equal(testNow) || got["AB12C01"].Existing[0] != (HCEntry{Process: "Winder", Machine: "M", HC: 1, MachineID: "Winder_515"}) {
 		t.Fatalf("entries: %+v %v", got, err)
 	}
 	key := "dash_go:hc_scan:v1:Winder:20261119:AM:entries"

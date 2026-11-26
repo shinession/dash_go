@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"dash_go/internal/core/auth"
 	"dash_go/internal/core/i18n"
@@ -150,7 +151,11 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		work, leave, leaveHC = s.splitEntries(cur.Entries)
 	}
 	if e.Source == SourceAuto && len(work) > 0 {
-		return DayRecord{}, msg("hc.skip.changed_record", "machine", work[0].Machine)
+		machine := firstNonEmpty(strings.TrimSpace(work[0].Machine), strings.TrimSpace(work[0].MachineID))
+		if m, ok := d.resolve(work[0], d.personProcess(e.EE)); ok {
+			machine = strings.TrimSpace(m.Name)
+		}
+		return DayRecord{}, msg("hc.skip.changed_record", "machine", machine)
 	}
 	workHC := availHC(leaveHC)
 	if leaveHC >= 1-eps {
@@ -179,9 +184,16 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 
 	share := splitHC(workHC, len(machines))
 	entries := make([]HCEntry, 0, len(leave)+len(machines))
-	entries = append(entries, leave...)
+	for _, l := range leave {
+		l.MachineID = "" // leave pseudo-machine entries omit machine_id
+		entries = append(entries, l)
+	}
 	for _, m := range machines {
-		entries = append(entries, HCEntry{Process: k.Process, Machine: m.Name, HC: share})
+		id := strings.TrimSpace(m.ID)
+		if s.isLeavePseudoMachine(m.Name) {
+			id = ""
+		}
+		entries = append(entries, HCEntry{Process: k.Process, Machine: m.Name, HC: share, MachineID: id})
 	}
 	row := DayRecord{
 		UID: fmt.Sprintf("%s_%s", e.EE, k.Date.Format("20060102")), EE: e.EE, Date: k.Date,

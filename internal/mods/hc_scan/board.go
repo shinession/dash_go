@@ -366,7 +366,7 @@ func sumHC(entries []HCEntry) float64 {
 // entryLabel says where a share of the day is: "<process> / <machine>", or only the machine when the entry has no
 // process.
 func entryLabel(h HCEntry) string {
-	machine := strings.TrimSpace(h.Machine)
+	machine := firstNonEmpty(strings.TrimSpace(h.Machine), strings.TrimSpace(h.MachineID))
 	if p := strings.TrimSpace(h.Process); p != "" {
 		return p + " / " + machine
 	}

@@ -151,7 +151,7 @@ func (s *Service) useExisting(d *dayData, e *Entry) {
 		e.MachineID, e.MachineName, e.Level = ids[0], strings.Join(names, ", "), d.levelOn(e.EE, bestHere)
 	} else {
 		e.MachineIDs, e.MachineNames = nil, nil
-		e.MachineName = best.Machine // a machine outside this process
+		e.MachineName = firstNonEmpty(best.Machine, best.MachineID) // a machine outside this process
 	}
 }
 

@@ -486,3 +486,109 @@ func TestBoardCandidatesOtherShiftAndOffDayWithSixDayRule(t *testing.T) {
 		t.Fatalf("AB12C06 must reappear after Remove: %+v", b3.OtherShift)
 	}
 }
+
+// Read-side machine matching prefers machine_id (t_mqpd_hc_table.id) over name so renamed machines still resolve on
+// the board, in budget usage, in existing-record scans and in recent-days ranking, while legacy entries without
+// machine_id fall back to (process, machine).
+func TestReadMatchesByMachineIDFirstEvenAfterRename(t *testing.T) {
+	env := newTestEnv(t)
+	// Rename Winder_515 and Winder_520 in t_mqpd_hc_table while keeping their IDs and MTR NameToCIM mapping.
+	env.repo.machines[0].Name = "Winder 515 Renamed"
+	env.repo.machines[1].Name = "Winder 520 Renamed"
+	env.repo.mtr.NameToCIM["Winder 515 Renamed"] = "C515"
+	env.repo.mtr.NameToCIM["Winder 520 Renamed"] = "C520"
+	// Update AB12C02's 3 recent history records to hold an old name snapshot + machine_id "Winder_520".
+	for i := 0; i < 3; i++ {
+		env.repo.records[i].Entries[0] = HCEntry{Process: "Winder", Machine: "Old Winder 520 Snapshot", HC: 1, MachineID: "Winder_520"}
+	}
+	// AB12C01 already has a record today with the old name snapshot + machine_id "Winder_515" (1/1 budget full).
+	env.addRecord("AB12C01", "AM", "W", HCEntry{Process: "Winder", Machine: "Old Winder 515 Snapshot", HC: 1, MachineID: "Winder_515"})
+
+	b := env.board(t)
+	m515 := card(t, b, "Winder_515")
+	if got := memberEEs(m515); len(got) != 1 || got[0] != "AB12C01" || m515.Used != 1 || len(b.Elsewhere) != 0 {
+		t.Fatalf("renamed machine must resolve by machine_id on the board: card=%+v elsewhere=%+v", m515, b.Elsewhere)
+	}
+	// Scanning AB12C01 recognises the existing assignment by machine_id and displays the current machine name.
+	existing := env.scan(t, "AB12C01")
+	if existing.Status != "existing" || existing.Entry.MachineID != "Winder_515" || existing.Entry.MachineName != "Winder 515 Renamed" {
+		t.Fatalf("existing scan must resolve renamed machine by machine_id: %s %+v", existing.Status, existing.Entry)
+	}
+	if !strings.Contains(flagText(existing.Entry.Flags, FlagHasRecord), "Winder 515 Renamed 1") {
+		t.Fatalf("HAS_RECORD flag should reflect current name: %+v", existing.Entry.Flags)
+	}
+	// Scanning AB12C02 counts the 3 recent history days on Winder_520 via machine_id despite the old name snapshot.
+	recent := env.scan(t, "AB12C02")
+	if recent.Status != "assigned" || recent.Entry.MachineID != "Winder_520" || recent.Entry.RecentDays != 3 {
+		t.Fatalf("recent_days must match history by machine_id: %s %+v", recent.Status, recent.Entry)
+	}
+	// Scanning AB12C05 (Lv2 on 515 only) sees 515 full because AB12C01's seat was counted via machine_id.
+	full := env.scan(t, "AB12C05")
+	if full.Status != "unassigned" || !strings.Contains(full.Entry.Reason, "are full") {
+		t.Fatalf("budget usage must count renamed machine by machine_id: %s %q", full.Status, full.Entry.Reason)
+	}
+}
+
+// machine_id takes precedence over colliding/swapped names and never falls back to name matching when a non-empty
+// machine_id belongs to another process or a hidden row; only legacy entries without machine_id fall back.
+func TestMachineIDPrecedenceCrossProcessAndLegacyFallback(t *testing.T) {
+	env := newTestEnv(t)
+	withSharedNames(env)
+	// Swap names: Winder_515 is now named "Line B" and Winder_520 is now named "Line A".
+	env.repo.machines[0].Name = "Line B"
+	env.repo.machines[1].Name = "Line A"
+
+	// 1. Entry with old name "Line A" but machine_id "Winder_515" must resolve to Winder_515 (not Winder_520).
+	env.addRecord("AB12C01", "AM", "W", HCEntry{Process: "Winder", Machine: "Line A", HC: 1, MachineID: "Winder_515"})
+	// 2. Winder member with All Process + "Group Leader" but machine_id "Slitter_GL" must NOT match Winder_GL (goes Elsewhere).
+	env.addRecord("AB12C02", "AM", "W", HCEntry{Process: AllProcess, Machine: "Group Leader", HC: 1, MachineID: "Slitter_GL"})
+	// 3. Winder member with hidden/deleted machine_id must NOT loosely match any active Winder machine (goes Elsewhere).
+	env.addRecord("AB12C03", "AM", "W", HCEntry{Process: "Winder", Machine: "Line A", HC: 1, MachineID: "Winder_DELETED"})
+	// 4. Legacy entry with whitespace-only machine_id falls back to (process, machine) -> matches Winder_520 ("Line A").
+	env.addRecord("AB12C04", "AM", "W", HCEntry{Process: "Winder", Machine: "Line A", HC: 1, MachineID: "   "})
+	// 5. Slitter supporter on Winder_T20 using All Process + machine_id "Winder_T20" resolves directly by machine_id.
+	env.addRecord("AB12C05", "AM", "W", HCEntry{Process: AllProcess, Machine: "Old T20", HC: 1, MachineID: "Winder_T20"})
+
+	b := env.board(t)
+	if got := memberEEs(card(t, b, "Winder_515")); len(got) != 1 || got[0] != "AB12C01" {
+		t.Fatalf("machine_id must win over swapped machine name: %v", got)
+	}
+	if got := memberEEs(card(t, b, "Winder_520")); len(got) != 1 || got[0] != "AB12C04" {
+		t.Fatalf("blank machine_id must fall back to (process, machine): %v", got)
+	}
+	if got := memberEEs(card(t, b, "Winder_GL")); len(got) != 0 {
+		t.Fatalf("Slitter_GL machine_id must never fall back to Winder_GL: %v", got)
+	}
+	t20 := card(t, b, "Winder_T20")
+	if len(t20.Members) != 1 || t20.Members[0].EE != "AB12C05" || t20.Members[0].From != "Slitter" {
+		t.Fatalf("supporter with Winder_T20 machine_id must appear on Winder_T20: %+v", t20.Members)
+	}
+	var awayEEs []string
+	for _, x := range b.Elsewhere {
+		awayEEs = append(awayEEs, x.EE)
+	}
+	sort.Strings(awayEEs)
+	if strings.Join(awayEEs, ",") != "AB12C02,AB12C03" {
+		t.Fatalf("unmatched non-empty machine_id entries for Winder members must appear in Elsewhere: %+v", b.Elsewhere)
+	}
+}
+
+func TestCSVAndNWCSharedMachinesMatchByMachineID(t *testing.T) {
+	env := newTestEnv(t)
+	env.svc.Processes = append(env.svc.Processes, "CSV", "NWC")
+	env.perms.procs = append(env.perms.procs, "CSV", "NWC")
+	env.repo.machines = append(env.repo.machines,
+		Machine{ID: "CSV_2801", Name: "CSV 2801 New", Process: "CSV", Type: "Routine", Budget: 1, Seq: 1},
+		Machine{ID: "NWC_3301", Name: "NWC 3301 New", Process: "NWC", Type: "Routine", Budget: 1, Seq: 2},
+	)
+	env.repo.mes = append(env.repo.mes, MESRow{EE: "AB12C30", Name: "Zoe CSV", CostCenter: "2083", Shift: "PA", EffectiveMth: d(2026, 11, 1)})
+	env.addRecord("AB12C30", "AM", "W", HCEntry{Process: "NWC", Machine: "NWC_3301", HC: 1, MachineID: "NWC_3301"})
+
+	b, err := env.svc.Board(context.Background(), testUser, Key{Process: "CSV", Date: testDate, Shift: ShiftAM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := memberEEs(card(t, b, "NWC_3301")); len(got) != 1 || got[0] != "AB12C30" || len(b.Elsewhere) != 0 {
+		t.Fatalf("CSV board must match shared NWC machine by machine_id: members=%v elsewhere=%+v", got, b.Elsewhere)
+	}
+}

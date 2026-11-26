@@ -77,7 +77,11 @@ func (s *Service) staticFlags(d *dayData, p Person, rec *DayRecord, schedule str
 	if len(work) > 0 {
 		parts := make([]string, 0, len(work))
 		for _, h := range work {
-			parts = append(parts, h.Machine+" "+trimFloat(h.HC))
+			name := firstNonEmpty(strings.TrimSpace(h.Machine), strings.TrimSpace(h.MachineID))
+			if m, ok := d.resolve(h, p.Process); ok {
+				name = strings.TrimSpace(m.Name)
+			}
+			parts = append(parts, name+" "+trimFloat(h.HC))
 		}
 		sev := SeverityInfo
 		if NormShift(rec.Actual) != "" && NormShift(rec.Actual) != d.key.Shift {

@@ -65,7 +65,7 @@ func (s *Service) leaderPlacement(d *dayData, p Person, history []DayRecord) (Ma
 			continue // a leave day says nothing about the work
 		}
 		for _, h := range work {
-			if m, ok := d.machines.Resolve(h.Machine); ok {
+			if m, ok := d.resolve(h, p.Process); ok {
 				if row, isLeader := leaderIDs[m.ID]; isLeader {
 					return row, msg("hc.reason.leader_history", "row", row.Name, "date", rec.Date.Format("2006-01-02")), true
 				}

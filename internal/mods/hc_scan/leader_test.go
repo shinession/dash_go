@@ -135,7 +135,37 @@ func TestLeaderLineIsSavedWithoutAcknowledgement(t *testing.T) {
 		t.Fatalf("a clean leader line needs no acknowledgement: %+v %v", res, err)
 	}
 	row := env.repo.written[0][0]
-	if len(row.Entries) != 1 || row.Entries[0] != (HCEntry{Process: "Winder", Machine: "Group Leader", HC: 1}) || row.Actual != "AM" {
+	if len(row.Entries) != 1 || row.Entries[0] != (HCEntry{Process: "Winder", Machine: "Group Leader", HC: 1, MachineID: "Winder_9001"}) || row.Actual != "AM" {
 		t.Fatalf("written row: %+v", row)
+	}
+}
+
+func TestLeaderByHistoryMatchesByMachineIDFirstAndIgnoresOtherProcess(t *testing.T) {
+	env := newLeaderEnv(t)
+	env.repo.machines = append(env.repo.machines, Machine{ID: "Slitter_9001", Name: "Group Leader", Process: "Slitter", Type: "Non-routine", Budget: 1, Seq: 2})
+	for _, ee := range []string{"AB12C26", "AB12C27", "AB12C28"} {
+		env.repo.mes = append(env.repo.mes, MESRow{EE: ee, Name: "Person " + ee[5:], CostCenter: "2085", Shift: "PA", EffectiveMth: d(2026, 11, 1)})
+	}
+	yesterday := testDate.AddDate(0, 0, -1)
+	addRec := func(ee string, entry HCEntry) {
+		env.repo.records = append(env.repo.records, DayRecord{
+			UID: fmt.Sprintf("%s_%s", ee, yesterday.Format("20060102")), EE: ee, Date: yesterday, Actual: "AM", Entries: []HCEntry{entry},
+		})
+	}
+	// Renamed snapshot name, but machine_id matches Winder_9001 -> recognised as Winder leader.
+	addRec("AB12C26", HCEntry{Process: "Winder", Machine: "Old GL Title", HC: 1, MachineID: "Winder_9001"})
+	// Slitter's Group Leader with machine_id -> must NOT match Winder_9001.
+	addRec("AB12C27", HCEntry{Process: "Slitter", Machine: "Group Leader", HC: 1, MachineID: "Slitter_9001"})
+	// Legacy Slitter Group Leader without machine_id -> must NOT match Winder_9001.
+	addRec("AB12C28", HCEntry{Process: "Slitter", Machine: "Group Leader", HC: 1})
+
+	if res := env.scan(t, "AB12C26"); res.Status != "assigned" || res.Entry.MachineID != "Winder_9001" {
+		t.Fatalf("leader history with machine_id must match even when machine name snapshot changed: %s %+v", res.Status, res.Entry)
+	}
+	if res := env.scan(t, "AB12C27"); res.Status != "unassigned" || res.Entry.MachineID != "" {
+		t.Fatalf("leader history of another process's machine_id must not match Winder_9001: %s %+v", res.Status, res.Entry)
+	}
+	if res := env.scan(t, "AB12C28"); res.Status != "unassigned" || res.Entry.MachineID != "" {
+		t.Fatalf("legacy leader history of another process must not match Winder_9001: %s %+v", res.Status, res.Entry)
 	}
 }

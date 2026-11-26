@@ -318,8 +318,13 @@ func (d *dayData) entryHere(h HCEntry, personProcess string) bool {
 }
 
 // resolve finds the machine card of a work entry of a person of the given process, or false when the entry is not on
-// this page or names no machine of the process.
+// this page or names no machine of the process. Entries carrying machine_id (t_mqpd_hc_table.id) are matched first by
+// id so machine renames never break matching and cross-process name collisions cannot happen; legacy entries without
+// machine_id fall back to (process, machine) matching.
 func (d *dayData) resolve(h HCEntry, personProcess string) (Machine, bool) {
+	if id := strings.TrimSpace(h.MachineID); id != "" {
+		return d.machines.ByID(id)
+	}
 	if !d.entryHere(h, personProcess) {
 		return Machine{}, false
 	}
@@ -337,12 +342,20 @@ func (d *dayData) foreign(process string) string {
 	return process
 }
 
+const deleteRecordMachine = "Delete Record"
+
 func (s *Service) isLeave(name string) bool { return contains(s.LeaveList, name) }
+
+// isLeavePseudoMachine reports whether name is a leave option from SHIFT_LEAVE_PATTERN or "Delete Record".
+// Such pseudo-machine entries omit machine_id in machine_hc_json.
+func (s *Service) isLeavePseudoMachine(name string) bool {
+	return s.isLeave(name) || strings.EqualFold(strings.TrimSpace(name), deleteRecordMachine)
+}
 
 // splitEntries separates the leave options from the machines of a record and sums the leave HC.
 func (s *Service) splitEntries(entries []HCEntry) (work, leave []HCEntry, leaveHC float64) {
 	for _, h := range entries {
-		if h.HC <= 0 || strings.TrimSpace(h.Machine) == "" {
+		if h.HC <= 0 || (strings.TrimSpace(h.Machine) == "" && strings.TrimSpace(h.MachineID) == "") {
 			continue
 		}
 		if s.isLeave(h.Machine) {

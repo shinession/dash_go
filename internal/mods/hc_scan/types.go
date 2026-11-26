@@ -101,10 +101,13 @@ const (
 )
 
 // HCEntry is one item of machine_hc_json: a machine or leave option and its share of the day.
+// Regular machine/activity entries carry MachineID (t_mqpd_hc_table.id) alongside the Machine name snapshot;
+// leave pseudo-machine entries (SHIFT_LEAVE_PATTERN leave options and Delete Record) omit MachineID.
 type HCEntry struct {
-	Process string  `json:"process,omitempty"`
-	Machine string  `json:"machine"`
-	HC      float64 `json:"hc"`
+	Process   string  `json:"process,omitempty"`
+	Machine   string  `json:"machine"`
+	HC        float64 `json:"hc"`
+	MachineID string  `json:"machine_id,omitempty"`
 }
 
 // Entry is the draft line of one scanned person. It is stored as JSON in the draft store.

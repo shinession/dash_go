@@ -240,9 +240,9 @@ INSERT INTO t_daily_attn_data (uid, ee_code, prodn_date, "shift", schedule_shift
 		seen = current
 		return []DayRecord{
 			{UID: "AB12C01_20261119", EE: "AB12C01", Date: testDate, Shift: "PA", Schedule: "W", Actual: "AM", AddtOT: 2, BuildIn: 0.5, TotalOT: 2.5, Remark: current["AB12C01"].Remark,
-				Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 0.5}, {Process: "Winder", Machine: "Winder_515", HC: 0.5}}},
-			{UID: "AB12C03_20261119", EE: "AB12C03", Date: testDate, Shift: "PA", Schedule: "W", Actual: "AM", BuildIn: 1, TotalOT: 1, Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1}}},
-			{UID: "AB12C05_20261119", EE: "AB12C05", Date: testDate, Shift: "PA", Schedule: "W", Actual: "PM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1}}},
+				Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 0.5}, {Process: "Winder", Machine: "Winder_515", HC: 0.5, MachineID: "Winder_515"}}},
+			{UID: "AB12C03_20261119", EE: "AB12C03", Date: testDate, Shift: "PA", Schedule: "W", Actual: "AM", BuildIn: 1, TotalOT: 1, Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1, MachineID: "Winder_520"}}},
+			{UID: "AB12C05_20261119", EE: "AB12C05", Date: testDate, Shift: "PA", Schedule: "W", Actual: "PM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1, MachineID: "Winder_520"}}},
 		}, nil
 	})
 	if err != nil || len(written) != 3 {
@@ -257,7 +257,7 @@ INSERT INTO t_daily_attn_data (uid, ee_code, prodn_date, "shift", schedule_shift
 		t.Fatalf("one updated, one unhidden, one inserted, one untouched: %d", len(after))
 	}
 	for _, x := range after {
-		if x.EE == "AB12C01" && (len(x.Entries) != 2 || x.Entries[1].Machine != "Winder_515" || x.Remark == nil || *x.Remark != "old remark") {
+		if x.EE == "AB12C01" && (len(x.Entries) != 2 || x.Entries[0].MachineID != "" || x.Entries[1].Machine != "Winder_515" || x.Entries[1].MachineID != "Winder_515" || x.Remark == nil || *x.Remark != "old remark") {
 			t.Fatalf("updated row: %+v", x)
 		}
 		if x.EE == "AB12C03" && x.Actual != "AM" {
@@ -330,7 +330,7 @@ func TestPGServiceFlow(t *testing.T) {
 	}
 	var stored []HCEntry
 	if err := json.Unmarshal([]byte(hc), &stored); err != nil || shift != "PA" || sched != "W" || actual != "AM" ||
-		len(stored) != 1 || stored[0] != (HCEntry{Process: "Winder", Machine: "Winder_515", HC: 1}) {
+		len(stored) != 1 || stored[0] != (HCEntry{Process: "Winder", Machine: "Winder_515", HC: 1, MachineID: "Winder_515"}) {
 		t.Fatalf("stored row: %s %s %s %s", shift, sched, actual, hc)
 	}
 	board, err := svc.Board(ctx, user, testKey)

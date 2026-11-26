@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// machineIndex resolves the machine names stored in t_daily_attn_data to the machines of t_mqpd_hc_table.
+// machineIndex resolves the machine ids and names stored in t_daily_attn_data to the machines of t_mqpd_hc_table.
 type machineIndex struct {
 	machines []Machine
 	norm     []string // normName of the name of every machine, in the order of machines
@@ -22,6 +22,9 @@ func newMachineIndex(machines []Machine) *machineIndex {
 	idx := &machineIndex{machines: machines, norm: make([]string, len(machines)), byID: map[string]Machine{}, byName: map[string]Machine{}}
 	for i, m := range machines {
 		idx.byID[m.ID] = m
+		if tid := strings.TrimSpace(m.ID); tid != m.ID && tid != "" {
+			idx.byID[tid] = m
+		}
 		name := normName(m.Name)
 		idx.norm[i] = name
 		if _, dup := idx.byName[name]; !dup {
@@ -29,6 +32,16 @@ func newMachineIndex(machines []Machine) *machineIndex {
 		}
 	}
 	return idx
+}
+
+// ByID looks up a machine by its exact t_mqpd_hc_table.id (trimmed).
+func (x *machineIndex) ByID(id string) (Machine, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Machine{}, false
+	}
+	m, ok := x.byID[id]
+	return m, ok
 }
 
 // Resolve is the port of resolve_mqpd_hc_machine_id: an exact id, then the exact name, then the loose name match

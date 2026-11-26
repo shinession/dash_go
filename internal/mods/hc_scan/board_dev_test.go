@@ -108,8 +108,13 @@ func TestDevCopyBoardAgreesWithTheDailyAttnSummary(t *testing.T) {
 					}
 					named := false
 					for _, h := range d.recByEE[p.EE].Entries {
+						if _, ok := d.machines.ByID(h.MachineID); ok {
+							named = true
+							break
+						}
 						if inProcesses(here, h.Process) && strings.TrimSpace(h.Machine) != "" {
 							named = true
+							break
 						}
 					}
 					if !named {
@@ -234,7 +239,7 @@ func pythonSummary(svc *Service, d *dayData, shift string) dailySummary {
 			continue
 		}
 		for _, h := range rec.Entries {
-			if h.HC <= 0 || strings.TrimSpace(h.Machine) == "" {
+			if h.HC <= 0 || (strings.TrimSpace(h.Machine) == "" && strings.TrimSpace(h.MachineID) == "") {
 				continue
 			}
 			if svc.isLeave(h.Machine) {
@@ -246,7 +251,11 @@ func pythonSummary(svc *Service, d *dayData, shift string) dailySummary {
 			attributed := sched == shift || (sched == "" && NormShift(rec.Actual) == shift)
 			if attributed {
 				out.actual += h.HC
-				out.byMachine[strings.TrimSpace(h.Machine)] += h.HC
+				name := strings.TrimSpace(h.Machine)
+				if m, ok := d.machines.ByID(h.MachineID); ok {
+					name = strings.TrimSpace(m.Name)
+				}
+				out.byMachine[name] += h.HC
 			}
 		}
 	}
