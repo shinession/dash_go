@@ -284,6 +284,78 @@ func TestConfirmMachineIDSnapshotLeaveOmissionAndChangeLog(t *testing.T) {
 	}
 }
 
+func TestConfirmWritesLeaveAndMixedLeaveAssignments(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	// AB12C03 already has 0.5 MCL; AB12C04 already has 0.5 MCL.
+	env.repo.records = append(env.repo.records,
+		DayRecord{UID: "AB12C03_20261119", EE: "AB12C03", Date: testDate, Actual: "AM", Schedule: "W", Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 0.5}}},
+		DayRecord{UID: "AB12C04_20261119", EE: "AB12C04", Date: testDate, Actual: "AM", Schedule: "W", Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 0.5}}},
+	)
+	env.scan(t, "AB12C01")
+	env.scan(t, "AB12C02")
+	env.scan(t, "AB12C03")
+	env.scan(t, "AB12C04")
+
+	// AB12C01: pure ANL leave (1.0)
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"leave:ANL - Annual Leave"}); err != nil {
+		t.Fatal(err)
+	}
+	// AB12C02: Winder_520 (0.5) + ANL leave (0.5)
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C02", []string{"Winder_520", "leave:ANL - Annual Leave"}); err != nil {
+		t.Fatal(err)
+	}
+	// AB12C03: kept 0.5 MCL + selected 0.5 MCL -> merged 1.0 MCL
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C03", []string{"leave:MCL - Medical Leave"}); err != nil {
+		t.Fatal(err)
+	}
+	// AB12C04: kept 0.5 MCL + selected Winder_520 (0.25) + ANL (0.25)
+	if _, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C04", []string{"Winder_520", "leave:ANL - Annual Leave"}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := env.svc.Confirm(ctx, testUser, testKey, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Written) != 4 || len(res.NeedsAck) != 0 {
+		t.Fatalf("confirm result: %+v", res)
+	}
+	byEE := map[string]DayRecord{}
+	for _, r := range env.repo.written[0] {
+		byEE[r.EE] = r
+	}
+	// 1. Pure leave: actual_shift = leave name, machine_id omitted, build_in_ot = 0.
+	r1 := byEE["AB12C01"]
+	if r1.Actual != "ANL - Annual Leave" || r1.BuildIn != 0 || r1.TotalOT != 0 || len(r1.Entries) != 1 || r1.Entries[0] != (HCEntry{Process: "Winder", Machine: "ANL - Annual Leave", HC: 1}) {
+		t.Fatalf("pure leave row: %+v", r1)
+	}
+	raw1, _ := json.Marshal(r1.Entries)
+	if strings.Contains(string(raw1), "machine_id") {
+		t.Fatalf("pure leave must omit machine_id: %s", raw1)
+	}
+	// 2. Mixed 0.5 machine + 0.5 leave: actual_shift = AM, build_in_ot = 0.5 (work HC only).
+	r2 := byEE["AB12C02"]
+	if r2.Actual != "AM" || r2.BuildIn != 0.5 || len(r2.Entries) != 2 ||
+		r2.Entries[0] != (HCEntry{Process: "Winder", Machine: "ANL - Annual Leave", HC: 0.5}) ||
+		r2.Entries[1] != (HCEntry{Process: "Winder", Machine: "Winder_520", HC: 0.5, MachineID: "Winder_520"}) {
+		t.Fatalf("mixed leave+machine row: %+v", r2)
+	}
+	// 3. Kept 0.5 MCL + selected 0.5 MCL merges into 1.0 MCL with actual_shift = MCL and BuildIn = 0.
+	r3 := byEE["AB12C03"]
+	if r3.Actual != "MCL - Medical Leave" || r3.BuildIn != 0 || len(r3.Entries) != 1 || r3.Entries[0] != (HCEntry{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1}) {
+		t.Fatalf("merged full-day leave row: %+v", r3)
+	}
+	// 4. Kept 0.5 MCL + 0.25 ANL + 0.25 Winder_520: actual_shift = AM, BuildIn = 0.25.
+	r4 := byEE["AB12C04"]
+	if r4.Actual != "AM" || r4.BuildIn != 0.25 || len(r4.Entries) != 3 ||
+		r4.Entries[0] != (HCEntry{Process: "Winder", Machine: "MCL - Medical Leave", HC: 0.5}) ||
+		r4.Entries[1] != (HCEntry{Process: "Winder", Machine: "ANL - Annual Leave", HC: 0.25}) ||
+		r4.Entries[2] != (HCEntry{Process: "Winder", Machine: "Winder_520", HC: 0.25, MachineID: "Winder_520"}) {
+		t.Fatalf("part-day leave + mixed row: %+v", r4)
+	}
+}
+
 func containsAny(s string, parts ...string) bool {
 	for _, p := range parts {
 		if len(p) > 0 && strings.Contains(s, p) {

@@ -2,11 +2,13 @@ package hcscan
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"dash_go/internal/core/auth"
+	"dash_go/internal/core/i18n"
 	"dash_go/internal/version"
 )
 
@@ -99,7 +101,7 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 	today := ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
 	bv := &BoardView{
 		Process: d.key.Process, Date: d.key.Date.Format("2006-01-02"), Shift: d.key.Shift, ServerTime: s.Now(),
-		Locked: MonthLocked(d.key.Date, today),
+		Locked: MonthLocked(d.key.Date, today), LeaveOptions: s.leaveOptions(),
 	}
 
 	// machine cards: the people already saved in the database plus the pending lines, only on the machines of this
@@ -126,12 +128,9 @@ func (s *Service) buildBoard(ctx context.Context, d *dayData, pending map[string
 		if _, ok := placing(pending, e.EE); !ok {
 			continue
 		}
-		ids := e.SelectedMachineIDs()
-		share := splitHC(e.HC, len(ids))
-		for _, id := range ids {
-			if m, ok := d.machines.byID[id]; ok {
-				members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: share, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true, From: d.foreign(e.Process)})
-			}
+		selMachines, _, share := s.splitSelected(d, e)
+		for _, m := range selMachines {
+			members[m.ID] = append(members[m.ID], MemberView{EE: e.EE, Name: e.Name, HC: share, Level: d.levelOn(e.EE, m), Saved: false, Photo: s.photo(e.EE), Scaned: true, From: d.foreign(e.Process)})
 		}
 	}
 	unmapped := 0
@@ -223,9 +222,19 @@ func (s *Service) shiftPeople(d *dayData, pending map[string]Entry, bv *BoardVie
 		if isPlacing && leaveOfDay >= 1-eps {
 			leave, leaveOfDay = nil, 0 // Confirm replaces a full-day leave that the shift leader overrides
 		}
+		pendingLeave := false
 		switch {
 		case isPlacing:
-			placedHC += line.HC
+			selMachines, selLeaves, share := s.splitSelected(d, line)
+			if len(selLeaves) == 0 && len(selMachines) > 0 {
+				placedHC += line.HC
+			} else if len(selMachines) > 0 {
+				placedHC += round2(float64(len(selMachines)) * share)
+			}
+			if len(selLeaves) > 0 {
+				leave, leaveOfDay = mergeLeaveEntries(d.key.Process, leave, selLeaves, share)
+				pendingLeave = true
+			}
 		case len(work) > 0:
 			placedHC += sumHC(work)
 		case leaveOfDay >= 1-eps:
@@ -238,7 +247,7 @@ func (s *Service) shiftPeople(d *dayData, pending map[string]Entry, bv *BoardVie
 
 		if leaveOfDay > 0 {
 			leaveHC += leaveOfDay
-			v := LeaveView{EE: p.EE, Name: p.Name, Photo: s.photo(p.EE), HC: leaveOfDay}
+			v := LeaveView{EE: p.EE, Name: p.Name, Photo: s.photo(p.EE), HC: leaveOfDay, Pending: pendingLeave}
 			for _, h := range leave {
 				v.Items = append(v.Items, LeaveItem{Code: shortLeave(h.Machine), Name: strings.TrimSpace(h.Machine), HC: h.HC})
 			}
@@ -340,7 +349,242 @@ func (s *Service) boardCandidates(ctx context.Context, d *dayData, pending, othe
 	if bv.OffDay == nil {
 		bv.OffDay = []CandidateView{}
 	}
+	bv.OtherProcess = s.otherProcessCandidates(ctx, d, pending, otherPending)
 	return nil
+}
+
+// otherProcessCandidates finds unassigned Direct / Shift Leader employees from OTHER processes who are scheduled for
+// today's current shift and hold at least MTR Lv1 on at least one visible routine machine of this process.
+// Results are sorted by process first (HC_PROCESS_LIST order, then alphabetical), then by highest MTR level descending,
+// then by name and employee ID.
+func (s *Service) otherProcessCandidates(ctx context.Context, d *dayData, pending, otherPending map[string]Entry) []CandidateView {
+	here := RosterProcesses(d.key.Process)
+	type matchedMachine struct {
+		name  string
+		level int
+	}
+	var prelim []CandidateView
+	homeDraftProcs := map[string]bool{}
+	for _, p := range d.dir.All() {
+		if d.dir.Resigned(p) {
+			continue
+		}
+		if p.Direct != "Direct" && p.Direct != "Shift Leader" {
+			continue
+		}
+		proc := strings.TrimSpace(p.Process)
+		if proc == "" || inProcesses(here, proc) {
+			continue
+		}
+		var rec *DayRecord
+		var work []HCEntry
+		var leaveOfDay float64
+		if r, ok := d.recByEE[p.EE]; ok {
+			rec = &r
+			work, _, leaveOfDay = s.splitEntries(r.Entries)
+		}
+		if len(work) > 0 || leaveOfDay >= 1-eps {
+			continue
+		}
+		if _, inDraft := pending[p.EE]; inDraft {
+			continue
+		}
+		if _, inOther := placing(otherPending, p.EE); inOther {
+			continue
+		}
+		if d.calendarShift(p, rec) != d.key.Shift {
+			continue
+		}
+		maxLv := 0
+		var mlist []matchedMachine
+		for _, m := range d.machines.machines {
+			if !m.Routine() || m.CIMID == "" {
+				continue
+			}
+			lv := d.levelOn(p.EE, m)
+			if lv >= 1 {
+				if lv > maxLv {
+					maxLv = lv
+				}
+				mlist = append(mlist, matchedMachine{name: strings.TrimSpace(m.Name), level: lv})
+			}
+		}
+		if maxLv < 1 {
+			continue
+		}
+		sort.SliceStable(mlist, func(i, j int) bool { return mlist[i].level > mlist[j].level })
+		machLabels := make([]string, 0, len(mlist))
+		for _, mm := range mlist {
+			machLabels = append(machLabels, fmt.Sprintf("%s (Lv%d)", mm.name, mm.level))
+		}
+		sched := strings.TrimSpace(d.schedule(p.Shift))
+		if sched == "" && rec != nil {
+			sched = strings.TrimSpace(rec.Schedule)
+		}
+		prelim = append(prelim, CandidateView{
+			EE: p.EE, Name: p.Name, Process: proc, Shift: p.Shift, Schedule: sched,
+			Photo: s.photo(p.EE), HC: availHC(leaveOfDay), MaxLevel: maxLv, Machines: machLabels,
+		})
+		for _, hp := range s.homeDraftProcesses(proc) {
+			homeDraftProcs[hp] = true
+		}
+	}
+	// Exclude anyone already placed in their home process's draft for today's shift.
+	placedHome := map[string]bool{}
+	for hp := range homeDraftProcs {
+		if entries, err := s.Drafts.Entries(ctx, Key{Process: hp, Date: d.key.Date, Shift: d.key.Shift}); err == nil {
+			for ee := range entries {
+				if _, ok := placing(entries, ee); ok {
+					placedHome[ee] = true
+				}
+			}
+		}
+	}
+	out := make([]CandidateView, 0, len(prelim))
+	for _, c := range prelim {
+		if placedHome[c.EE] {
+			continue
+		}
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		oa, ob := s.processOrder(a.Process), s.processOrder(b.Process)
+		if oa != ob {
+			return oa < ob
+		}
+		if a.Process != b.Process {
+			return a.Process < b.Process
+		}
+		if a.MaxLevel != b.MaxLevel {
+			return a.MaxLevel > b.MaxLevel
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.EE < b.EE
+	})
+	return out
+}
+
+func (s *Service) homeDraftProcesses(memberProcess string) []string {
+	var out []string
+	if strings.EqualFold(strings.TrimSpace(memberProcess), "CSV & NWC") {
+		for _, p := range []string{"CSV", "NWC"} {
+			if contains(s.Processes, p) {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	for _, p := range s.Processes {
+		if strings.EqualFold(strings.TrimSpace(p), strings.TrimSpace(memberProcess)) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// EmployeeMTR returns all visible MTR proficiency records (Lv1+) of one employee across every process,
+// with records belonging to the current process grouped at the top and other processes below.
+func (s *Service) EmployeeMTR(ctx context.Context, u auth.User, process string, date time.Time, ee string) (*EmployeeMTRView, error) {
+	if err := s.checkProcess(ctx, u, process, false); err != nil {
+		return nil, err
+	}
+	ee = strings.ToUpper(strings.TrimSpace(ee))
+	if ee == "" {
+		return nil, newError(400, "invalid_id", i18n.P{"input": ""})
+	}
+	if date.IsZero() {
+		date = ProductionDate(s.Now(), s.Settings.ProductionDayOffsetHours)
+	}
+	name, empProcess := ee, ""
+	dateKey := date.Format("2006-01-02")
+	if dir, err := s.dirC.get(dateKey, func() (*Directory, error) {
+		mes, err := s.Repo.MESSnapshot(ctx, date)
+		if err != nil {
+			return nil, err
+		}
+		members, err := s.Repo.Members(ctx, date)
+		if err != nil {
+			return nil, err
+		}
+		return BuildDirectory(date, mes, members), nil
+	}); err == nil {
+		if p, ok := dir.Lookup(ee); ok {
+			if p.Name != "" {
+				name = p.Name
+			}
+			empProcess = p.Process
+		}
+	}
+	if name == ee {
+		if row, err := s.Repo.MESPerson(ctx, ee); err == nil && row != nil {
+			p := MESPerson(*row)
+			name, empProcess = p.Name, p.Process
+		}
+	}
+	records, err := s.Repo.EmployeeMTR(ctx, ee)
+	if err != nil {
+		return nil, s.internal("read employee mtr", err)
+	}
+
+	curProcs := MachineProcesses(process)
+	byProc := map[string][]MTRRecord{}
+	for _, rec := range records {
+		if rec.Level < 1 {
+			continue
+		}
+		proc := strings.TrimSpace(rec.Process)
+		byProc[proc] = append(byProc[proc], MTRRecord{
+			Process:   proc,
+			MachineID: strings.TrimSpace(rec.MachineID),
+			Machine:   firstNonEmpty(strings.TrimSpace(rec.Machine), strings.TrimSpace(rec.MachineID)),
+			Level:     rec.Level,
+		})
+	}
+	groups := make([]EmployeeMTRGroup, 0, len(byProc))
+	for proc, recs := range byProc {
+		sort.SliceStable(recs, func(i, j int) bool {
+			if recs[i].Level != recs[j].Level {
+				return recs[i].Level > recs[j].Level
+			}
+			if recs[i].Machine != recs[j].Machine {
+				return recs[i].Machine < recs[j].Machine
+			}
+			return recs[i].MachineID < recs[j].MachineID
+		})
+		groups = append(groups, EmployeeMTRGroup{
+			Process: proc,
+			Current: inProcesses(curProcs, proc),
+			Records: recs,
+		})
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		a, b := groups[i], groups[j]
+		if a.Current != b.Current {
+			return a.Current
+		}
+		if a.Current && b.Current {
+			aExact := strings.EqualFold(a.Process, process)
+			bExact := strings.EqualFold(b.Process, process)
+			if aExact != bExact {
+				return aExact
+			}
+		}
+		oa, ob := s.processOrder(a.Process), s.processOrder(b.Process)
+		if oa != ob {
+			return oa < ob
+		}
+		return a.Process < b.Process
+	})
+	return &EmployeeMTRView{
+		EE:      ee,
+		Name:    name,
+		Process: empProcess,
+		Photo:   s.photo(ee),
+		Groups:  groups,
+	}, nil
 }
 
 // calendarShift is the AM/PM session the calendar gives the person on the date. When the calendar has no day type for

@@ -109,6 +109,64 @@ FROM newest GROUP BY emp_code, cim_machine_id ORDER BY cim_machine_id, emp_code`
 	return data, nil
 }
 
+const employeeMTRSQL = `
+WITH latest AS (
+    SELECT DISTINCT ON (row_id) emp_code, checkpoint_key, cim_process, cim_machine_id, machine, proficiency_level, updated_at, is_hidden
+    FROM t_mtr_checkpoint
+    WHERE upper(btrim(emp_code)) = $1
+    ORDER BY row_id, updated_at DESC NULLS LAST
+), visible AS (
+    SELECT * FROM latest WHERE COALESCE(is_hidden, false) = false AND COALESCE(cim_machine_id, '') <> ''
+), newest AS (
+    SELECT DISTINCT ON (emp_code, checkpoint_key, cim_process, cim_machine_id)
+           COALESCE(btrim(cim_process), '') AS cim_process,
+           cim_machine_id,
+           btrim(machine) AS machine,
+           CASE WHEN proficiency_level::text ~ '^\s*[0-9]+(\.[0-9]+)?\s*$' THEN proficiency_level::text::numeric END AS level
+    FROM visible
+    ORDER BY emp_code, checkpoint_key, cim_process, cim_machine_id, updated_at DESC NULLS LAST
+)
+SELECT cim_process, cim_machine_id, max(machine), max(level)::float8
+FROM newest
+GROUP BY cim_process, cim_machine_id
+ORDER BY cim_process, max(level) DESC NULLS LAST, max(machine), cim_machine_id`
+
+// EmployeeMTR returns all visible MTR records (Lv1+) of one employee across every process.
+func (r *pgRepo) EmployeeMTR(ctx context.Context, ee string) ([]MTRRecord, error) {
+	ee = strings.ToUpper(strings.TrimSpace(ee))
+	if ee == "" {
+		return []MTRRecord{}, nil
+	}
+	rows, err := r.pool.Query(ctx, employeeMTRSQL, ee)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MTRRecord{}
+	for rows.Next() {
+		var proc, cim string
+		var machine *string
+		var level *float64
+		if err := rows.Scan(&proc, &cim, &machine, &level); err != nil {
+			return nil, err
+		}
+		if level == nil {
+			continue
+		}
+		lv := int(*level + 0.5)
+		if lv < 1 {
+			continue
+		}
+		out = append(out, MTRRecord{
+			Process:   strings.TrimSpace(proc),
+			MachineID: strings.TrimSpace(cim),
+			Machine:   firstNonEmpty(strings.TrimSpace(deref(machine)), strings.TrimSpace(cim)),
+			Level:     lv,
+		})
+	}
+	return out, rows.Err()
+}
+
 func (r *pgRepo) CalendarDay(ctx context.Context, date time.Time) (map[string]string, error) {
 	var raw []byte
 	err := r.pool.QueryRow(ctx, `SELECT to_jsonb(c) FROM t_daily_attn_calendar c WHERE prodn_date = $1 ORDER BY update_time DESC NULLS LAST LIMIT 1`, date).Scan(&raw)

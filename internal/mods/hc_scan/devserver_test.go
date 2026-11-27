@@ -114,7 +114,9 @@ INSERT INTO t_mtr_checkpoint (uid, row_id, emp_code, checkpoint_key, cim_process
  ('t08', 8, 'AB12C08', 'k', 'Winder', 'C530', 'Winder_530', 3, now(), false),
  ('t09', 9, 'AB12C09', 'k', 'Winder', 'C530', 'Winder_530', 3, now(), false),
  ('t10', 10, 'AB12C06', 'k', 'Winder', 'C525', 'Winder_525', 2, now(), false),
- ('t11', 11, 'AB12C10', 'k', 'Winder', 'C520', 'Winder_520', 2, now(), false)`)
+ ('t11', 11, 'AB12C10', 'k', 'Winder', 'C520', 'Winder_520', 2, now(), false),
+ ('t12', 12, 'AB12C01', 'k', 'Slitter', 'S105', 'Slitter_105', 2, now(), false),
+ ('t13', 13, 'AB12C05', 'k', 'Slitter', 'S105', 'Slitter_105', 3, now(), false)`)
 
 	if months[0] == months[1] {
 		months = months[:1] // today and tomorrow are in the same month

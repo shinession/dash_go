@@ -29,7 +29,11 @@
   <main class="layout">
     <section class="left">
       <div class="scan-block" data-tour-sticky>
-      <div class="scan-panel"{{.Tour "hc.tour.scan"}}>
+      <div id="scan-panel" class="scan-panel"{{.Tour "hc.tour.scan"}}>
+        <div id="target-banner" class="target-banner hidden">
+          <span id="target-banner-text" class="target-banner-text"></span>
+          <button id="target-cancel" type="button" class="btn ghost target-cancel">{{.T "hc.ui.target_cancel"}}</button>
+        </div>
         <label for="scan" class="scan-label">{{.T "hc.ui.scan_label"}}</label>
         <input id="scan" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="{{.T "hc.ui.scan_placeholder"}}">
       </div>
@@ -56,6 +60,7 @@
       <div class="candidate-bar" id="candidate-bar"{{.Tour "hc.tour.candidates"}}>
         <button id="btn-other-shift" type="button" class="btn ghost candidate-btn"><span id="other-shift-label">{{.T "hc.ui.other_shift_btn_base"}}</span> <span id="other-shift-count" class="pill">0</span></button>
         <button id="btn-off-day" type="button" class="btn ghost candidate-btn">{{.T "hc.ui.off_day_btn"}} <span id="off-day-count" class="pill">0</span></button>
+        <button id="btn-other-process" type="button" class="btn ghost candidate-btn">{{.T "hc.ui.other_process_btn"}} <span id="other-process-count" class="pill">0</span></button>
       </div>
       <div class="panel-head"><h2>{{.T "hc.ui.machines"}}</h2><span id="mtr-info" class="muted small"></span></div>
       <div id="machines" class="machines"{{.Tour "hc.tour.machines"}}></div>
@@ -65,4 +70,5 @@
 
 <dialog id="dialog"></dialog>
 <dialog id="candidate-dialog" class="candidate-dialog"></dialog>
+<dialog id="mtr-dialog" class="mtr-dialog"></dialog>
 {{end}}

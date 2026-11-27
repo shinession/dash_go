@@ -86,7 +86,7 @@ func TestPageAndStaticFilesAreServed(t *testing.T) {
 
 func TestAPIRequiresLogin(t *testing.T) {
 	h := newHTTPEnv(t)
-	for _, c := range []struct{ method, path string }{{"GET", "/api/me"}, {"GET", "/api/board?process=Winder&date=2026-11-19&shift=AM"}, {"POST", "/api/scan"}, {"POST", "/api/confirm"}} {
+	for _, c := range []struct{ method, path string }{{"GET", "/api/me"}, {"GET", "/api/board?process=Winder&date=2026-11-19&shift=AM"}, {"GET", "/api/mtr?process=Winder&ee=AB12C01"}, {"POST", "/api/scan"}, {"POST", "/api/confirm"}} {
 		if rec := h.do(c.method, httpPrefix+c.path, "{}", false); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without a session: %d", c.method, c.path, rec.Code)
 		}
@@ -146,6 +146,22 @@ func TestScanFlowOverHTTP(t *testing.T) {
 	if rec := h.do(http.MethodPost, httpPrefix+"/api/reset", `{`+sessionBody+`}`, true); rec.Code != 200 {
 		t.Fatalf("reset: %d", rec.Code)
 	}
+
+	// Direct target scan over HTTP
+	rec = h.do(http.MethodPost, httpPrefix+"/api/scan", `{`+sessionBody+`,"input":"AB12C01","target_machine_id":"Winder_520"}`, true)
+	if res = decode(t, rec); rec.Code != 200 || res["status"] != "assigned" || res["entry"].(map[string]any)["machine_id"] != "Winder_520" {
+		t.Fatalf("target scan: %d %v", rec.Code, res)
+	}
+
+	// Employee all-MTR endpoint over HTTP
+	mtrRec := h.do(http.MethodGet, httpPrefix+"/api/mtr?process=Winder&date=2026-11-19&ee=AB12C01", "", true)
+	mtrBody := decode(t, mtrRec)
+	if mtrRec.Code != 200 || mtrBody["ee"] != "AB12C01" || len(mtrBody["groups"].([]any)) != 1 {
+		t.Fatalf("employee mtr: %d %v", mtrRec.Code, mtrBody)
+	}
+	if bad := h.do(http.MethodGet, httpPrefix+"/api/mtr?process=Winder&date=nope&ee=AB12C01", "", true); bad.Code != 400 {
+		t.Errorf("bad date on /api/mtr: %d", bad.Code)
+	}
 }
 
 func TestConfirmOverHTTPAsksForAcknowledgement(t *testing.T) {
@@ -188,7 +204,7 @@ func TestHCScanPageHasDocsGuideAndTourSteps(t *testing.T) {
 		`data-tour="hc.tour.picker"`, `data-tour="hc.tour.controls"`, `data-tour="hc.tour.counters"`,
 		`data-tour="hc.tour.scan"`, `data-tour="hc.tour.result"`, `data-tour="hc.tour.actions"`,
 		`data-tour="hc.tour.entries"`, `data-tour="hc.tour.machines"`, `data-tour="hc.tour.missing"`, `data-tour="hc.tour.candidates"`,
-		`/dash_go/_shell/icons.svg#scanner`, `id="btn-other-shift"`, `id="btn-off-day"`, `id="candidate-dialog"`,
+		`/dash_go/_shell/icons.svg#scanner`, `id="btn-other-shift"`, `id="btn-off-day"`, `id="btn-other-process"`, `id="candidate-dialog"`, `id="mtr-dialog"`, `id="target-banner"`,
 		`data-tour="tour.back"`, `data-tour="tour.help"`,
 	} {
 		if !strings.Contains(en, want) {

@@ -136,8 +136,13 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 	if len(ids) == 0 {
 		return DayRecord{}, msg("hc.skip.machine_gone")
 	}
-	machines := make([]Machine, 0, len(ids))
+	var machines []Machine
+	var leaveChoices []string
 	for _, id := range ids {
+		if opt, ok := s.resolveLeaveOptionID(id); ok {
+			leaveChoices = append(leaveChoices, opt)
+			continue
+		}
 		m, ok := d.machines.byID[id]
 		if !ok {
 			return DayRecord{}, msg("hc.skip.machine_gone")
@@ -157,12 +162,12 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		}
 		return DayRecord{}, msg("hc.skip.changed_record", "machine", machine)
 	}
-	workHC := availHC(leaveHC)
+	avail := availHC(leaveHC)
 	if leaveHC >= 1-eps {
 		if !hasFlag(e.Flags, FlagFullDayLeave) {
 			return DayRecord{}, msg("hc.skip.changed_leave")
 		}
-		leave = nil // the shift leader confirmed that the person is working
+		leave = nil // the shift leader confirmed the replacement of the existing full-day leave
 	}
 
 	shift, schedule := e.Shift, e.Schedule
@@ -182,12 +187,10 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		return DayRecord{}, msg("hc.skip.no_shift")
 	}
 
-	share := splitHC(workHC, len(machines))
-	entries := make([]HCEntry, 0, len(leave)+len(machines))
-	for _, l := range leave {
-		l.MachineID = "" // leave pseudo-machine entries omit machine_id
-		entries = append(entries, l)
-	}
+	share := splitHC(avail, len(machines)+len(leaveChoices))
+	leaveEntries, _ := mergeLeaveEntries(k.Process, leave, leaveChoices, share)
+	entries := make([]HCEntry, 0, len(leaveEntries)+len(machines))
+	entries = append(entries, leaveEntries...)
 	for _, m := range machines {
 		id := strings.TrimSpace(m.ID)
 		if s.isLeavePseudoMachine(m.Name) {
@@ -195,14 +198,24 @@ func (s *Service) buildRow(d *dayData, k Key, e Entry, current map[string]DayRec
 		}
 		entries = append(entries, HCEntry{Process: k.Process, Machine: m.Name, HC: share, MachineID: id})
 	}
+	actual := k.Shift
+	var totalWorkHC float64
+	if len(machines) == 0 && len(entries) > 0 {
+		actual = entries[0].Machine
+		totalWorkHC = 0
+	} else if len(leaveChoices) == 0 {
+		totalWorkHC = avail
+	} else {
+		totalWorkHC = round2(float64(len(machines)) * share)
+	}
 	row := DayRecord{
 		UID: fmt.Sprintf("%s_%s", e.EE, k.Date.Format("20060102")), EE: e.EE, Date: k.Date,
-		Shift: shift, Schedule: schedule, Actual: k.Shift, Entries: entries,
+		Shift: shift, Schedule: schedule, Actual: actual, Entries: entries,
 	}
 	if hasCur {
 		row.Remark, row.AddtOT = cur.Remark, cur.AddtOT
 	}
-	row.BuildIn = CalBuildInOT(shift, schedule, workHC)
+	row.BuildIn = CalBuildInOT(shift, schedule, totalWorkHC)
 	row.TotalOT = round2(row.BuildIn + row.AddtOT)
 	return row, Msg{}
 }

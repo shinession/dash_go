@@ -342,7 +342,10 @@ func (d *dayData) foreign(process string) string {
 	return process
 }
 
-const deleteRecordMachine = "Delete Record"
+const (
+	deleteRecordMachine = "Delete Record"
+	leaveIDPrefix       = "leave:"
+)
 
 func (s *Service) isLeave(name string) bool { return contains(s.LeaveList, name) }
 
@@ -350,6 +353,111 @@ func (s *Service) isLeave(name string) bool { return contains(s.LeaveList, name)
 // Such pseudo-machine entries omit machine_id in machine_hc_json.
 func (s *Service) isLeavePseudoMachine(name string) bool {
 	return s.isLeave(name) || strings.EqualFold(strings.TrimSpace(name), deleteRecordMachine)
+}
+
+// leaveOptions returns the selectable leave options from SHIFT_LEAVE_PATTERN in config order, excluding "Delete Record".
+func (s *Service) leaveOptions() []string {
+	out := make([]string, 0, len(s.LeaveList))
+	seen := map[string]bool{}
+	for _, raw := range s.LeaveList {
+		opt := strings.TrimSpace(raw)
+		if opt == "" || strings.EqualFold(opt, deleteRecordMachine) || seen[opt] {
+			continue
+		}
+		seen[opt] = true
+		out = append(out, opt)
+	}
+	return out
+}
+
+func leaveOptionID(name string) string { return leaveIDPrefix + strings.TrimSpace(name) }
+
+// resolveLeaveOptionID returns the canonical leave option name when id refers to a selectable leave option
+// (either prefixed "leave:<name>" or the raw leave name).
+func (s *Service) resolveLeaveOptionID(id string) (string, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", false
+	}
+	candidate := id
+	if strings.HasPrefix(id, leaveIDPrefix) {
+		candidate = strings.TrimSpace(strings.TrimPrefix(id, leaveIDPrefix))
+	}
+	for _, opt := range s.leaveOptions() {
+		if strings.EqualFold(opt, candidate) {
+			return opt, true
+		}
+	}
+	return "", false
+}
+
+// splitSelected separates a draft entry's selected IDs into regular machines/activities and leave options,
+// returning the equal HC share per selected item.
+func (s *Service) splitSelected(d *dayData, e Entry) (machines []Machine, leaves []string, share float64) {
+	ids := e.SelectedMachineIDs()
+	if len(ids) == 0 {
+		return nil, nil, 0
+	}
+	for _, id := range ids {
+		if opt, ok := s.resolveLeaveOptionID(id); ok {
+			leaves = append(leaves, opt)
+			continue
+		}
+		if m, ok := d.machines.byID[id]; ok {
+			machines = append(machines, m)
+		}
+	}
+	total := len(machines) + len(leaves)
+	if total == 0 {
+		return nil, nil, 0
+	}
+	return machines, leaves, splitHC(e.HC, total)
+}
+
+// mergeLeaveEntries combines kept leave entries with newly selected leave options of equal share,
+// merging identical leave names and stripping any machine_id.
+func mergeLeaveEntries(process string, kept []HCEntry, added []string, share float64) ([]HCEntry, float64) {
+	out := make([]HCEntry, 0, len(kept)+len(added))
+	idxByName := map[string]int{}
+	for _, l := range kept {
+		l.MachineID = ""
+		key := strings.ToLower(strings.TrimSpace(l.Machine))
+		if idx, dup := idxByName[key]; dup {
+			out[idx].HC = round10(out[idx].HC + l.HC)
+		} else {
+			idxByName[key] = len(out)
+			out = append(out, l)
+		}
+	}
+	for _, opt := range added {
+		key := strings.ToLower(strings.TrimSpace(opt))
+		if idx, dup := idxByName[key]; dup {
+			out[idx].HC = round10(out[idx].HC + share)
+		} else {
+			idxByName[key] = len(out)
+			out = append(out, HCEntry{Process: process, Machine: opt, HC: share})
+		}
+	}
+	var sum float64
+	for _, l := range out {
+		sum += l.HC
+	}
+	return out, round2(sum)
+}
+
+// processOrder returns the index of proc in HC_PROCESS_LIST (with "CSV & NWC" sharing CSV's rank),
+// or len(s.Processes) for processes outside the list.
+func (s *Service) processOrder(proc string) int {
+	p := strings.TrimSpace(proc)
+	if strings.EqualFold(p, "CSV & NWC") {
+		p = "CSV"
+	}
+	for i, x := range s.Processes {
+		if strings.EqualFold(strings.TrimSpace(x), p) {
+			return i
+		}
+	}
+	return len(s.Processes)
 }
 
 // splitEntries separates the leave options from the machines of a record and sums the leave HC.
@@ -400,10 +508,9 @@ func (s *Service) usage(d *dayData, pending map[string]Entry) map[string]float64
 	}
 	for _, e := range pending {
 		if (e.Source == SourceAuto || e.Source == SourceManual) && e.HasMachine() {
-			ids := e.SelectedMachineIDs()
-			share := splitHC(e.HC, len(ids))
-			for _, id := range ids {
-				used[id] += share
+			machines, _, share := s.splitSelected(d, e)
+			for _, m := range machines {
+				used[m.ID] += share
 			}
 		}
 	}
@@ -502,6 +609,22 @@ func clip(s string, n int) string {
 	return string(r[:n]) + "..."
 }
 
+// checkProcess validates the process name and the permission of the user on it.
+func (s *Service) checkProcess(ctx context.Context, u auth.User, process string, fresh bool) error {
+	if !contains(s.Processes, process) {
+		return newError(400, "bad_process", i18n.P{"process": clip(process, 30)})
+	}
+	procs, err := s.Perms.Processes(ctx, u, fresh)
+	if err != nil {
+		s.Log.Error("permission check failed", "ee", u.EE, "error", err)
+		return newError(502, "permission_check_failed")
+	}
+	if !contains(procs, process) {
+		return newError(403, "forbidden", i18n.P{"process": process})
+	}
+	return nil
+}
+
 // check validates the session key and the permission of the user.
 func (s *Service) check(ctx context.Context, u auth.User, k Key, fresh bool) error {
 	if !contains(s.Processes, k.Process) {
@@ -515,13 +638,5 @@ func (s *Service) check(ctx context.Context, u auth.User, k Key, fresh bool) err
 	if k.Date.After(today.AddDate(0, 0, 1)) || k.Date.Before(oldest) {
 		return newErrorKey(400, "bad_date", "hc.err.bad_date_range", i18n.P{"oldest": oldest.Format("2006-01-02"), "newest": today.AddDate(0, 0, 1).Format("2006-01-02")})
 	}
-	procs, err := s.Perms.Processes(ctx, u, fresh)
-	if err != nil {
-		s.Log.Error("permission check failed", "ee", u.EE, "error", err)
-		return newError(502, "permission_check_failed")
-	}
-	if !contains(procs, k.Process) {
-		return newError(403, "forbidden", i18n.P{"process": k.Process})
-	}
-	return nil
+	return s.checkProcess(ctx, u, k.Process, fresh)
 }

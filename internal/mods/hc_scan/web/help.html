@@ -39,7 +39,7 @@
             <li><span class="dg-doc-chip err">Red</span> + one low tone: invalid employee ID or employee not found.</li>
           </ul>
         </li>
-        <li><strong>Adjust if needed:</strong> in the <strong>Scanned</strong> list, open the multi-select drop-down on any line to check one or more machines or activities (options list machines with an MTR record first, then activities, then routine machines without an MTR record, keeping display order within each group). When multiple machines are selected, the employee's available head count is split evenly (for example <code>0.5</code> each for 2, <code>0.33</code> each for 3). Closing the drop-down saves automatically; click <strong>x</strong> to remove the line from the draft.</li>
+        <li><strong>Adjust if needed:</strong> in the <strong>Scanned</strong> list, open the multi-select drop-down on any line to check one or more machines, activities or leave options (options list machines with an MTR record first, then activities, then leave options, and routine machines without an MTR record last, keeping display order within each group). When multiple items are selected, the employee's available head count is split evenly (for example <code>0.5</code> each for 2, <code>0.33</code> each for 3; leave options omit <code>machine_id</code> and count toward Leave HC rather than machine usage). Closing the drop-down saves automatically; click <strong>x</strong> to remove the line from the draft.</li>
         <li><strong>Confirm:</strong> press <strong>Confirm</strong> to save all pending lines that have a machine. If any line has a yellow warning, a confirmation dialog lists them so you can review and choose <strong>Submit anyway</strong> or <strong>Go back</strong>.</li>
       </ol>
     </section>
@@ -67,16 +67,19 @@
 
       <h3>Not assigned yet</h3>
       <p>Shown at the top of the right panel: scheduled people who still have no machine and are not on full-day leave. Each card shows the person's photo, name and employee ID; a number in brackets (such as <code>(0.5)</code>) means part of their day is leave. Click any person to enter their ID into the scan box and scan them in automatically.</p>
-      <p>Two buttons right below <strong>Not assigned yet</strong> (above <strong>Machines</strong>) open popups for supplementary people of this process who still have no task today:</p>
+      <p>Three buttons right below <strong>Not assigned yet</strong> (above <strong>Machines</strong>) open popups for supplementary unassigned people today:</p>
       <ul>
         <li><strong>Other shift (AM / PM):</strong> unassigned roster members scheduled in the opposite shift today.</li>
         <li><strong>Off / Rest day:</strong> unassigned roster members whose calendar day type today is a rest or holiday code (such as <code>O</code>, <code>R</code>, <code>PHO</code>, <code>PHR</code>, <code>PH</code>). Anyone who already worked all 6 previous consecutive days in <code>t_daily_attn_data</code> is shown greyed out and disabled (cannot work a 7th consecutive day).</li>
+        <li><strong>Other process (MTR):</strong> unassigned Direct / Shift Leader employees from other processes who are scheduled for today's current shift and hold an MTR record (Lv1+) on this process, sorted by process first and then MTR level (Lv3 → Lv2 → Lv1).</li>
       </ul>
-      <p>Clicking an available person inside either popup scans them into the current shift (with the yellow shift-mismatch warning), removes them from the list and updates the count while keeping the popup open so you can select multiple people. Close with the top-right <strong>×</strong> button or <kbd>Esc</kbd>.</p>
+      <p>Clicking an available person inside any popup scans them into the current shift (with the applicable yellow shift-mismatch or not-on-roster warning), removes them from the list and updates the count while keeping the popup open so you can select multiple people. Close with the top-right <strong>×</strong> button or <kbd>Esc</kbd>.</p>
 
       <h3>Machine cards</h3>
       <ul>
         <li>Machines with assigned people appear first (in their normal display order), followed by the dashed <strong>Leave</strong> and <strong>Elsewhere</strong> cards, and then machines with no people assigned below.</li>
+        <li><strong>Direct-assign target machine:</strong> click a machine card (or its <strong>Select</strong> button) to select it as the direct-assign target (click again or press <strong>Cancel</strong> on the scan banner to exit). While selected, scanning a badge, typing an ID, or clicking someone in <strong>Not assigned yet</strong> (or candidate popups) assigns them directly to that machine instead of auto-assigning.</li>
+        <li><strong>Inspect all MTR records:</strong> every person row inside <strong>Machines</strong> (as well as <strong>Leave</strong> and <strong>Elsewhere</strong>) is clickable. Clicking a person opens a popup showing all of their MTR records across all processes, with the current process on top and other processes below.</li>
         <li>The header shows <strong>used / budget</strong> head count. A green border means the machine is full; a red border means it is over budget.</li>
         <li>Each person row shows their photo, name on top and employee ID underneath. Names in <em>italics</em> are pending in the draft; names marked <span class="dg-doc-chip ok">saved</span> are already saved in the database.</li>
         <li>Each person on a routine machine shows an MTR level badge: <span class="dg-doc-chip ok">Lv3</span>, <span class="dg-doc-chip warn">Lv2</span>, <span class="dg-doc-chip err">Lv1</span>, <span class="dg-doc-chip">No Rec</span> (no MTR record), or <span class="dg-doc-chip info">Activity</span>.</li>
@@ -97,7 +100,8 @@
         <li><strong>Already assigned:</strong> if the person already has a machine record for that date, the page shows their existing machine and does not overwrite it automatically (you can still change it manually if needed).</li>
         <li><strong>Shift Leaders:</strong> leaders are placed on the process's <strong>Group Leader</strong> row first, provided that row has budget remaining. If it is full, the line stays unassigned for manual choice.</li>
         <li><strong>Eligible machines:</strong> a routine machine of this process is eligible only if it has an MTR mapping, the employee holds <strong>MTR Lv1 or higher</strong> on it, and it has enough remaining budget for the employee's head count (1, or the remainder after part-day leave).</li>
-        <li><strong>Ranking order:</strong> among eligible machines, the system picks by:
+        <li><strong>Previous working day first:</strong> auto-assign first checks the machine the employee worked on their most recent working day (skipping leave-only days). If that machine belongs to this process, is eligible (MTR Lv1+ and remaining budget), it is assigned first.</li>
+        <li><strong>Fallback ranking (newcomers or when previous day's machine is unavailable):</strong> among all eligible Lv1+ machines, the system picks by:
           <ol>
             <li>Higher MTR level (<strong>Lv3</strong> before <strong>Lv2</strong> before <strong>Lv1</strong>);</li>
             <li>More days worked on that machine during the recent days;</li>
@@ -193,7 +197,7 @@
             <li><span class="dg-doc-chip err">红色</span> + 一声低音：工号格式无效，或在员工名单中找不到该工号。</li>
           </ul>
         </li>
-        <li><strong>按需微调：</strong>在<strong>已扫描</strong>列表中，展开多选下拉面板即可勾选一台或多台机台/活动（下拉选项会把有 MTR 记录的机台排在最上，活动居中，无 MTR 记录的常规机台排在最下，各组内保持原有显示顺序）。多选时会按可用人力均分（例如 2 台各 <code>0.5</code>，3 台各 <code>0.33</code>），关闭下拉框即自动保存；点击 <strong>x</strong> 把该行从草稿中移除。</li>
+        <li><strong>按需微调：</strong>在<strong>已扫描</strong>列表中，展开多选下拉面板即可勾选一台或多台机台、活动或请假选项（下拉选项顺序依次为：有 MTR 记录的机台、活动、各类请假选项、无 MTR 记录的常规机台，各组内保持原有显示顺序）。多选时会按可用人力均分（例如 2 项各 <code>0.5</code>，3 项各 <code>0.33</code>；请假选项不写入 <code>machine_id</code>，计入请假人力而不占用机台预算），关闭下拉框即自动保存；点击 <strong>x</strong> 把该行从草稿中移除。</li>
         <li><strong>确认提交：</strong>点击<strong>确认</strong>保存所有已分派机台的待确认记录。如果有带黄色警告的行，会先弹出确认窗口列出详情，可选择<strong>仍然提交</strong>或<strong>返回</strong>修改。</li>
       </ol>
     </section>
@@ -221,16 +225,19 @@
 
       <h3>尚未分派</h3>
       <p>显示在右侧栏顶部：本班次排班中还没有机台且未全天请假的人员。每张人员卡片显示头像、姓名和工号；括号里的数字（例如 <code>(0.5)</code>）表示该员工请了半天假、还剩半天需要安排。点击任意人员即可自动将工号输入扫码框并完成分派。</p>
-      <p><strong>尚未分派</strong>下方（<strong>机台</strong>上方）提供两个按钮，点击可弹窗查看本工序当天其他未分派人员：</p>
+      <p><strong>尚未分派</strong>下方（<strong>机台</strong>上方）提供三个按钮，点击可弹窗查看当天其他未分派人员：</p>
       <ul>
         <li><strong>其他班次（AM / PM）：</strong>当天排在另一班次且尚未分派机台的名册人员。</li>
         <li><strong>休息 / 公休日：</strong>当天排班为 <code>O</code>、<code>R</code>、<code>PHO</code>、<code>PHR</code>、<code>PH</code> 等休息/公休日且尚未分派的人员。此前已连续工作 6 天的员工会灰显标注并禁止选择（避免连续工作第 7 天）。</li>
+        <li><strong>其他工序（有 MTR）：</strong>当天本班次排班且尚未分派工作的其他工序人员，并且在本工序持有 MTR（Lv1 及以上）记录；列表先按工序排序，再按 MTR 等级从高到低排序（Lv3 → Lv2 → Lv1）。</li>
       </ul>
-      <p>在弹窗中点击可安排人员即可直接扫码分派到本班次（带班次不匹配黄色警告），人员会即时从列表移除并更新人数，同时弹窗保持打开以便连续点选；点击右上角 <strong>×</strong> 或按 <kbd>Esc</kbd> 关闭。</p>
+      <p>在任意弹窗中点击可安排人员即可直接扫码分派到本班次（带相应的班次不匹配或不在名册黄色警告），人员会即时从列表移除并更新人数，同时弹窗保持打开以便连续点选；点击右上角 <strong>×</strong> 或按 <kbd>Esc</kbd> 关闭。</p>
 
       <h3>机台卡片</h3>
       <ul>
         <li>已有人员的机台会排在上方（保持原有显示顺序），紧随其后是<strong>请假</strong>和<strong>其他去向</strong>虚线卡片，暂未分派人员的空机台排在下方。</li>
+        <li><strong>选中机台直接分派：</strong>点击机台卡片（或其<strong>选中</strong>按钮）即可设为直接分派目标（再次点击或点扫码框上方的<strong>取消</strong>即可退出）。选中期间，扫码、手动输入工号或点击<strong>尚未分派</strong>（及候选弹窗）人员时，将直接分派到该机台而不走自动分派。</li>
+        <li><strong>查看全部 MTR 记录：</strong><strong>机台</strong>栏目（含<strong>请假</strong>和<strong>其他去向</strong>卡片）中的每位人员均可点击；点击后弹窗展示该员工跨所有工序的全部 MTR 记录，本工序排在最上方，其他工序排在下面。</li>
         <li>卡片标题显示<strong>已用 / 预算</strong>人力：绿色边框表示已满员，红色边框表示超出预算。</li>
         <li>每位人员显示头像、上方姓名与下方工号。<em>斜体</em>姓名表示待确认草稿；带有 <span class="dg-doc-chip ok">已保存</span> 标记的表示已保存在数据库中。</li>
         <li>常规机台上会显示 MTR 等级徽章：<span class="dg-doc-chip ok">Lv3</span>、<span class="dg-doc-chip warn">Lv2</span>、<span class="dg-doc-chip err">Lv1</span>、<span class="dg-doc-chip">无记录</span>（无 MTR 记录）或 <span class="dg-doc-chip info">活动</span>。</li>
@@ -251,7 +258,8 @@
         <li><strong>已有记录：</strong>如果该员工当天在数据库中已有分配好的机台，扫描后只会展示现有任务，不会自动改动（领班仍可手动更改）。</li>
         <li><strong>领班（Shift Leader）：</strong>领班会优先分派到本工序的 <strong>Group Leader</strong> 行（前提是有剩余预算）；如果该行已满，则保持无机台，由现场决定。</li>
         <li><strong>可选机台条件：</strong>只有同时满足以下条件的本工序常规机台才会参与自动分派：具有 MTR 对应关系、员工在该机台具有 <strong>MTR Lv1 或以上</strong>等级，且剩余预算足以容纳该员工所需人力（1 人，或部分请假后的剩余人力）。</li>
-        <li><strong>优先顺序：</strong>在所有符合条件的机台中，按以下顺序择优分派：
+        <li><strong>前一工作日优先：</strong>自动分派首先查看员工前一个工作日（自动跳过纯请假日）分派的机台；如果该机台属于本工序、具备 MTR Lv1 及以上资质且仍有剩余预算，则优先安排到该机台。</li>
+        <li><strong>回退排序（新人或前一工作日机台不可用时）：</strong>在所有符合条件的 Lv1+ 机台中，按以下顺序择优分派：
           <ol>
             <li>MTR 等级更高优先（<strong>Lv3</strong> 优先于 <strong>Lv2</strong> 优先于 <strong>Lv1</strong>）；</li>
             <li>最近几天在该机台上工作天数更多优先；</li>

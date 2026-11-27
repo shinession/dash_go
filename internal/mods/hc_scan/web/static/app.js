@@ -99,14 +99,25 @@
 
   // ---- state ---------------------------------------------------------------------------------------------------
 
-  const state = { me: null, process: null, date: null, shift: null, board: null, seq: 0, timer: null, idRe: null, last: { id: '', at: 0 }, chain: Promise.resolve(), openMS: null, candidateModal: null };
+  const state = {
+    me: null, process: null, date: null, shift: null, board: null, seq: 0, timer: null, idRe: null,
+    last: { id: '', target: null, at: 0 }, chain: Promise.resolve(), openMS: null, candidateModal: null,
+    targetMachineID: null, mtrSeq: 0,
+  };
   const tourOpen = () => !!(dg.tour && dg.tour.isActive());
   const candidateDialogOpen = () => !!($('candidate-dialog') && $('candidate-dialog').open);
+  const mtrDialogOpen = () => !!($('mtr-dialog') && $('mtr-dialog').open);
+
+  const LEAVE_PREFIX = 'leave:';
+  const isLeaveID = (id) => typeof id === 'string' && id.startsWith(LEAVE_PREFIX);
+  const leaveID = (name) => LEAVE_PREFIX + name;
+  const leaveOptionLabel = (name) => `${name} - ${t('hc.ui.level_leave')}`;
 
   function show(name) {
     if (tourOpen()) dg.tour.stop();
     if (state.openMS) closeMultiSelect(false);
     if (candidateDialogOpen()) $('candidate-dialog').close();
+    if (mtrDialogOpen()) $('mtr-dialog').close();
     for (const id of ['screen-message', 'screen-picker', 'screen-app']) $(id).classList.toggle('hidden', id !== 'screen-' + name);
   }
 
@@ -130,7 +141,7 @@
   }
 
   const key = () => ({ process: state.process, date: state.date, shift: state.shift });
-  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open && !candidateDialogOpen() && !state.openMS && !tourOpen()) $('scan').focus({ preventScroll: true }); };
+  const focusScan = () => { if (!$('screen-app').classList.contains('hidden') && !$('dialog').open && !candidateDialogOpen() && !mtrDialogOpen() && !state.openMS && !tourOpen()) $('scan').focus({ preventScroll: true }); };
 
   // The page bar and the scan panel stick below the header and below each other; they need each other's height.
   function trackBars() {
@@ -173,6 +184,8 @@
 
   function renderPicker() {
     stopPolling();
+    state.targetMachineID = null;
+    syncTargetBanner();
     dg.picker.set(null);
     dg.picker.render({
       processes: state.me.processes,
@@ -188,6 +201,8 @@
     state.date = date || state.me.config.production_date;
     state.shift = shift === 'AM' || shift === 'PM' ? shift : state.me.config.default_shift;
     state.board = null;
+    state.targetMachineID = null;
+    syncTargetBanner();
     dg.picker.set(process);
     $('process-name').textContent = process;
     $('date').value = state.date;
@@ -272,7 +287,10 @@
       if ($('other-shift-label')) $('other-shift-label').textContent = t('hc.ui.other_shift_btn', { shift: otherShift });
       if ($('other-shift-count')) $('other-shift-count').textContent = '0';
       if ($('off-day-count')) $('off-day-count').textContent = '0';
+      if ($('other-process-count')) $('other-process-count').textContent = '0';
       if (candidateDialogOpen()) $('candidate-dialog').close();
+      if (mtrDialogOpen()) $('mtr-dialog').close();
+      syncTargetBanner();
       return;
     }
     const totals = b.totals;
@@ -280,6 +298,7 @@
     const missingList = list(b.not_assigned);
     const otherList = list(b.other_shift);
     const offList = list(b.off_day);
+    const otherProcList = list(b.other_process);
     const otherShift = state.shift === 'AM' ? 'PM' : 'AM';
     const counter = (label, value, warn) => el('span', { class: 'counter' + (warn ? ' warn' : '') }, label + ' ', el('b', { text: value }));
     // the first four are the people of the shift in HC, like the Daily Attn Summary of the Dash application; the rest is the draft
@@ -301,11 +320,15 @@
     if ($('other-shift-label')) $('other-shift-label').textContent = t('hc.ui.other_shift_btn', { shift: otherShift });
     if ($('other-shift-count')) $('other-shift-count').textContent = otherList.length;
     if ($('off-day-count')) $('off-day-count').textContent = offList.filter((p) => !p.blocked).length;
+    if ($('other-process-count')) $('other-process-count').textContent = otherProcList.length;
     $('mtr-info').textContent = t('hc.ui.mtr_info', { time: b.mtr.data_time || t('hc.ui.unknown') })
       + (b.mtr.unmapped_machines ? ' | ' + t('hc.ui.mtr_unmapped', { n: b.mtr.unmapped_machines }) : '');
 
     entries.replaceChildren(...(entryList.length ? entryList.map(renderEntry) : [el('div', { class: 'empty', text: t('hc.ui.no_entries') })]));
     const allMachines = list(b.machines);
+    if (state.targetMachineID && !allMachines.some((m) => m.id === state.targetMachineID)) {
+      state.targetMachineID = null;
+    }
     const assignedMachines = allMachines.filter((m) => list(m.members).length > 0);
     const emptyMachines = allMachines.filter((m) => list(m.members).length === 0);
     const cards = assignedMachines.map(renderMachine);
@@ -316,6 +339,7 @@
       cards.push(...emptyMachines.map(renderMachine));
     }
     $('machines').replaceChildren(...cards);
+    syncTargetBanner();
     $('missing').replaceChildren(...(missingList.length ? missingList.map(renderMissing) : [el('span', { class: 'muted small', text: t('hc.ui.all_assigned') })]));
     if (candidateDialogOpen() && state.candidateModal) renderCandidateDialog();
     if (dg.tour) requestAnimationFrame(() => dg.tour.autoStart('hc_scan.board', { skipHeaderIfSeen: true }));
@@ -337,37 +361,45 @@
     return `${m.name} - ${levelText(level)} (${fmt(m.used)}/${fmt(m.budget)})`;
   }
 
-  // Order machine options for one person's drop-down: routine machines with an MTR record (Lv1+) first,
-  // non-routine activities next, and routine machines without an MTR record (or mapping) last, keeping the
-  // existing display_seq order within each group.
-  function sortEntryMachines(machines, levels) {
+  // Order options for one person's multi-select drop-down:
+  //   1. routine machines with an MTR record (Lv1+)
+  //   2. non-routine activities
+  //   3. leave options (SHIFT_LEAVE_PATTERN, excluding Delete Record)
+  //   4. routine machines without an MTR record (or mapping)
+  // preserving display_seq / config order within each group.
+  function sortEntryOptions(machines, leaveOptions, levels) {
     const withMtr = [];
     const activity = [];
     const noMtr = [];
     for (const m of machines) {
       const lv = levels[m.id];
-      if (m.routine === false || lv < 0) activity.push(m);
-      else if (lv >= 1) withMtr.push(m);
-      else noMtr.push(m);
+      const opt = { id: m.id, name: m.name, label: machineLabel(m, lv), isLeave: false };
+      if (m.routine === false || lv < 0) activity.push(opt);
+      else if (lv >= 1) withMtr.push(opt);
+      else noMtr.push(opt);
     }
-    return [...withMtr, ...activity, ...noMtr];
+    const leaves = leaveOptions.map((name) => ({ id: leaveID(name), name, label: leaveOptionLabel(name), isLeave: true }));
+    return [...withMtr, ...activity, ...leaves, ...noMtr];
   }
 
-  function msSummary(selectedIds, allMachines, levels, hc) {
-    const chosen = allMachines.filter((m) => selectedIds.has(m.id));
+  function msSummary(selectedIds, allMachines, leaveOptions, levels, hc) {
+    const chosen = [
+      ...allMachines.filter((m) => selectedIds.has(m.id)).map((m) => ({ name: m.name, label: machineLabel(m, levels[m.id]) })),
+      ...leaveOptions.filter((name) => selectedIds.has(leaveID(name))).map((name) => ({ name, label: leaveOptionLabel(name) })),
+    ];
     if (chosen.length === 0) {
       const txt = t('hc.ui.no_machine_option');
       return { label: txt, badge: '', title: txt, empty: true };
     }
     if (chosen.length === 1) {
-      const txt = machineLabel(chosen[0], levels[chosen[0].id]);
+      const txt = chosen[0].label;
       return { label: txt, badge: '', title: txt, empty: false };
     }
     const share = fmt((hc || 1) / chosen.length);
     return {
-      label: chosen.map((m) => m.name).join(', '),
+      label: chosen.map((item) => item.name).join(', '),
       badge: t('hc.ui.ms_count', { n: chosen.length, share: share }),
-      title: chosen.map((m) => machineLabel(m, levels[m.id])).join('\n'),
+      title: chosen.map((item) => item.label).join('\n'),
       empty: false,
     };
   }
@@ -379,7 +411,10 @@
     open.root.classList.remove('is-open');
     open.trigger.setAttribute('aria-expanded', 'false');
     if (commit && !sameSet(open.initialIds, open.currentIds)) {
-      const nextIds = list(state.board && state.board.machines).filter((m) => open.currentIds.has(m.id)).map((m) => m.id);
+      const nextIds = [
+        ...list(state.board && state.board.machines).filter((m) => open.currentIds.has(m.id)).map((m) => m.id),
+        ...list(state.board && state.board.leave_options).map(leaveID).filter((id) => open.currentIds.has(id)),
+      ];
       return assign(open.entry, nextIds);
     }
     focusScan();
@@ -388,6 +423,7 @@
 
   function buildMultiSelect(e) {
     const allMachines = list(state.board.machines);
+    const leaveOptions = list(state.board.leave_options);
     const levels = e.levels || {};
     const initialIds = new Set(entryMachineIDs(e));
     const currentIds = new Set(initialIds);
@@ -403,7 +439,7 @@
     }, textEl, badgeEl, el('span', { class: 'ms-caret', 'aria-hidden': 'true', text: '▾' }));
 
     function syncTrigger() {
-      const s = msSummary(currentIds, allMachines, levels, e.hc);
+      const s = msSummary(currentIds, allMachines, leaveOptions, levels, e.hc);
       textEl.textContent = s.label;
       textEl.classList.toggle('empty', s.empty);
       badgeEl.textContent = s.badge;
@@ -413,14 +449,15 @@
     syncTrigger();
 
     const checkboxes = [];
-    const sortedMachines = sortEntryMachines(allMachines, levels);
+    const sortedOptions = sortEntryOptions(allMachines, leaveOptions, levels);
     const optList = el('div', { class: 'ms-list', role: 'listbox', 'aria-multiselectable': 'true' },
-      sortedMachines.map((m) => {
-        const checked = currentIds.has(m.id);
-        const cb = el('input', { type: 'checkbox', value: m.id, checked });
-        const row = el('label', { class: 'ms-opt' + (checked ? ' checked' : '') }, cb, el('span', { class: 'ms-opt-label', text: machineLabel(m, levels[m.id]) }));
+      sortedOptions.map((opt) => {
+        const checked = currentIds.has(opt.id);
+        const cb = el('input', { type: 'checkbox', value: opt.id, checked });
+        const cls = 'ms-opt' + (checked ? ' checked' : '') + (opt.isLeave ? ' is-leave' : '');
+        const row = el('label', { class: cls }, cb, el('span', { class: 'ms-opt-label', text: opt.label }));
         cb.addEventListener('change', () => {
-          if (cb.checked) currentIds.add(m.id); else currentIds.delete(m.id);
+          if (cb.checked) currentIds.add(opt.id); else currentIds.delete(opt.id);
           row.classList.toggle('checked', cb.checked);
           syncTrigger();
         });
@@ -495,17 +532,79 @@
     );
   }
 
+  function syncTargetBanner() {
+    const banner = $('target-banner');
+    const panel = $('scan-panel');
+    const machines = list(state.board && state.board.machines);
+    const target = state.targetMachineID ? machines.find((m) => m.id === state.targetMachineID) : null;
+    if (banner) {
+      banner.classList.toggle('hidden', !target);
+      if (target && $('target-banner-text')) {
+        $('target-banner-text').textContent = t('hc.ui.target_banner', { machine: target.name, used: fmt(target.used), budget: fmt(target.budget) });
+      }
+    }
+    if (panel) panel.classList.toggle('has-target', !!target);
+    const box = $('machines');
+    if (box) {
+      for (const card of box.querySelectorAll('.machine.selectable')) {
+        const id = card.getAttribute('data-machine-id');
+        const active = !!state.targetMachineID && id === state.targetMachineID;
+        card.classList.toggle('selected', active);
+        const pick = card.querySelector('.machine-pick');
+        if (pick) {
+          const m = machines.find((item) => item.id === id);
+          const mName = m ? m.name : id;
+          pick.classList.toggle('active', active);
+          pick.setAttribute('aria-pressed', active ? 'true' : 'false');
+          pick.textContent = active ? t('hc.ui.target_selected') : t('hc.ui.target_select');
+          pick.title = active ? t('hc.ui.target_selected_title') : t('hc.ui.target_select_title', { machine: mName });
+        }
+      }
+    }
+  }
+
+  function toggleTargetMachine(machineID) {
+    state.targetMachineID = state.targetMachineID === machineID ? null : machineID;
+    syncTargetBanner();
+    focusScan();
+  }
+
   function renderMachine(m) {
     const full = m.budget > 0 && m.used >= m.budget && !m.over;
+    const selected = state.targetMachineID === m.id;
     const tags = [
       !m.routine ? el('span', { class: 'tag', text: t('hc.ui.tag_activity') }) : null,
       m.routine && !m.mtr_mapped ? el('span', { class: 'tag warn', text: t('hc.ui.tag_no_mapping') }) : null,
       m.budget <= 0 ? el('span', { class: 'tag', text: t('hc.ui.tag_no_budget') }) : null,
     ];
-    return el('div', { class: 'machine' + (m.over ? ' over' : '') + (full ? ' full' : ''), 'data-machine-id': m.id },
-      el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: m.name }), el('span', { class: 'machine-count', text: `${fmt(m.used)} / ${fmt(m.budget)}` })),
+    const pickBtn = el('button', {
+      type: 'button',
+      class: 'machine-pick' + (selected ? ' active' : ''),
+      'aria-pressed': selected ? 'true' : 'false',
+      text: selected ? t('hc.ui.target_selected') : t('hc.ui.target_select'),
+      title: selected ? t('hc.ui.target_selected_title') : t('hc.ui.target_select_title', { machine: m.name }),
+      onclick: (ev) => { ev.stopPropagation(); toggleTargetMachine(m.id); },
+    });
+    return el('div', {
+      class: 'machine selectable' + (m.over ? ' over' : '') + (full ? ' full' : '') + (selected ? ' selected' : ''),
+      'data-machine-id': m.id,
+      onclick: () => toggleTargetMachine(m.id),
+    },
+      el('div', { class: 'machine-head' },
+        el('span', { class: 'machine-name', text: m.name }),
+        el('span', { class: 'machine-head-right' },
+          pickBtn,
+          el('span', { class: 'machine-count', text: `${fmt(m.used)} / ${fmt(m.budget)}` }),
+        ),
+      ),
       el('div', { class: 'machine-tags' }, tags),
-      el('div', { class: 'members' }, list(m.members).map((p) => el('div', { class: 'member' + (p.saved ? '' : ' pending'), title: p.saved ? t('hc.ui.member_saved_title') : t('hc.ui.member_pending_title') },
+      el('div', { class: 'members' }, list(m.members).map((p) => el('button', {
+        type: 'button',
+        class: 'member member-btn' + (p.saved ? '' : ' pending'),
+        'data-mtr-ee': p.ee,
+        title: p.saved ? t('hc.ui.member_saved_title') : t('hc.ui.member_pending_title'),
+        onclick: (ev) => { ev.stopPropagation(); openMTRDialog(p.ee, p.name, p.photo); },
+      },
         avatar(p.name, p.photo, 'sm'),
         personInfo(p.name, p.ee, p.hc),
         // somebody from another process who works on a machine of this one: the seat is taken, so they are shown
@@ -520,7 +619,13 @@
   function renderLeave(people, hc) {
     return el('div', { class: 'machine leave' },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_leave') }), el('span', { class: 'machine-count', text: fmt(hc) })),
-      el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member' },
+      el('div', { class: 'members' }, people.map((p) => el('button', {
+        type: 'button',
+        class: 'member member-btn' + (p.pending ? ' pending' : ''),
+        'data-mtr-ee': p.ee,
+        title: t('hc.ui.member_mtr_title', { name: p.name, ee: p.ee }),
+        onclick: (ev) => { ev.stopPropagation(); openMTRDialog(p.ee, p.name, p.photo); },
+      },
         avatar(p.name, p.photo, 'sm'),
         personInfo(p.name, p.ee),
         list(p.items).map((i) => el('span', { class: 'tag leave-code', title: i.name, text: i.hc === 1 ? i.code : `${i.code} ${fmt(i.hc)}` })),
@@ -533,12 +638,104 @@
   function renderElsewhere(people) {
     return el('div', { class: 'machine away', title: t('hc.ui.card_elsewhere_title') },
       el('div', { class: 'machine-head' }, el('span', { class: 'machine-name', text: t('hc.ui.card_elsewhere') }), el('span', { class: 'machine-count', text: fmt(people.reduce((sum, p) => sum + p.hc, 0)) })),
-      el('div', { class: 'members' }, people.map((p) => el('div', { class: 'member away-member' },
+      el('div', { class: 'members' }, people.map((p) => el('button', {
+        type: 'button',
+        class: 'member member-btn away-member',
+        'data-mtr-ee': p.ee,
+        title: t('hc.ui.member_mtr_title', { name: p.name, ee: p.ee }),
+        onclick: (ev) => { ev.stopPropagation(); openMTRDialog(p.ee, p.name, p.photo); },
+      },
         avatar(p.name, p.photo, 'sm'),
         personInfo(p.name, p.ee, p.hc),
         el('span', { class: 'away-where', text: list(p.where).join(', '), title: list(p.where).join(', ') }),
       ))),
     );
+  }
+
+  // ---- employee all-MTR profile popup --------------------------------------------------------------------------
+
+  async function openMTRDialog(ee, name, photo) {
+    if (!ee || !state.process) return;
+    if (state.openMS) await closeMultiSelect(true);
+    const dlg = $('mtr-dialog');
+    if (!dlg) return;
+    const seq = ++state.mtrSeq;
+
+    const head = (displayName, empProc, imgURL) => el('div', { class: 'dlg-head' },
+      el('div', { class: 'mtr-head-person' },
+        avatar(displayName, imgURL, 'sm'),
+        el('div', { class: 'mtr-head-meta' },
+          el('h3', { text: displayName }),
+          el('div', { class: 'mtr-head-sub', text: [ee, empProc].filter(Boolean).join(' · ') }),
+        ),
+      ),
+      el('button', { type: 'button', class: 'icon-btn dlg-close', title: t('hc.ui.candidate_close'), 'aria-label': t('hc.ui.candidate_close'), text: '×', onclick: () => dlg.close() }),
+    );
+
+    dlg.replaceChildren(head(name || ee, '', photo), el('div', { class: 'empty', text: t('hc.ui.mtr_loading') }));
+    if (!dlg.open) dlg.showModal();
+
+    try {
+      const qs = `api/mtr?process=${encodeURIComponent(state.process)}&date=${encodeURIComponent(state.date || '')}&ee=${encodeURIComponent(ee)}`;
+      const data = await call('GET', qs);
+      if (seq !== state.mtrSeq || !dlg.open) return;
+      const groups = list(data.groups);
+      const currentGroups = groups.filter((g) => g.current);
+      const otherGroups = groups.filter((g) => !g.current);
+      const bodyNodes = [];
+      if (groups.length === 0) {
+        bodyNodes.push(el('div', { class: 'empty', text: t('hc.ui.mtr_empty') }));
+      } else {
+        if (currentGroups.length > 0) {
+          for (const g of currentGroups) {
+            bodyNodes.push(el('div', { class: 'mtr-group current' },
+              el('div', { class: 'mtr-group-head' },
+                el('span', { class: 'mtr-group-title' }, g.process, el('span', { class: 'tag from', text: t('hc.ui.mtr_current_tag') })),
+                el('span', { class: 'pill', text: String(list(g.records).length) }),
+              ),
+              el('div', { class: 'mtr-rows' }, list(g.records).map((rec) => el('div', { class: 'mtr-row' },
+                el('span', { class: 'mtr-machine', text: rec.machine }),
+                lvBadge(rec.level),
+              ))),
+            ));
+          }
+        } else {
+          bodyNodes.push(el('div', { class: 'mtr-group current' },
+            el('div', { class: 'mtr-group-head' },
+              el('span', { class: 'mtr-group-title' }, state.process, el('span', { class: 'tag from', text: t('hc.ui.mtr_current_tag') })),
+            ),
+            el('div', { class: 'mtr-none-current', text: t('hc.ui.mtr_none_current', { process: state.process }) }),
+          ));
+        }
+        if (otherGroups.length > 0) {
+          bodyNodes.push(el('div', { class: 'machines-sep', text: t('hc.ui.mtr_other_processes') }));
+          for (const g of otherGroups) {
+            bodyNodes.push(el('div', { class: 'mtr-group' },
+              el('div', { class: 'mtr-group-head' },
+                el('span', { class: 'mtr-group-title', text: g.process }),
+                el('span', { class: 'pill', text: String(list(g.records).length) }),
+              ),
+              el('div', { class: 'mtr-rows' }, list(g.records).map((rec) => el('div', { class: 'mtr-row' },
+                el('span', { class: 'mtr-machine', text: rec.machine }),
+                lvBadge(rec.level),
+              ))),
+            ));
+          }
+        }
+      }
+      dlg.replaceChildren(
+        head(data.name || name || ee, data.process || '', data.photo || photo),
+        el('div', { class: 'mtr-groups' }, ...bodyNodes),
+      );
+    } catch (err) {
+      if (seq !== state.mtrSeq) return;
+      if (err.status === 401) {
+        dlg.close();
+        sessionExpired();
+        return;
+      }
+      dlg.replaceChildren(head(name || ee, '', photo), el('div', { class: 'empty', text: err.message }));
+    }
   }
 
   // somebody who has no task yet; clicking enters their employee ID into the scan box and scans them in
@@ -604,6 +801,25 @@
     setTimeout(() => { if (btn && btn.isConnected) btn.disabled = false; }, 1600);
   }
 
+  function renderOtherProcessChip(p) {
+    const schedTag = [p.shift, p.schedule].filter(Boolean).join(' · ');
+    const machSummary = list(p.machines).join(', ');
+    const title = [t('hc.ui.click_to_scan', { name: p.name, ee: p.ee }), p.process, machSummary].filter(Boolean).join(' | ');
+    return el('button', {
+      type: 'button',
+      class: 'chip',
+      'data-ee': p.ee,
+      'data-process': p.process || '',
+      title,
+      onclick: (ev) => scanFromCandidate(p.ee, ev.currentTarget),
+    },
+      avatar(p.name, p.photo, 'sm'),
+      personInfo(p.name, p.ee, p.hc),
+      p.max_level ? lvBadge(p.max_level) : null,
+      schedTag ? el('span', { class: 'tag cand-sched', text: schedTag }) : null,
+    );
+  }
+
   function renderCandidateDialog() {
     const dlg = $('candidate-dialog');
     const board = state.board;
@@ -611,6 +827,7 @@
     const kind = state.candidateModal;
     const otherShift = state.shift === 'AM' ? 'PM' : 'AM';
     let title = '';
+    let hintText = t('hc.ui.candidate_hint');
     let bodyNodes = [];
     if (kind === 'other_shift') {
       const people = list(board.other_shift);
@@ -618,6 +835,29 @@
       bodyNodes = people.length
         ? [el('div', { class: 'candidate-list' }, people.map(renderCandidateChip))]
         : [el('div', { class: 'empty', text: t('hc.ui.other_shift_empty') })];
+    } else if (kind === 'other_process') {
+      const people = list(board.other_process);
+      title = t('hc.ui.other_process_title', { process: state.process, n: people.length });
+      hintText = t('hc.ui.other_process_hint');
+      if (people.length === 0) {
+        bodyNodes.push(el('div', { class: 'empty', text: t('hc.ui.other_process_empty', { process: state.process }) }));
+      } else {
+        // People arrive sorted by process first, then MTR level descending; preserve that order while grouping by process.
+        const groups = [];
+        let cur = null;
+        for (const p of people) {
+          const proc = p.process || '?';
+          if (!cur || cur.process !== proc) {
+            cur = { process: proc, list: [] };
+            groups.push(cur);
+          }
+          cur.list.push(p);
+        }
+        for (const g of groups) {
+          bodyNodes.push(el('div', { class: 'machines-sep', text: `${g.process} (${g.list.length})` }));
+          bodyNodes.push(el('div', { class: 'candidate-list' }, g.list.map(renderOtherProcessChip)));
+        }
+      }
     } else {
       const people = list(board.off_day);
       const eligible = people.filter((p) => !p.blocked);
@@ -638,7 +878,7 @@
         el('h3', { text: title }),
         el('button', { type: 'button', class: 'icon-btn dlg-close', title: t('hc.ui.candidate_close'), 'aria-label': t('hc.ui.candidate_close'), text: '×', onclick: () => dlg.close() }),
       ),
-      el('p', { class: 'muted small candidate-hint', text: t('hc.ui.candidate_hint') }),
+      el('p', { class: 'muted small candidate-hint', text: hintText }),
       el('div', { class: 'dlg-body' }, ...bodyNodes),
     );
   }
@@ -678,15 +918,18 @@
 
   function enqueueScan(id) {
     const now = Date.now();
-    if (state.last.id === id && now - state.last.at < 1500) return; // a scanner that repeats the read
-    state.last = { id, at: now };
-    state.chain = state.chain.then(() => doScan(id)).catch(() => {});
+    if (state.last.id === id && state.last.target === state.targetMachineID && now - state.last.at < 1500) return; // a scanner that repeats the read
+    state.last = { id, target: state.targetMachineID, at: now };
+    const targetId = state.targetMachineID;
+    state.chain = state.chain.then(() => doScan(id, targetId)).catch(() => {});
   }
 
-  async function doScan(id) {
+  async function doScan(id, targetMachineId) {
     if (!state.process) return;
     try {
-      const res = await call('POST', 'api/scan', { ...key(), input: id });
+      const payload = { ...key(), input: id };
+      if (targetMachineId) payload.target_machine_id = targetMachineId;
+      const res = await call('POST', 'api/scan', payload);
       showResult(res);
     } catch (err) {
       if (err.status === 401) {
@@ -714,6 +957,10 @@
     const assigned = ids.length > 0;
     const kind = assigned && !e.warn && res.status !== 'duplicate' ? 'ok' : 'warn';
     box.className = 'result ' + kind;
+    let badge = null;
+    if (assigned && ids.length === 1) {
+      badge = isLeaveID(ids[0]) ? el('span', { class: 'lv lv-leave', text: t('hc.ui.badge_leave') }) : lvBadge(e.level);
+    }
     box.replaceChildren(el('div', { class: 'result-body' },
       avatar(e.name, e.photo),
       el('div', { class: 'result-text' },
@@ -723,7 +970,7 @@
         el('div', { class: 'result-reason', text: res.status === 'duplicate' || res.status === 'saved' ? res.message : (flags.some((f) => f.text === e.reason) ? '' : (e.reason || '')) }),
         flags.length ? el('div', { class: 'entry-flags' }, flags.map((f) => el('span', { class: `flag ${f.severity}`, text: f.text }))) : null,
       ),
-      assigned && ids.length === 1 ? lvBadge(e.level) : null,
+      badge,
     ));
     beep(kind === 'ok' ? 'ok' : 'warn');
   }
@@ -824,7 +1071,7 @@
         if (!ev.target.closest('.ms-trigger')) closeMultiSelect(true);
         return;
       }
-      if (!tourOpen() && !state.openMS && !candidateDialogOpen() && !ev.target.closest('.ms, select, button, input, dialog, a, .dg-tour')) focusScan();
+      if (!tourOpen() && !state.openMS && !candidateDialogOpen() && !mtrDialogOpen() && !ev.target.closest('.ms, select, button, input, dialog, a, .dg-tour')) focusScan();
     });
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape' && state.openMS) {
@@ -834,8 +1081,16 @@
     });
     document.addEventListener('dg:tour-stop', () => focusScan());
 
+    if ($('target-cancel')) {
+      $('target-cancel').addEventListener('click', () => {
+        state.targetMachineID = null;
+        syncTargetBanner();
+        focusScan();
+      });
+    }
     if ($('btn-other-shift')) $('btn-other-shift').addEventListener('click', () => openCandidateDialog('other_shift'));
     if ($('btn-off-day')) $('btn-off-day').addEventListener('click', () => openCandidateDialog('off_day'));
+    if ($('btn-other-process')) $('btn-other-process').addEventListener('click', () => openCandidateDialog('other_process'));
     const candDlg = $('candidate-dialog');
     if (candDlg) {
       candDlg.addEventListener('close', () => { state.candidateModal = null; focusScan(); });
@@ -843,6 +1098,16 @@
         if (ev.target === candDlg) {
           const r = candDlg.getBoundingClientRect();
           if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) candDlg.close();
+        }
+      });
+    }
+    const mtrDlg = $('mtr-dialog');
+    if (mtrDlg) {
+      mtrDlg.addEventListener('close', () => { focusScan(); });
+      mtrDlg.addEventListener('click', (ev) => {
+        if (ev.target === mtrDlg) {
+          const r = mtrDlg.getBoundingClientRect();
+          if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) mtrDlg.close();
         }
       });
     }

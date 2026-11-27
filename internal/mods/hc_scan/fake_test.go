@@ -17,6 +17,7 @@ type fakeRepo struct {
 	mu       sync.Mutex
 	machines []Machine
 	mtr      MTRData
+	empMTR   map[string][]MTRRecord
 	cal      map[string]string
 	mes      []MESRow
 	members  []MemberRow
@@ -36,6 +37,36 @@ func (f *fakeRepo) Machines(_ context.Context, processes []string) ([]Machine, e
 	return out, nil
 }
 func (f *fakeRepo) MTR(context.Context, []string) (MTRData, error) { return f.mtr, nil }
+func (f *fakeRepo) EmployeeMTR(_ context.Context, ee string) ([]MTRRecord, error) {
+	ee = strings.ToUpper(strings.TrimSpace(ee))
+	if f.empMTR != nil {
+		if recs, ok := f.empMTR[ee]; ok {
+			return append([]MTRRecord(nil), recs...), nil
+		}
+	}
+	levels := f.mtr.Levels[ee]
+	if len(levels) == 0 {
+		return []MTRRecord{}, nil
+	}
+	cimToMachine := map[string]Machine{}
+	for _, m := range f.machines {
+		if cim := f.mtr.NameToCIM[strings.TrimSpace(m.Name)]; cim != "" {
+			cimToMachine[cim] = m
+		}
+	}
+	var out []MTRRecord
+	for cim, lv := range levels {
+		if lv < 1 {
+			continue
+		}
+		if m, ok := cimToMachine[cim]; ok {
+			out = append(out, MTRRecord{Process: m.Process, MachineID: cim, Machine: m.Name, Level: lv})
+		} else {
+			out = append(out, MTRRecord{MachineID: cim, Machine: cim, Level: lv})
+		}
+	}
+	return out, nil
+}
 func (f *fakeRepo) CalendarDay(context.Context, time.Time) (map[string]string, error) {
 	return f.cal, nil
 }

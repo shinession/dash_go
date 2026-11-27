@@ -332,7 +332,7 @@ func TestTheBoardJSONHasTheKeysThePageReads(t *testing.T) {
 	h := newHTTPEnv(t)
 	h.addRecord("AB12C03", "MCL - Medical Leave", "W", HCEntry{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1})
 	board := decode(t, h.do(http.MethodGet, httpPrefix+"/api/board?process=Winder&date=2026-11-19&shift=AM", "", true))
-	for _, k := range []string{"machines", "entries", "not_assigned", "other_shift", "off_day", "leave", "elsewhere"} {
+	for _, k := range []string{"machines", "leave_options", "entries", "not_assigned", "other_shift", "off_day", "other_process", "leave", "elsewhere"} {
 		if _, ok := board[k].([]any); !ok {
 			t.Errorf("%q must be a list, never null: %v", k, board[k])
 		}
@@ -590,5 +590,114 @@ func TestCSVAndNWCSharedMachinesMatchByMachineID(t *testing.T) {
 	}
 	if got := memberEEs(card(t, b, "NWC_3301")); len(got) != 1 || got[0] != "AB12C30" || len(b.Elsewhere) != 0 {
 		t.Fatalf("CSV board must match shared NWC machine by machine_id: members=%v elsewhere=%+v", got, b.Elsewhere)
+	}
+}
+
+func TestBoardOtherProcessMTRCandidates(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.svc.Processes = []string{"Slitter", "Taping", "Winder", "LSL"}
+	env.perms.procs = []string{"Slitter", "Taping", "Winder", "LSL"}
+	resigned := d(2026, 11, 10)
+	env.repo.mes = append(env.repo.mes,
+		MESRow{EE: "AB12C41", Name: "Slit Lv3", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},               // Slitter AM, Lv3 -> #1
+		MESRow{EE: "AB12C42", Name: "Slit Lv1", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},               // Slitter AM, Lv1 -> #3 (after AB12C05 Lv2)
+		MESRow{EE: "AB12C43", Name: "Tape Lv2", CostCenter: "2082", Shift: "PA", EffectiveMth: d(2026, 11, 1)},               // Taping AM, Lv2 -> #5 (after Tape Lv3)
+		MESRow{EE: "AB12C44", Name: "Tape Lv3", CostCenter: "2082", Shift: "PA", EffectiveMth: d(2026, 11, 1)},               // Taping AM, Lv3 -> #4
+		MESRow{EE: "AB12C45", Name: "LSL PartLeave", CostCenter: "2086", Shift: "PA", EffectiveMth: d(2026, 11, 1)},          // LSL AM, 0.5 leave, Lv2 -> #6 (HC 0.5)
+		MESRow{EE: "AB12C46", Name: "Slit Assigned", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},          // already assigned in DB -> excluded
+		MESRow{EE: "AB12C47", Name: "Slit PM", CostCenter: "2081", Shift: "PB", EffectiveMth: d(2026, 11, 1)},                // PM shift -> excluded
+		MESRow{EE: "AB12C48", Name: "Slit OffDay", CostCenter: "2081", Shift: "RA", EffectiveMth: d(2026, 11, 1)},            // off day -> excluded
+		MESRow{EE: "AB12C49", Name: "Slit FullLeave", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},         // full leave -> excluded
+		MESRow{EE: "AB12C50", Name: "Slit NoMTR", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},             // no Winder MTR -> excluded
+		MESRow{EE: "AB12C51", Name: "Slit Resigned", CostCenter: "2081", Shift: "PA", ResignDate: &resigned, EffectiveMth: d(2026, 11, 1)}, // resigned -> excluded
+		MESRow{EE: "AB12C52", Name: "Slit Indirect", CostCenter: "2081", Shift: "PA", DirectType: "Indirect", EffectiveMth: d(2026, 11, 1)}, // Indirect -> excluded
+		MESRow{EE: "AB12C53", Name: "Slit HomeDraft", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},         // placed in Slitter AM draft -> excluded
+	)
+	env.repo.mtr.Levels["AB12C41"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C42"] = map[string]int{"C520": 1}
+	env.repo.mtr.Levels["AB12C43"] = map[string]int{"C515": 2}
+	env.repo.mtr.Levels["AB12C44"] = map[string]int{"C520": 3, "C515": 1}
+	env.repo.mtr.Levels["AB12C45"] = map[string]int{"C520": 2}
+	env.repo.mtr.Levels["AB12C46"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C47"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C48"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C49"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C51"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C52"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C53"] = map[string]int{"C515": 3}
+
+	env.addRecord("AB12C45", "AM", "W", HCEntry{Process: "LSL", Machine: "ANL - Annual Leave", HC: 0.5})
+	env.addRecord("AB12C46", "AM", "W", HCEntry{Process: "Slitter", Machine: "Slitter_105", HC: 1})
+	env.addRecord("AB12C49", "MCL - Medical Leave", "W", HCEntry{Process: "Slitter", Machine: "MCL - Medical Leave", HC: 1})
+	slitKey := Key{Process: "Slitter", Date: testDate, Shift: ShiftAM}
+	if err := env.svc.Drafts.PutEntry(ctx, slitKey, Entry{EE: "AB12C53", Name: "Slit HomeDraft", Source: SourceManual, MachineID: "Slitter_105", MachineIDs: []string{"Slitter_105"}, HC: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := env.board(t)
+	want := []struct {
+		ee      string
+		process string
+		lv      int
+		hc      float64
+	}{
+		{"AB12C41", "Slitter", 3, 1},
+		{"AB12C05", "Slitter", 2, 1},
+		{"AB12C42", "Slitter", 1, 1},
+		{"AB12C44", "Taping", 3, 1},
+		{"AB12C43", "Taping", 2, 1},
+		{"AB12C45", "LSL", 2, 0.5},
+	}
+	if len(b.OtherProcess) != len(want) {
+		t.Fatalf("other_process len=%d: %+v", len(b.OtherProcess), b.OtherProcess)
+	}
+	for i, w := range want {
+		got := b.OtherProcess[i]
+		if got.EE != w.ee || got.Process != w.process || got.MaxLevel != w.lv || got.HC != w.hc {
+			t.Errorf("other_process[%d] = %+v, want ee=%s proc=%s lv=%d hc=%v", i, got, w.ee, w.process, w.lv, w.hc)
+		}
+	}
+
+	// Scanning AB12C41 removes them immediately from other_process; removing restores them.
+	env.scan(t, "AB12C41")
+	if b2 := env.board(t); len(b2.OtherProcess) != len(want)-1 {
+		t.Fatalf("AB12C41 must disappear after scan: %+v", b2.OtherProcess)
+	}
+	if err := env.svc.Remove(ctx, testUser, testKey, "AB12C41"); err != nil {
+		t.Fatal(err)
+	}
+	if b3 := env.board(t); len(b3.OtherProcess) != len(want) {
+		t.Fatalf("AB12C41 must reappear after Remove: %+v", b3.OtherProcess)
+	}
+}
+
+func TestEmployeeMTRGroupsCurrentProcessOnTop(t *testing.T) {
+	env := newTestEnv(t)
+	env.svc.Processes = []string{"Slitter", "Taping", "Winder", "LSL"}
+	env.perms.procs = []string{"Winder"}
+	env.repo.empMTR = map[string][]MTRRecord{
+		"AB12C01": {
+			{Process: "LSL", MachineID: "L1", Machine: "LSL_01", Level: 2},
+			{Process: "Slitter", MachineID: "S1", Machine: "Slitter_105", Level: 3},
+			{Process: "Winder", MachineID: "C520", Machine: "Winder_520", Level: 2},
+			{Process: "Winder", MachineID: "C515", Machine: "Winder_515", Level: 3},
+		},
+	}
+	view, err := env.svc.EmployeeMTR(context.Background(), testUser, "Winder", testDate, "ab12c01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.EE != "AB12C01" || view.Name != "Alice One" || view.Process != "Winder" || len(view.Groups) != 3 {
+		t.Fatalf("employee MTR view: %+v", view)
+	}
+	// Current process (Winder) MUST be first, sorted by level DESC (Winder_515 Lv3 before Winder_520 Lv2).
+	if !view.Groups[0].Current || view.Groups[0].Process != "Winder" || len(view.Groups[0].Records) != 2 ||
+		view.Groups[0].Records[0].Machine != "Winder_515" || view.Groups[0].Records[1].Machine != "Winder_520" {
+		t.Fatalf("top group must be Winder sorted by level DESC: %+v", view.Groups[0])
+	}
+	// Other processes follow in HC_PROCESS_LIST order: Slitter then LSL.
+	if view.Groups[1].Current || view.Groups[1].Process != "Slitter" || view.Groups[2].Current || view.Groups[2].Process != "LSL" {
+		t.Fatalf("other process groups order: %+v", view.Groups[1:])
 	}
 }

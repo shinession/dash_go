@@ -104,6 +104,9 @@ func (s *Service) dynamicFlags(d *dayData, e Entry, used map[string]float64) []F
 	}
 	var flags []Flag
 	for _, id := range ids {
+		if _, isLeave := s.resolveLeaveOptionID(id); isLeave {
+			continue
+		}
 		m, ok := d.machines.byID[id]
 		if !ok {
 			continue

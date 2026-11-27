@@ -29,10 +29,167 @@ func hasWarnFlags(flags []FlagView) bool {
 
 func TestScanRecentDaysAreShownAndCounted(t *testing.T) {
 	env := newTestEnv(t)
-	res := env.scan(t, "AB12C02") // Lv3 on 520 and worked it on 3 of the last 7 days
+	res := env.scan(t, "AB12C02") // Lv3 on 520 and worked it on the previous 3 days (including yesterday 2026-11-18)
 	e := res.Entry
-	if e.MachineID != "Winder_520" || e.RecentDays != 3 || !strings.Contains(e.Reason, "worked there 3 of the last 7 days") {
+	if e.MachineID != "Winder_520" || e.RecentDays != 3 || !strings.Contains(e.Reason, "Previous work day (2026-11-18): Winder_520 (Lv3)") {
 		t.Fatalf("unexpected assignment: %+v", e)
+	}
+}
+
+func TestAutoAssignPrefersPreviousWorkingDayWithMTRLv1(t *testing.T) {
+	// 1. Alice has Lv3 on 515 and Lv2 on 520. Yesterday she worked 520 -> previous working day wins over Lv3 on 515.
+	env := newTestEnv(t)
+	yesterday := testDate.AddDate(0, 0, -1)
+	env.repo.records = append(env.repo.records, DayRecord{
+		UID: "AB12C01_" + yesterday.Format("20060102"), EE: "AB12C01", Date: yesterday, Actual: "AM",
+		Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1, MachineID: "Winder_520"}},
+	})
+	res := env.scan(t, "AB12C01")
+	if res.Status != "assigned" || res.Entry.MachineID != "Winder_520" || res.Entry.Level != 2 || !strings.Contains(res.Entry.Reason, "Previous work day (2026-11-18): Winder_520 (Lv2)") {
+		t.Fatalf("previous working day must take priority over higher Lv3 machine: %s %+v", res.Status, res.Entry)
+	}
+
+	// 2. Yesterday was full-day leave, 12 days ago (> 7-day recent window) was Winder_520 -> skips leave day and finds Winder_520.
+	env2 := newTestEnv(t)
+	day12 := testDate.AddDate(0, 0, -12)
+	env2.repo.records = append(env2.repo.records,
+		DayRecord{UID: "AB12C01_" + yesterday.Format("20060102"), EE: "AB12C01", Date: yesterday, Actual: "MCL - Medical Leave", Entries: []HCEntry{{Process: "Winder", Machine: "MCL - Medical Leave", HC: 1}}},
+		DayRecord{UID: "AB12C01_" + day12.Format("20060102"), EE: "AB12C01", Date: day12, Actual: "AM", Entries: []HCEntry{{Process: "Winder", Machine: "Winder_520", HC: 1, MachineID: "Winder_520"}}},
+	)
+	res2 := env2.scan(t, "AB12C01")
+	if res2.Entry.MachineID != "Winder_520" || !strings.Contains(res2.Entry.Reason, "Previous work day ("+day12.Format("2006-01-02")+")") {
+		t.Fatalf("leave-only day must be skipped to find previous working day: %+v", res2.Entry)
+	}
+
+	// 3. Previous working day machine without MTR Lv1 (e.g. unmapped 525 or Lv0) falls back to eligible Lv1+ machine (515).
+	env3 := newTestEnv(t)
+	env3.repo.records = append(env3.repo.records, DayRecord{
+		UID: "AB12C01_" + yesterday.Format("20060102"), EE: "AB12C01", Date: yesterday, Actual: "AM",
+		Entries: []HCEntry{{Process: "Winder", Machine: "Winder_525", HC: 1, MachineID: "Winder_525"}},
+	})
+	res3 := env3.scan(t, "AB12C01")
+	if res3.Entry.MachineID != "Winder_515" || res3.Entry.Level != 3 {
+		t.Fatalf("ineligible previous working day must fall back to Lv1+ machine: %+v", res3.Entry)
+	}
+
+	// 4. Previous working day machine is full -> falls back to RankMachines (and uses recent-days reason when applicable).
+	env4 := newTestEnv(t)
+	env4.repo.machines[1].Budget = 1 // Winder_520 has 1 seat
+	env4.scan(t, "AB12C04")          // fills Winder_520
+	// AB12C02 worked 520 on days -1..-3, and 515 on day -4 -> 520 is full, falls back to 515 (Lv1, worked 1 of last 7 days).
+	day4 := testDate.AddDate(0, 0, -4)
+	env4.repo.records = append(env4.repo.records, DayRecord{
+		UID: "AB12C02_" + day4.Format("20060102"), EE: "AB12C02", Date: day4, Actual: "AM",
+		Entries: []HCEntry{{Process: "Winder", Machine: "Winder_515", HC: 1, MachineID: "Winder_515"}},
+	})
+	res4 := env4.scan(t, "AB12C02")
+	if res4.Entry.MachineID != "Winder_515" || res4.Entry.RecentDays != 1 || !strings.Contains(res4.Entry.Reason, "worked there 1 of the last 7 days") {
+		t.Fatalf("full previous working day must fall back to RankMachines: %+v", res4.Entry)
+	}
+
+	// 5. Newcomer with no prior history gets an eligible machine with at least MTR Lv1.
+	env5 := newTestEnv(t)
+	res5 := env5.scan(t, "AB12C04")
+	if res5.Status != "assigned" || res5.Entry.MachineID != "Winder_520" || res5.Entry.Level != 1 {
+		t.Fatalf("newcomer must get eligible Lv1+ machine: %s %+v", res5.Status, res5.Entry)
+	}
+}
+
+func TestScanToTargetMachineDirectAssign(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// 1. Alice (Lv3 on 515, Lv2 on 520) scanned with target Winder_520 goes directly to Winder_520 (no auto-assign).
+	res, err := env.svc.ScanTo(ctx, testUser, testKey, "AB12C01", "Winder_520")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != "assigned" || res.Entry.Source != SourceManual || res.Entry.MachineID != "Winder_520" || res.Entry.Level != 2 || hasWarnFlags(res.Entry.Flags) {
+		t.Fatalf("direct assign to qualified target machine: %s %+v", res.Status, res.Entry)
+	}
+	if !strings.Contains(res.Entry.Reason, "Direct assign to Winder_520") {
+		t.Fatalf("expected target reason, got %q", res.Entry.Reason)
+	}
+
+	// 2. Carl (no MTR) scanned normally is unassigned; re-scanning Carl with target activity Winder_9014 assigns him directly.
+	unassigned := env.scan(t, "AB12C03")
+	if unassigned.Status != "unassigned" {
+		t.Fatalf("expected unassigned: %s", unassigned.Status)
+	}
+	directAct, err := env.svc.ScanTo(ctx, testUser, testKey, "AB12C03", "Winder_9014")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if directAct.Status != "assigned" || directAct.Entry.MachineID != "Winder_9014" || hasWarnFlags(directAct.Entry.Flags) {
+		t.Fatalf("unassigned pending line must be directly assigned when target selected: %s %+v", directAct.Status, directAct.Entry)
+	}
+
+	// 3. Scanning already-assigned Alice again with a target still returns duplicate (no silent overwrite).
+	dup, err := env.svc.ScanTo(ctx, testUser, testKey, "AB12C01", "Winder_515")
+	if err != nil || dup.Status != "duplicate" || dup.Entry.MachineID != "Winder_520" {
+		t.Fatalf("already-assigned line must stay duplicate: %v %+v", err, dup)
+	}
+
+	// 4. Direct assign to a routine machine without MTR flags NO_MTR; direct assign over budget flags OVER_BUDGET.
+	env.repo.machines[0].Budget = 1
+	warnNoMTR, err := env.svc.ScanTo(ctx, testUser, testKey, "AB12C04", "Winder_515") // Dina has no MTR on 515
+	if err != nil || warnNoMTR.Entry.MachineID != "Winder_515" || !hasCode(warnNoMTR.Entry.Flags, FlagNoMTR) {
+		t.Fatalf("direct assign without MTR must warn: %v %+v", err, warnNoMTR)
+	}
+	warnOver, err := env.svc.ScanTo(ctx, testUser, testKey, "AB12C02", "Winder_515") // 515 now 2/1
+	if err != nil || warnOver.Entry.MachineID != "Winder_515" || !hasCode(warnOver.Entry.Flags, FlagOverBudget) {
+		t.Fatalf("direct assign over budget must warn: %v %+v", err, warnOver)
+	}
+
+	// 5. Invalid target machine ID is refused.
+	_, err = env.svc.ScanTo(ctx, testUser, testKey, "LD01A01", "NoSuchMachine")
+	wantErr(t, err, 400, "bad_machine")
+}
+
+func TestAssignManyWithLeaveOptions(t *testing.T) {
+	env := newTestEnv(t)
+	env.svc.LeaveList = []string{"Delete Record", "MCL - Medical Leave", "ANL - Annual Leave"}
+	ctx := context.Background()
+
+	// Board exposes leave_options without "Delete Record".
+	b0, err := env.svc.Board(ctx, testUser, testKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b0.LeaveOptions) != 2 || b0.LeaveOptions[0] != "MCL - Medical Leave" || b0.LeaveOptions[1] != "ANL - Annual Leave" {
+		t.Fatalf("leave_options must exclude Delete Record: %v", b0.LeaveOptions)
+	}
+
+	env.scan(t, "AB12C01") // Alice on Winder_515
+
+	// Delete Record is rejected.
+	_, err = env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"leave:Delete Record"})
+	wantErr(t, err, 400, "bad_machine")
+
+	// Pure leave: zero warnings, no machine usage, shows in Leave card & LeaveHC counter, counts in Totals.Assigned.
+	v, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"leave:ANL - Annual Leave"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Source != SourceManual || len(v.MachineIDs) != 1 || v.MachineIDs[0] != "leave:ANL - Annual Leave" || v.MachineName != "ANL - Annual Leave" || hasWarnFlags(v.Flags) {
+		t.Fatalf("pure leave entry: %+v", v)
+	}
+	b1, _ := env.svc.Board(ctx, testUser, testKey)
+	if b1.Machines[0].Used != 0 || b1.Totals.PlacedHC != 0 || b1.Totals.LeaveHC != 1 || b1.Totals.ToAssignHC != 4 || b1.Totals.Assigned != 1 || len(b1.Leave) != 1 || !b1.Leave[0].Pending || b1.Leave[0].Items[0].Code != "ANL" {
+		t.Fatalf("board after pure leave: totals=%+v leave=%+v m0=%+v", b1.Totals, b1.Leave, b1.Machines[0])
+	}
+
+	// Mixed machine + leave: 0.5 machine + 0.5 leave, counters add up (PlacedHC 0.5 + LeaveHC 0.5 + ToAssignHC 4 == Scheduled 5).
+	v2, err := env.svc.AssignMany(ctx, testUser, testKey, "AB12C01", []string{"leave:ANL - Annual Leave", "Winder_520"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v2.MachineIDs) != 2 || v2.MachineIDs[0] != "Winder_520" || v2.MachineIDs[1] != "leave:ANL - Annual Leave" || hasWarnFlags(v2.Flags) {
+		t.Fatalf("mixed machine+leave entry: %+v", v2)
+	}
+	b2, _ := env.svc.Board(ctx, testUser, testKey)
+	if b2.Machines[1].Used != 0.5 || b2.Totals.PlacedHC != 0.5 || b2.Totals.LeaveHC != 0.5 || b2.Totals.ToAssignHC != 4 || len(b2.Leave) != 1 || b2.Leave[0].HC != 0.5 {
+		t.Fatalf("board after mixed leave: totals=%+v leave=%+v m1=%+v", b2.Totals, b2.Leave, b2.Machines[1])
 	}
 }
 

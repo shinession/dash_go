@@ -13,6 +13,9 @@ type Repository interface {
 	// MTR returns the proficiency matrix of the processes (latest version of every checkpoint row, hidden rows
 	// removed, the highest level per employee and machine).
 	MTR(ctx context.Context, processes []string) (MTRData, error)
+	// EmployeeMTR returns all visible proficiency records (Lv1+) of one employee across every process,
+	// using the same latest/visible/highest-level reduction as MTR.
+	EmployeeMTR(ctx context.Context, ee string) ([]MTRRecord, error)
 	// CalendarDay returns the day type of every shift column on the date, or nil when the calendar has no row.
 	CalendarDay(ctx context.Context, date time.Time) (map[string]string, error)
 	// MESSnapshot returns the MES employee rows of the month that applies to the date.

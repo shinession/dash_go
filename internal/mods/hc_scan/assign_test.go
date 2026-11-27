@@ -81,6 +81,44 @@ func TestRankMachinesGates(t *testing.T) {
 	}
 }
 
+func TestPickPrevWorkMachine(t *testing.T) {
+	machines, levels := rankFixture()
+	level := func(m Machine) int { return levels[m.CIMID] }
+	remaining := map[string]float64{"M1": 1, "M2": 2, "M3": 1, "A1": 5, "U1": 1}
+
+	// Previous day on M3 (Lv1) is chosen even when M1 has Lv3.
+	pick, ok := PickPrevWorkMachine([]PrevWorkCandidate{{Machine: machines[2], Share: 1}}, level, map[string]int{"M3": 1}, remaining, 1)
+	if !ok || pick.Machine.ID != "M3" || pick.Level != 1 {
+		t.Fatalf("prev day M3 must win: ok=%v pick=%+v", ok, pick)
+	}
+	// Multiple previous-day machines: larger HC share wins first.
+	pick, ok = PickPrevWorkMachine([]PrevWorkCandidate{
+		{Machine: machines[0], Share: 0.25},
+		{Machine: machines[2], Share: 0.75},
+	}, level, nil, remaining, 1)
+	if !ok || pick.Machine.ID != "M3" {
+		t.Fatalf("larger previous-day share must win: ok=%v pick=%+v", ok, pick)
+	}
+	// Equal share breaks ties by higher MTR level.
+	pick, ok = PickPrevWorkMachine([]PrevWorkCandidate{
+		{Machine: machines[2], Share: 0.5},
+		{Machine: machines[1], Share: 0.5},
+	}, level, nil, remaining, 1)
+	if !ok || pick.Machine.ID != "M2" {
+		t.Fatalf("equal share must prefer higher MTR level: ok=%v pick=%+v", ok, pick)
+	}
+	// Ineligible previous-day machine (no MTR Lv1, activity, unmapped, or full) returns false so caller falls back to RankMachines.
+	if _, ok := PickPrevWorkMachine([]PrevWorkCandidate{{Machine: machines[2], Share: 1}}, func(Machine) int { return 0 }, nil, remaining, 1); ok {
+		t.Fatal("Lv0 on previous-day machine must not qualify")
+	}
+	if _, ok := PickPrevWorkMachine([]PrevWorkCandidate{{Machine: machines[3], Share: 1}, {Machine: machines[4], Share: 1}}, level, nil, remaining, 1); ok {
+		t.Fatal("activity and unmapped machines must not qualify")
+	}
+	if _, ok := PickPrevWorkMachine([]PrevWorkCandidate{{Machine: machines[2], Share: 1}}, level, nil, map[string]float64{"M3": 0}, 1); ok {
+		t.Fatal("full previous-day machine must not qualify")
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

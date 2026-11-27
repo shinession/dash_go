@@ -165,3 +165,18 @@ func (d *Directory) Roster(process string) []Person {
 	})
 	return out
 }
+
+// All lists every person in the directory on the date, sorted by name and employee code.
+func (d *Directory) All() []Person {
+	out := make([]Person, 0, len(d.people))
+	for _, p := range d.people {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].EE < out[j].EE
+	})
+	return out
+}

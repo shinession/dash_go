@@ -77,17 +77,21 @@ type PersonView struct {
 	HC       float64 `json:"hc"` // HC still to place: 1, or what a part-day leave leaves
 }
 
-// CandidateView is a roster member of this process who belongs to the other shift or an off/rest day today and still
-// has no task. Blocked is true for an off/rest-day member who worked all 6 previous consecutive days.
+// CandidateView is an unassigned supplementary person shown in a candidate popup:
+//   - other_shift / off_day: roster members of this process; Blocked is true for off/rest-day members who worked all 6 previous consecutive days.
+//   - other_process: members of another process scheduled for the current shift today who hold MTR Lv1+ on this process.
 type CandidateView struct {
-	EE              string  `json:"ee"`
-	Name            string  `json:"name"`
-	Shift           string  `json:"shift"`
-	Schedule        string  `json:"schedule"`
-	Photo           string  `json:"photo"`
-	HC              float64 `json:"hc"`
-	ConsecutiveDays int     `json:"consecutive_days,omitempty"`
-	Blocked         bool    `json:"blocked,omitempty"`
+	EE              string   `json:"ee"`
+	Name            string   `json:"name"`
+	Process         string   `json:"process,omitempty"`
+	Shift           string   `json:"shift"`
+	Schedule        string   `json:"schedule"`
+	Photo           string   `json:"photo"`
+	HC              float64  `json:"hc"`
+	MaxLevel        int      `json:"max_level,omitempty"`
+	Machines        []string `json:"machines,omitempty"`
+	ConsecutiveDays int      `json:"consecutive_days,omitempty"`
+	Blocked         bool     `json:"blocked,omitempty"`
 }
 
 // LeaveItem is one leave option of a person on the day.
@@ -100,11 +104,12 @@ type LeaveItem struct {
 // LeaveView is a member of the shift who is on leave, whatever the kind of leave. A part-day leave also shows the
 // person on their machine (or in the list of people without a task) for the rest of the day.
 type LeaveView struct {
-	EE    string      `json:"ee"`
-	Name  string      `json:"name"`
-	Photo string      `json:"photo"`
-	HC    float64     `json:"hc"`
-	Items []LeaveItem `json:"items"`
+	EE      string      `json:"ee"`
+	Name    string      `json:"name"`
+	Photo   string      `json:"photo"`
+	HC      float64     `json:"hc"`
+	Pending bool        `json:"pending,omitempty"`
+	Items   []LeaveItem `json:"items"`
 }
 
 // ElsewhereView is a member of the shift who is assigned only to machines of another process. The person has a task, so
@@ -141,20 +146,38 @@ type MTRInfo struct {
 
 // BoardView is the whole state of a scanning session.
 type BoardView struct {
-	Process     string          `json:"process"`
-	Date        string          `json:"date"`
-	Shift       string          `json:"shift"`
-	ServerTime  time.Time       `json:"server_time"`
-	Locked      bool            `json:"locked"` // the month is locked, nothing can be saved
-	Machines    []MachineView   `json:"machines"`
-	Entries     []EntryView     `json:"entries"`
-	NotAssigned []PersonView    `json:"not_assigned"`
-	OtherShift  []CandidateView `json:"other_shift"`
-	OffDay      []CandidateView `json:"off_day"`
-	Leave       []LeaveView     `json:"leave"`
-	Elsewhere   []ElsewhereView `json:"elsewhere"`
-	Totals      Totals          `json:"totals"`
-	MTR         MTRInfo         `json:"mtr"`
+	Process      string          `json:"process"`
+	Date         string          `json:"date"`
+	Shift        string          `json:"shift"`
+	ServerTime   time.Time       `json:"server_time"`
+	Locked       bool            `json:"locked"` // the month is locked, nothing can be saved
+	Machines     []MachineView   `json:"machines"`
+	LeaveOptions []string        `json:"leave_options"` // selectable leave options from SHIFT_LEAVE_PATTERN (excluding Delete Record)
+	Entries      []EntryView     `json:"entries"`
+	NotAssigned  []PersonView    `json:"not_assigned"`
+	OtherShift   []CandidateView `json:"other_shift"`
+	OffDay       []CandidateView `json:"off_day"`
+	OtherProcess []CandidateView `json:"other_process"`
+	Leave        []LeaveView     `json:"leave"`
+	Elsewhere    []ElsewhereView `json:"elsewhere"`
+	Totals       Totals          `json:"totals"`
+	MTR          MTRInfo         `json:"mtr"`
+}
+
+// EmployeeMTRGroup holds all MTR records of one employee for one process.
+type EmployeeMTRGroup struct {
+	Process string      `json:"process"`
+	Current bool        `json:"current"`
+	Records []MTRRecord `json:"records"`
+}
+
+// EmployeeMTRView answers GET api/mtr.
+type EmployeeMTRView struct {
+	EE      string             `json:"ee"`
+	Name    string             `json:"name"`
+	Process string             `json:"process"`
+	Photo   string             `json:"photo"`
+	Groups  []EmployeeMTRGroup `json:"groups"`
 }
 
 // ScanResult answers POST api/scan.

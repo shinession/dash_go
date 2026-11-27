@@ -65,6 +65,7 @@ func (s *Service) Routes(mux *http.ServeMux, prefix string, guard func(http.Hand
 	}
 	api("GET", "me", s.handleMe)
 	api("GET", "board", s.handleBoard)
+	api("GET", "mtr", s.handleEmployeeMTR)
 	api("POST", "scan", s.handleScan)
 	api("POST", "assign", s.handleAssign)
 	api("POST", "remove", s.handleRemove)
@@ -88,14 +89,15 @@ func noStore(h http.HandlerFunc) http.Handler {
 }
 
 type sessionRequest struct {
-	Process    string   `json:"process"`
-	Date       string   `json:"date"`
-	Shift      string   `json:"shift"`
-	Input      string   `json:"input"`
-	EE         string   `json:"ee"`
-	Machine    string   `json:"machine_id"`
-	MachineIDs []string `json:"machine_ids"`
-	Ack        bool     `json:"ack"`
+	Process         string   `json:"process"`
+	Date            string   `json:"date"`
+	Shift           string   `json:"shift"`
+	Input           string   `json:"input"`
+	EE              string   `json:"ee"`
+	Machine         string   `json:"machine_id"`
+	MachineIDs      []string `json:"machine_ids"`
+	TargetMachineID string   `json:"target_machine_id"`
+	Ack             bool     `json:"ack"`
 }
 
 func (s *Service) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -115,12 +117,30 @@ func (s *Service) handleBoard(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, b, err)
 }
 
+func (s *Service) handleEmployeeMTR(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r.Context())
+	q := r.URL.Query()
+	proc := strings.TrimSpace(q.Get("process"))
+	ee := strings.TrimSpace(q.Get("ee"))
+	var date time.Time
+	if rawDate := strings.TrimSpace(q.Get("date")); rawDate != "" {
+		d, err := time.Parse("2006-01-02", rawDate)
+		if err != nil {
+			respond[any](w, r, nil, newError(http.StatusBadRequest, "bad_date"))
+			return
+		}
+		date = DateOnly(d)
+	}
+	res, err := s.EmployeeMTR(r.Context(), u, proc, date, ee)
+	respond(w, r, res, err)
+}
+
 func (s *Service) handleScan(w http.ResponseWriter, r *http.Request) {
 	u, req, k, ok := s.session(w, r)
 	if !ok {
 		return
 	}
-	res, err := s.Scan(r.Context(), u, k, req.Input)
+	res, err := s.ScanTo(r.Context(), u, k, req.Input, req.TargetMachineID)
 	respond(w, r, res, err)
 }
 

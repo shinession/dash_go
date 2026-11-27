@@ -90,7 +90,8 @@ INSERT INTO t_mtr_checkpoint (uid, row_id, emp_code, checkpoint_key, cim_process
  -- a level that is no number is ignored, a row without machine id is ignored, another process is ignored
  ('u7', 5, 'AB12C03', 'k5', 'Winder', 'C520', 'Winder_520', NULL, '2026-11-03 08:00', false),
  ('u8', 6, 'AB12C03', 'k6', 'Winder', '', 'Nothing', 3, '2026-11-03 08:00', false),
- ('u9', 7, 'AB12C04', 'k7', 'Slitter', 'S105', 'Slitter_105', 3, '2026-11-03 08:00', false)`)
+ ('u9', 7, 'AB12C04', 'k7', 'Slitter', 'S105', 'Slitter_105', 3, '2026-11-03 08:00', false),
+ ('u10', 8, 'AB12C01', 'k8', 'Slitter', 'S105', 'Slitter_105', 2, '2026-11-03 08:00', false)`)
 
 	seed(t, pool, `
 INSERT INTO t_mes_ee (uid, ee_code, ee_name, cost_center, section, division, direct_type, shift, resign_date, effective_mth, "group") VALUES
@@ -151,6 +152,16 @@ func TestPGReads(t *testing.T) {
 	}
 	if mtr.DataTime.IsZero() || !mtr.DataTime.Equal(time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)) {
 		t.Errorf("data time: %v", mtr.DataTime)
+	}
+
+	empRecs, err := r.EmployeeMTR(ctx, "ab12c01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empRecs) != 2 ||
+		empRecs[0] != (MTRRecord{Process: "Slitter", MachineID: "S105", Machine: "Slitter_105", Level: 2}) ||
+		empRecs[1] != (MTRRecord{Process: "Winder", MachineID: "C515", Machine: "Winder_515", Level: 3}) {
+		t.Fatalf("EmployeeMTR across all processes (hidden removed, newest version kept): %+v", empRecs)
 	}
 
 	cal, err := r.CalendarDay(ctx, testDate)

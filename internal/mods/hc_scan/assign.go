@@ -10,6 +10,64 @@ type Ranked struct {
 	Remaining float64 // budget left on the machine
 }
 
+// PrevWorkCandidate is one machine worked on the employee's previous working day, with its HC share on that day.
+type PrevWorkCandidate struct {
+	Machine Machine
+	Share   float64
+}
+
+// PickPrevWorkMachine chooses the best eligible routine machine from the employee's previous working day.
+//
+// A previous-day machine is eligible under the same gates as RankMachines: routine with an MTR mapping, employee
+// holds at least MTR level 1 on it, and remaining budget has room for need. When multiple machines were worked on the
+// previous working day, the larger HC share on that day wins, then higher MTR level, larger remaining budget, display
+// order and machine id.
+func PickPrevWorkMachine(candidates []PrevWorkCandidate, level func(Machine) int, recent map[string]int, remaining map[string]float64, need float64) (Ranked, bool) {
+	type scored struct {
+		ranked Ranked
+		share  float64
+	}
+	var out []scored
+	for _, c := range candidates {
+		m := c.Machine
+		if !m.Routine() || m.CIMID == "" {
+			continue
+		}
+		lv := level(m)
+		if lv < 1 {
+			continue
+		}
+		rem := remaining[m.ID]
+		if rem <= eps || rem+eps < need {
+			continue
+		}
+		out = append(out, scored{
+			ranked: Ranked{Machine: m, Level: lv, Recent: recent[m.ID], Remaining: rem},
+			share:  c.Share,
+		})
+	}
+	if len(out) == 0 {
+		return Ranked{}, false
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.share != b.share {
+			return a.share > b.share
+		}
+		if a.ranked.Level != b.ranked.Level {
+			return a.ranked.Level > b.ranked.Level
+		}
+		if a.ranked.Remaining != b.ranked.Remaining {
+			return a.ranked.Remaining > b.ranked.Remaining
+		}
+		if a.ranked.Machine.Seq != b.ranked.Machine.Seq {
+			return a.ranked.Machine.Seq < b.ranked.Machine.Seq
+		}
+		return a.ranked.Machine.ID < b.ranked.Machine.ID
+	})
+	return out[0].ranked, true
+}
+
 // RankMachines returns the machines one scanned person may be assigned to, best first.
 //
 // A machine is eligible when it is a routine machine that has an MTR mapping, the person holds MTR level 1 or

@@ -216,3 +216,11 @@ type MTRData struct {
 	NameToCIM map[string]string         // machine name -> MTR machine id
 	DataTime  time.Time                 // newest updated_at of the rows
 }
+
+// MTRRecord is one machine proficiency record of an employee across any process in t_mtr_checkpoint.
+type MTRRecord struct {
+	Process   string `json:"process"`
+	MachineID string `json:"cim_machine_id"`
+	Machine   string `json:"machine"`
+	Level     int    `json:"level"`
+}
