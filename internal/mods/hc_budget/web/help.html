@@ -26,10 +26,10 @@
 
     <section id="permissions" class="dg-doc-section">
       <h2>Permissions and roles</h2>
-      <p>Process access comes from the same HeadCount group rules as <strong>HC Scan Assign</strong>. Within each permitted process, two roles apply:</p>
+      <p>Process access comes from the same HeadCount group rules (<code>t_auth_group</code>) as <strong>HC Scan Assign</strong>. Within each permitted process, administrator privileges come strictly from <code>T_USER_ALL</code> (<code>Type = admin</code>), not from <code>t_auth_group</code> group admins (which only manage group membership):</p>
       <div class="dg-doc-table-wrap">
         <table class="dg-doc-table">
-          <thead><tr><th>Capability</th><th>Authorized user</th><th>Admin (<code>Type = admin</code>)</th></tr></thead>
+          <thead><tr><th>Capability</th><th>Authorized user</th><th>System Admin (<code>T_USER_ALL.Type = admin</code>)</th></tr></thead>
           <tbody>
             <tr><td><strong>View active rows</strong></td><td>Yes</td><td>Yes</td></tr>
             <tr><td><strong>Edit Machine, Type, Category, Budget HC</strong></td><td>Yes</td><td>Yes</td></tr>
@@ -100,10 +100,10 @@
 
     <section id="permissions" class="dg-doc-section">
       <h2>权限与角色</h2>
-      <p>工序访问权限沿用与<strong>HC 扫码分派</strong>相同的 HeadCount 权限组规则。在有权限的工序内，区分两种角色：</p>
+      <p>工序访问权限沿用与<strong>HC 扫码分派</strong>相同的 HeadCount 权限组规则（<code>t_auth_group</code>）。在有权限的工序内，管理员特权仅来自用户主表 <code>T_USER_ALL</code>（<code>Type = admin</code>），而非 <code>t_auth_group</code> 中的权限组管理员（权限组管理员仅用于增减组成员）：</p>
       <div class="dg-doc-table-wrap">
         <table class="dg-doc-table">
-          <thead><tr><th>功能</th><th>普通授权用户</th><th>管理员（<code>Type = admin</code>）</th></tr></thead>
+          <thead><tr><th>功能</th><th>普通授权用户</th><th>系统管理员（<code>T_USER_ALL.Type = admin</code>）</th></tr></thead>
           <tbody>
             <tr><td><strong>查看启用中的记录</strong></td><td>可以</td><td>可以</td></tr>
             <tr><td><strong>编辑机台名称、类型、分类、预算人力</strong></td><td>可以</td><td>可以</td></tr>

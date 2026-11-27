@@ -95,3 +95,39 @@ INSERT INTO t_mqpd_hc_table (id, process, cost_center, process_code, "type", sta
 		t.Fatalf("persisted order/state mismatch: %+v", after)
 	}
 }
+
+func TestPGIsUserAdminReadsTUserAll(t *testing.T) {
+	pool := testPGPool(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `
+INSERT INTO "T_USER_ALL" (ee_code, "Name", "Type", "UpdateDate", activated) VALUES
+ ('AD01A01', 'Alice Admin', 'user',  '2026-10-01 08:00:00', true),
+ ('AD01A01', 'Alice Admin', 'admin', '2026-11-01 08:00:00', true),
+ ('AD02A02', 'Case Admin',  'Admin', '2026-11-01 08:00:00', true),
+ ('DM01A01', 'Demoted',     'admin', '2026-10-01 08:00:00', true),
+ ('DM01A01', 'Demoted',     'user',  '2026-11-01 08:00:00', true),
+ ('IN01A01', 'Inactive',    'admin', '2026-11-01 08:00:00', false),
+ ('US01A01', 'Bob User',    'user',  '2026-11-01 08:00:00', true)`); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewPGRepository(pool)
+	cases := map[string]bool{
+		"ad01a01": true,  // latest row promoted to admin, case-insensitive lookup
+		"AD02A02": true,  // mixed-case "Admin"
+		"DM01A01": false, // latest row demoted to user
+		"IN01A01": false, // deactivated admin
+		"US01A01": false, // standard user
+		"NO99Z99": false, // unknown user
+		"":        false, // blank
+	}
+	for ee, want := range cases {
+		got, err := repo.IsUserAdmin(ctx, ee)
+		if err != nil {
+			t.Fatalf("IsUserAdmin(%q): %v", ee, err)
+		}
+		if got != want {
+			t.Errorf("IsUserAdmin(%q) = %v, want %v", ee, got, want)
+		}
+	}
+}

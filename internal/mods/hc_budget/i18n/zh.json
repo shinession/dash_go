@@ -131,5 +131,6 @@
   "hb.err.save_failed": "保存到数据库失败，未写入任何数据。请联系管理员。",
   "hb.err.internal": "服务器无法{step}。请重试；如果一直失败，请联系管理员。",
 
-  "hb.step.read_rows": "读取 HC 预算表"
+  "hb.step.read_rows": "读取 HC 预算表",
+  "hb.step.check_admin_role": "在 T_USER_ALL 中校验管理员角色"
 }

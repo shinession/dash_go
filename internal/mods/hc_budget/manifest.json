@@ -6,7 +6,8 @@
     "docs/hc_budget_page.md"
   ],
   "reads": [
-    "t_mqpd_hc_table"
+    "t_mqpd_hc_table",
+    "T_USER_ALL"
   ],
   "writes": [
     "t_mqpd_hc_table"

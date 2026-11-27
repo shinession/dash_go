@@ -2,6 +2,7 @@ package hcbudget
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,13 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// pgRepo reads and writes t_mqpd_hc_table in the Auth database. All SQL is parameterized.
+// pgRepo reads and writes t_mqpd_hc_table and checks "T_USER_ALL" in the Auth database. All SQL is parameterized.
 type pgRepo struct {
 	pool *pgxpool.Pool
 }
 
 // NewPGRepository returns the PostgreSQL implementation of Repository.
 func NewPGRepository(pool *pgxpool.Pool) Repository { return &pgRepo{pool: pool} }
+
+// IsUserAdmin checks the newest row of eeCode in "T_USER_ALL" (Auth DB) by "UpdateDate".
+// Only activated users with "Type" = 'admin' (case-insensitive) are administrators for hc_budget;
+// t_auth_group admin_list is never used for this role.
+func (r *pgRepo) IsUserAdmin(ctx context.Context, eeCode string) (bool, error) {
+	if strings.TrimSpace(eeCode) == "" {
+		return false, nil
+	}
+	var userType, activated string
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE("Type"::text, ''), LOWER(COALESCE(activated::text, ''))
+FROM "T_USER_ALL"
+WHERE upper(btrim(ee_code::text)) = upper(btrim($1))
+ORDER BY "UpdateDate" DESC NULLS LAST
+LIMIT 1`, eeCode).Scan(&userType, &activated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if activated != "true" && activated != "t" && activated != "1" {
+		return false, nil
+	}
+	return strings.EqualFold(strings.TrimSpace(userType), "admin"), nil
+}
 
 const selectProcessRowsSQL = `
 SELECT id::text,

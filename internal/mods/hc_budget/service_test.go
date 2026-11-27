@@ -28,16 +28,25 @@ var (
 )
 
 type memRepo struct {
-	rows    map[string]Row // all rows across all processes by id
-	failErr error
+	rows     map[string]Row  // all rows across all processes by id
+	admins   map[string]bool // simulated T_USER_ALL Type = admin lookup by upper(ee_code)
+	adminErr error
+	failErr  error
 }
 
 func newMemRepo(seed ...Row) *memRepo {
-	m := &memRepo{rows: map[string]Row{}}
+	m := &memRepo{rows: map[string]Row{}, admins: map[string]bool{}}
 	for _, r := range seed {
 		m.rows[r.ID] = r
 	}
 	return m
+}
+
+func (m *memRepo) IsUserAdmin(_ context.Context, eeCode string) (bool, error) {
+	if m.adminErr != nil {
+		return false, m.adminErr
+	}
+	return m.admins[strings.ToUpper(strings.TrimSpace(eeCode))], nil
 }
 
 func (m *memRepo) ProcessRows(_ context.Context, process string) ([]Row, error) {
@@ -141,8 +150,9 @@ func newTestEnv(t *testing.T) *testEnv {
 		Row{ID: "Winder_999", Process: "Winder", CostCenter: "2085", ProcessCode: intPtr(10), Type: TypeRoutine, StationCode: intPtr(999), Machine: "Retired Winder", BudgetHC: 0, Category: "Legacy", DisplaySeq: intPtr(4), Hidden: true, UpdateAt: "2026-10-01 08:00:00", UpdateUser: "Init"},
 		Row{ID: "Slitter_105", Process: "Slitter", CostCenter: "2086", ProcessCode: intPtr(20), Type: TypeRoutine, StationCode: intPtr(105), Machine: "Slitter 105", BudgetHC: 1, Category: "Main", DisplaySeq: intPtr(1), Hidden: false, UpdateAt: "2026-11-20 08:00:00", UpdateUser: "Init"},
 	)
+	repo.admins[adminUser.EE] = true
 	perms := &stubPerms{byEE: map[string]hc.Access{
-		adminUser.EE: {Processes: []string{"Winder", "Slitter"}, IsAdmin: true},
+		adminUser.EE: {Processes: []string{"Winder", "Slitter"}, IsAdmin: false}, // admin comes from T_USER_ALL, not hc_user_processes/t_auth_group
 		stdUser.EE:   {Processes: []string{"Winder"}, IsAdmin: false},
 	}}
 	clog := &stubChangeLog{}
@@ -196,6 +206,39 @@ func TestMeOrdersProcessesAndExposesAdmin(t *testing.T) {
 	if err != nil || meNone.Processes == nil || len(meNone.Processes) != 0 || meNone.IsAdmin {
 		t.Fatalf("none me: %#v %v", meNone, err)
 	}
+}
+
+func TestAdminRoleComesStrictlyFromTUserAllNotAuthGroup(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// Even if stubPerms.Access reports IsAdmin=true for stdUser (e.g. group admin),
+	// T_USER_ALL says stdUser is NOT admin -> hc_budget must treat stdUser as non-admin.
+	env.perms.byEE[stdUser.EE] = hc.Access{Processes: []string{"Winder"}, IsAdmin: true}
+	meStd, err := env.svc.Me(ctx, stdUser)
+	if err != nil || meStd.IsAdmin {
+		t.Fatalf("stdUser must NOT be admin when T_USER_ALL is false: %+v %v", meStd, err)
+	}
+	_, err = env.svc.Save(ctx, stdUser, SaveRequest{
+		Process: "Winder",
+		Creates: []CreateRow{{StationCode: intPtr(540), Machine: "Blocked", Type: TypeRoutine}},
+	})
+	assertServiceErr(t, err, 403, "forbidden_admin")
+
+	// Conversely, adminUser has T_USER_ALL Type=admin even with Perms.IsAdmin=false -> allowed.
+	meAdm, err := env.svc.Me(ctx, adminUser)
+	if err != nil || !meAdm.IsAdmin {
+		t.Fatalf("adminUser must be admin from T_USER_ALL: %+v %v", meAdm, err)
+	}
+
+	// Database error checking T_USER_ALL fails closed with HTTP 500.
+	env.repo.adminErr = errors.New("db down")
+	_, err = env.svc.Me(ctx, adminUser)
+	assertServiceErr(t, err, 500, "internal")
+	_, err = env.svc.Table(ctx, adminUser, "Winder", false)
+	assertServiceErr(t, err, 500, "internal")
+	_, err = env.svc.Save(ctx, adminUser, SaveRequest{Process: "Winder"})
+	assertServiceErr(t, err, 500, "internal")
 }
 
 func TestTableFiltersHiddenAndComputesDefaults(t *testing.T) {

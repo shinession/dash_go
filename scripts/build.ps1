@@ -15,10 +15,16 @@
 .PARAMETER List
   Print the available modules and exit.
 
+.PARAMETER TestGcFlags
+  Value passed to "go test -gcflags" before building (default: "all=-N -l", which avoids false-positive
+  EDR/Cortex XDR kills on stripped optimized temporary *.test.exe binaries on Windows). Pass '' to use Go's
+  default test flags.
+
 .EXAMPLE
   .\scripts\build.ps1
   .\scripts\build.ps1 -Modules hc_scan
-  .\scripts\build.ps1 -Modules hc_scan,other -OutDir D:\release
+  .\scripts\build.ps1 -Modules a,b,c -OutDir D:\release
+  .\scripts\build.ps1 -TestGcFlags ''
   .\scripts\build.ps1 -List
 #>
 [CmdletBinding()]
@@ -28,6 +34,7 @@ param(
     [string] $Version = '',
     [string] $GOOS = 'windows',
     [string] $GOARCH = 'amd64',
+    [string] $TestGcFlags = 'all=-N -l',
     [switch] $List,
     [switch] $NoZip,
     [switch] $SkipTests
@@ -79,7 +86,10 @@ $go = Find-Go
 # ---- test, then build ----
 if (-not $SkipTests) {
     Write-Output 'Running the tests ...'
-    & $go test ./...
+    $testArgs = @('test')
+    if ($TestGcFlags) { $testArgs += @('-gcflags', $TestGcFlags) }
+    $testArgs += './...'
+    & $go @testArgs
     if ($LASTEXITCODE -ne 0) { throw 'The tests failed; nothing was built.' }
 }
 

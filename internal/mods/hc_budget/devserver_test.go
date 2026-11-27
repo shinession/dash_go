@@ -42,6 +42,7 @@ func TestDevServer(t *testing.T) {
 		Row{ID: "Winder_999", Process: "Winder", CostCenter: "2085", ProcessCode: intPtr(10), Type: TypeRoutine, StationCode: intPtr(999), Machine: "Retired Winder", BudgetHC: 0, Category: "Legacy", DisplaySeq: intPtr(5), Hidden: true, UpdateAt: "2026-10-01 09:00:00", UpdateUser: "Alice Admin"},
 		Row{ID: "Slitter_105", Process: "Slitter", CostCenter: "2086", ProcessCode: intPtr(20), Type: TypeRoutine, StationCode: intPtr(105), Machine: "Slitter 105", BudgetHC: 1, Category: "Cutting", DisplaySeq: intPtr(1), Hidden: false, UpdateAt: "2026-11-25 08:15:00", UpdateUser: "Alice Admin"},
 	)
+	repo.admins[adminUser.EE] = true
 	perms := &stubPerms{byEE: map[string]hc.Access{
 		adminUser.EE: {Processes: []string{"Slitter", "Winder"}, IsAdmin: true},
 		stdUser.EE:   {Processes: []string{"Winder"}, IsAdmin: false},

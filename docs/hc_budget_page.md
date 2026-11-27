@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-27 (dash_go version 0.2.0). This describes the current implementation of `internal/mods/hc_budget` and the shared helpers in `internal/core/hc`, `internal/core/dashapi`, `internal/core/config`, and `internal/core/shell`. Section 9 lists what was verified and what was not.
+**Updated:** 2026-11-27 (dash_go version 0.2.1). This describes the current implementation of `internal/mods/hc_budget` and the shared helpers in `internal/core/hc`, `internal/core/dashapi`, `internal/core/config`, and `internal/core/shell`. Version 0.2.1 switched the administrator role check to read `"T_USER_ALL"."Type" = 'admin'` directly from the `Auth` PostgreSQL database (no Python `appV2.py` change required; `t_auth_group` group admins only manage group membership and do not grant `hc_budget` admin privileges). Section 9 lists what was verified and what was not.
 
 ## 1. Overview
 
@@ -18,12 +18,14 @@ It reads and writes `t_mqpd_hc_table` in the `Auth` PostgreSQL database — the 
 
 Process access uses the exact same backend check as `hc_scan`: `internal/core/hc.DashPermissions` calls `POST <api>/user/hc_scan` with `{"func":"hc_user_processes","user":"<ee>"}` (cached 1 minute; bypassed with `fresh=true` on `POST api/save`) and intersects the returned processes with `HC_PROCESS_LIST`.
 
-Administrator status is derived from the optional `type` field on `dashapi.Profile`:
+Administrator privileges in `hc_budget` (adding machines/activities, viewing/toggling `hidden`, and reordering `display_seq`) come **strictly from `"T_USER_ALL"` in the `Auth` PostgreSQL database** (since 0.2.1), never from `t_auth_group` (`admin_list` in `t_auth_group` is only for adding/removing group users):
 
-- `is_admin = strings.EqualFold(strings.TrimSpace(profile.Type), "admin")`
-- If an older Python backend omits `type`, `is_admin` safely defaults to `false`.
+- `Repository.IsUserAdmin(ctx, eeCode)` queries the newest row of `ee_code` in `"T_USER_ALL"` ordered by `"UpdateDate" DESC NULLS LAST LIMIT 1`.
+- A user is treated as admin if and only if that newest row is active (`activated` in `{'true', 't', '1'}`) and `"Type"` equals `'admin'` (case-insensitive).
+- No change to Python `appV2.py` (`hc_user_processes`) is required for admin detection.
+- Any database error during the `"T_USER_ALL"` check fails closed with HTTP `500`.
 
-| Capability | Authorized User | Admin (`type = admin`) |
+| Capability | Authorized User | System Admin (`"T_USER_ALL"."Type" = 'admin'`) |
 |---|---|---|
 | View active (`hidden = false`) rows of permitted processes | Yes | Yes |
 | Edit `machine`, `type`, `category`, `budget_head_count` on active rows | Yes | Yes |
@@ -31,21 +33,9 @@ Administrator status is derived from the optional `type` field on `dashapi.Profi
 | Toggle **Show hidden**, hide active rows, restore or edit hidden rows | No (HTTP `403`) | Yes |
 | Reorder per-process `display_seq` | No (HTTP `403`) | Yes |
 
-### Pending Python Dash Integration (Not Modified Yet)
+### Optional Dash Menu Integration
 
-Per project rollout order, `D:\Programs\Python\dash` was intentionally left untouched while building `dash_go` v0.2.0. To enable admin detection in `dash_go` against the live Python API, add `'type'` to the `hc_user_processes` response in `appV2.py`:
-
-```python
-return jsonify({
-    'Response': 'ok',
-    'name': user_data.get('Name'),
-    'ee_code': user_data.get('EE_Code'),
-    'type': user_data.get('Type'),
-    'processes': processes,
-}), 200
-```
-
-Optionally, link a Dash menu button in `IE.py` to `/dash_go/hc_budget/` via `build_dash_go_sso_url(..., next_path='/dash_go/hc_budget/')`.
+To add a direct entry button from Python Dash (`IE.py`), link to `/dash_go/hc_budget/` via `build_dash_go_sso_url(..., next_path='/dash_go/hc_budget/')`. Users can also open `/dash_go/hc_budget/` directly and sign in through `dash_go`.
 
 ## 3. Workflow and UI
 
@@ -136,41 +126,38 @@ go test -tags devserver -run TestDevServer -timeout 0 ./internal/mods/hc_budget
 
 ## 8. Troubleshooting
 
-- **Admin controls (+ Add, Show hidden, Seq column) do not appear for an admin account:** check whether the Python `appV2.py` `hc_user_processes` handler returns `"type": "admin"` (Section 2). Until `appV2.py` includes `'type'`, `dash_go` treats all users as standard authorized users.
+- **Admin controls (+ Add, Show hidden, Seq column) do not appear for an admin account:** check the user's newest row (by `"UpdateDate"`) in `"T_USER_ALL"` of the `Auth` database — it must have `"Type" = 'admin'` (case-insensitive) and `activated = true`. Being listed in `t_auth_group.admin_list` does **not** grant `hc_budget` admin privileges.
 - **Cannot drag or move rows:** clear the filter box; reordering is disabled while a search filter is active so hidden-by-filter rows are never reordered unexpectedly.
 - **"Station code ... already exists" when adding a code not visible on screen:** check **Show hidden** — station code uniqueness applies across both active and hidden rows of that process (matching `id = <process>_<station_code>`).
 - **Saved changes are not immediately visible in Python Dash:** check the warning toast or `logs\dash_go-<date>.log` for `MQPDHeadCount.log` write errors and verify `dash_data_dir` / `cdn_data_folder` permissions.
 
 ## 9. Verification Status
 
-**Done (2026-11-27, version 0.2.0):**
+**Done (2026-11-27, versions 0.2.0 and 0.2.1):**
 
-- Static analysis & modular builds: `go vet ./...`, `go vet -tags devserver ./...`, `go build ./cmd/dash_go` (all modules: `hc_budget, hc_scan`), `-tags nomod_hc_budget` (`hc_scan` only), and `-tags nomod_hc_scan` (`hc_budget` only), verified with `-version`.
+- Static analysis & modular builds: `go vet ./...`, `go vet -tags devserver ./...`, `go build ./cmd/dash_go` (all modules: `hc_budget, hc_scan`), `-tags nomod_hc_budget` (`hc_scan` only), and `-tags nomod_hc_scan` (`hc_budget` only), verified with `-version`, plus `.\scripts\build.ps1` with default `-TestGcFlags 'all=-N -l'`.
 - Unit, HTTP, and catalog tests across all packages (`internal/core/dashapi`, `internal/core/config`, `internal/core/hc`, `internal/core/shell`, `internal/mods/hc_budget`, `internal/mods/hc_scan`, etc.):
-  - `dashapi.Profile.IsAdmin()` for `"admin"`, mixed case, `"user"`, and omitted `"type"`;
-  - Top-level `dash_data_dir` config parsing;
-  - `hc.DashPermissions` caching, TTL expiry, `fresh=true` bypass, and `OrderProcesses`;
+  - `hc_budget` `"T_USER_ALL"` admin check (`TestAdminRoleComesStrictlyFromTUserAllNotAuthGroup`): confirms admin status comes exclusively from `Repository.IsUserAdmin` (`T_USER_ALL`), ignoring any `t_auth_group`/profile admin flag, and fails closed with HTTP `500` on database errors;
   - `hc_budget` service logic: permissions, non-admin `403` enforcement on create/hide/edit-hidden/reorder, batch add + edit + hide + restore + reorder, preserving hidden rows' order when **Show hidden** is off, `station_code` and global `id` uniqueness, `budget_head_count` regex and blank-to-zero handling, no-op `409 nothing_to_save`, `MQPDHeadCount.log` append and non-fatal warning;
   - `hc_budget` HTTP routes, auth guards, EN/ZH page and help rendering, tour steps, and strict `hb.*` catalog parity / unused-key / placeholder checks;
   - `shell` palette contrast, `budget` icon sprite presence, `dashGo.picker` presence, and core catalog tests.
 - End-to-end headless Chromium verification (Playwright against the real `hc_budget` + shell `devserver` harness with in-memory repository, CSP headers, and visual screenshot inspection):
-  - Landing page showing `Version 0.2.0`, `hc_scan` (`#scanner`) and `hc_budget` (`#budget`) icons;
+  - Landing page showing `hc_scan` (`#scanner`) and `hc_budget` (`#budget`) icons;
   - Admin login, shared process picker with user/admin caption, Add Machine / Activity modal (prefilled cost center & process code, duplicate check against hidden station `999`, live ID preview, staging `Winder 535`), inline budget edit, Hide action, reordering (`Move up` and HTML5 drag-and-drop), Confirm summary dialog, atomic save + reload persistence, **Show hidden** toggle, dark theme, and Chinese UI;
   - Standard user login confirming all admin-only controls/columns are hidden while inline editing + Confirm succeeds;
   - Public `/dash_go/hc_budget/help` in EN & ZH; zero JS/page/CSP errors.
 
 **Not verified:**
 
-- Live PostgreSQL integration test (`DASH_GO_TEST_PG` in `internal/mods/hc_budget/repo_pg_test.go` was compile-checked and skipped because no scratch PostgreSQL instance was configured in this environment).
-- Live integration against the Python `appV2.py` `'type'` addition (not yet applied to `D:\Programs\Python\dash` per rollout plan) and Python `read_mqpd_hc_data` cache refresh via `MQPDHeadCount.log`.
-- Live Dash `IE.py` menu hand-over link to `/dash_go/hc_budget/` and production release build (`scripts/release.ps1`).
+- Live PostgreSQL integration test (`DASH_GO_TEST_PG` in `internal/mods/hc_budget/repo_pg_test.go`, including `TestPGIsUserAdminReadsTUserAll`, was compile-checked and skipped because no scratch PostgreSQL instance was configured in this environment).
+- Live Python `read_mqpd_hc_data` cache refresh via `MQPDHeadCount.log`, live Dash `IE.py` menu hand-over link to `/dash_go/hc_budget/`, and production release build (`scripts/release.ps1`).
 - User review of Chinese UI wording and help text.
 
 ---
 
 # 中文
 
-**更新日期：** 2026-11-27（dash_go 版本 0.2.0）。本文描述 `internal/mods/hc_budget` 以及 `internal/core/hc`、`internal/core/dashapi`、`internal/core/config` 和 `internal/core/shell` 中共享组件的当前实现。第 9 节说明哪些内容已验证、哪些尚未验证。
+**更新日期：** 2026-11-27（dash_go 版本 0.2.1）。本文描述 `internal/mods/hc_budget` 以及 `internal/core/hc`、`internal/core/dashapi`、`internal/core/config` 和 `internal/core/shell` 中共享组件的当前实现。0.2.1 版将管理员身份校验改为直接读取 `Auth` PostgreSQL 数据库的 `"T_USER_ALL"."Type" = 'admin'`（无需修改 Python `appV2.py`；`t_auth_group` 中的权限组管理员仅用于增减组成员，不授予 `hc_budget` 管理员权限）。第 9 节说明哪些内容已验证、哪些尚未验证。
 
 ## 1. 概述
 
@@ -188,12 +175,14 @@ go test -tags devserver -run TestDevServer -timeout 0 ./internal/mods/hc_budget
 
 工序访问权限沿用与 `hc_scan` 完全一致的后端校验：`internal/core/hc.DashPermissions` 调用 `POST <api>/user/hc_scan`（`{"func":"hc_user_processes","user":"<ee>"}`，缓存 1 分钟，`POST api/save` 保存前强制 `fresh=true` 实时校验），并与 `HC_PROCESS_LIST` 取交集排序。
 
-管理员身份取自 `dashapi.Profile` 的可选字段 `type`：
+`hc_budget` 中的管理员权限（新增机台/活动、查看与切换 `hidden`、拖动调整 `display_seq`）自 0.2.1 起**直接且唯一取自 `Auth` PostgreSQL 数据库的 `"T_USER_ALL"` 表**，不使用 `t_auth_group`（`t_auth_group.admin_list` 仅用于增减组成员）：
 
-- `is_admin = strings.EqualFold(strings.TrimSpace(profile.Type), "admin")`
-- 若旧版 Python 后端未返回 `type` 字段，`is_admin` 安全回退为 `false`。
+- `Repository.IsUserAdmin(ctx, eeCode)` 按 `"UpdateDate" DESC NULLS LAST LIMIT 1` 查询该工号在 `"T_USER_ALL"` 中的最新一条记录。
+- 仅当该最新记录处于激活状态（`activated` 为 `'true'` / `'t'` / `'1'`）且 `"Type"` 为 `'admin'`（忽略大小写）时，才判定为管理员。
+- 管理员识别不再依赖修改 Python `appV2.py`（`hc_user_processes`）。
+- 查询 `"T_USER_ALL"` 发生数据库错误时按安全默认拒绝（返回 HTTP `500`）。
 
-| 功能 | 普通授权用户 | 管理员（`type = admin`） |
+| 功能 | 普通授权用户 | 系统管理员（`"T_USER_ALL"."Type" = 'admin'`） |
 |---|---|---|
 | 查看有权限工序下启用中（`hidden = false`）的行 | 可以 | 可以 |
 | 编辑启用行的 `machine`、`type`、`category`、`budget_head_count` | 可以 | 可以 |
@@ -201,11 +190,9 @@ go test -tags devserver -run TestDevServer -timeout 0 ./internal/mods/hc_budget
 | 切换**显示已隐藏**、隐藏启用行、恢复或编辑已隐藏行 | 不可（HTTP `403`） | 可以 |
 | 调整本工序内 `display_seq` 显示顺序 | 不可（HTTP `403`） | 可以 |
 
-### 待配套修改的 Python Dash 后端（暂未修改）
+### 可选的 Dash 菜单集成
 
-按上线顺序，本次构建 `dash_go` v0.2.0 时保持 `D:\Programs\Python\dash` 原样未改。后续在 Python API 中启用管理员识别时，只需在 `appV2.py` 的 `hc_user_processes` 返回 JSON 中增加 `'type': user_data.get('Type')`（见上方英文版中的代码块）。
-
-此外，可按需在 `IE.py` 中添加菜单入口按钮，通过 `build_dash_go_sso_url(..., next_path='/dash_go/hc_budget/')` 跳转到 `/dash_go/hc_budget/`。
+如需在 Python Dash（`IE.py`）中增加直达入口按钮，可通过 `build_dash_go_sso_url(..., next_path='/dash_go/hc_budget/')` 跳转到 `/dash_go/hc_budget/`。用户也可直接打开 `/dash_go/hc_budget/` 并经 `dash_go` 登录。
 
 ## 3. 工作流程与界面
 
@@ -291,32 +278,29 @@ go test -tags devserver -run TestDevServer -timeout 0 ./internal/mods/hc_budget
 
 ## 8. 故障排查
 
-- **管理员账号看不到新增、显示已隐藏或排序列：** 检查 Python `appV2.py` 的 `hc_user_processes` 是否已返回 `"type": "admin"`（见第 2 节）。在 `appV2.py` 增加 `'type'` 字段前，`dash_go` 会将所有用户按普通授权用户处理。
+- **管理员账号看不到新增、显示已隐藏或排序列：** 请检查 `Auth` 数据库 `"T_USER_ALL"` 中该工号按 `"UpdateDate"` 最新的记录——必须满足 `"Type" = 'admin'`（忽略大小写）且 `activated = true`。仅在 `t_auth_group.admin_list` 中**不会**授予 `hc_budget` 管理员权限。
 - **无法拖动或上下移动行：** 请先清空筛选框；当存在筛选关键字时排序控件会自动禁用，以防对局部列表误排。
 - **新增工位号提示“已被占用”，但在当前列表看不到：** 请勾选**显示已隐藏**——工位号唯一性在同工序的启用行与已隐藏行中同时生效（对应主键 `id = <process>_<station_code>`）。
 - **保存后 Python Dash 页面未立即刷新：** 查看提示弹窗或 `logs\dash_go-<date>.log` 中的 `MQPDHeadCount.log` 写入告警，确认 `dash_data_dir` / `cdn_data_folder` 路径及写权限。
 
 ## 9. 验证状态
 
-**已完成（2026-11-27，版本 0.2.0）：**
+**已完成（2026-11-27，版本 0.2.0 与 0.2.1）：**
 
-- 静态检查与模块化构建：`go vet ./...`、`go vet -tags devserver ./...`、`go build ./cmd/dash_go`（全部模块：`hc_budget, hc_scan`）、`-tags nomod_hc_budget`（仅 `hc_scan`）、`-tags nomod_hc_scan`（仅 `hc_budget`），并通过 `-version` 验证编入模块清单。
+- 静态检查与模块化构建：`go vet ./...`、`go vet -tags devserver ./...`、`go build ./cmd/dash_go`（全部模块：`hc_budget, hc_scan`）、`-tags nomod_hc_budget`（仅 `hc_scan`）、`-tags nomod_hc_scan`（仅 `hc_budget`），并通过 `-version` 验证编入模块清单，同时验证 `.\scripts\build.ps1` 默认 `-TestGcFlags 'all=-N -l'` 构建流程。
 - 全量单元测试、HTTP 测试与词条一致性测试（`internal/core/dashapi`、`internal/core/config`、`internal/core/hc`、`internal/core/shell`、`internal/mods/hc_budget`、`internal/mods/hc_scan` 等）：
-  - `dashapi.Profile.IsAdmin()` 覆盖 `"admin"`、大小写混合、`"user"` 及省略 `"type"` 场景；
-  - 顶层 `dash_data_dir` 配置解析；
-  - `hc.DashPermissions` 缓存、TTL 过期、`fresh=true` 实时穿透及 `OrderProcesses`；
+  - `hc_budget` `"T_USER_ALL"` 管理员校验（`TestAdminRoleComesStrictlyFromTUserAllNotAuthGroup`）：确认管理员权限唯一来自 `Repository.IsUserAdmin`（`T_USER_ALL`），忽略 `t_auth_group`/profile 中的管理员标志，且数据库异常时默认拒绝并返回 HTTP `500`；
   - `hc_budget` 服务层逻辑：工序权限、非管理员对新增/隐藏/编辑隐藏行/重排的 `403` 拦截、单事务批量新增+编辑+隐藏+恢复+排序、未勾选**显示已隐藏**重排时保持隐藏行尾随排序、`station_code` 与全局 `id` 唯一性、`budget_head_count` 正则及留空转 `0`、无变动返回 `409 nothing_to_save`、`MQPDHeadCount.log` 双目录写入与非致命告警；
   - `hc_budget` HTTP 路由、鉴权拦截、中英文页面与使用手册渲染、导览属性，以及 `hb.*` 词条双语一致性/未用键/占位符校验；
   - `shell` 配色对比度、`budget` 图标、`dashGo.picker` 共享选择器与核心词条测试。
 - 无头 Chromium 端到端验证（Playwright 对接真实 `hc_budget` + shell `devserver` 内存服务，带 CSP 响应头并人工核对全部渲染截图）：
-  - 首页显示 `Version 0.2.0`、`hc_scan`（`#scanner`）与 `hc_budget`（`#budget`）图标；
+  - 首页显示 `hc_scan`（`#scanner`）与 `hc_budget`（`#budget`）图标；
   - 管理员登录、共享工序选择器与身份提示、新增机台/活动弹窗（自动预填成本中心与工序代码、针对隐藏工位 `999` 的重复提示、实时 ID 预览、暂存 `Winder 535`）、行内编辑预算、隐藏操作、顺序调整（上下按钮与 HTML5 拖放）、确认提交汇总弹窗、保存并重载持久化、**显示已隐藏**开关、深色主题与中文界面；
   - 普通授权用户登录确认所有管理员控件与列均不可见，且行内编辑 + 确认提交正常生效；
   - 公开访问中英文 `/dash_go/hc_budget/help`；零 JS/页面/CSP 报错。
 
 **尚未验证：**
 
-- 真实 PostgreSQL 集成测试（`internal/mods/hc_budget/repo_pg_test.go` 已通过编译检查，但当前环境未配置 `DASH_GO_TEST_PG` 临时库，执行时跳过）。
-- 与 Python `appV2.py` 新增 `'type'` 字段的联调（按计划暂未修改 `D:\Programs\Python\dash`）以及 Python `read_mqpd_hc_data` 监听 `MQPDHeadCount.log` 刷新缓存的实测。
-- Dash `IE.py` 菜单交接链接跳转 `/dash_go/hc_budget/` 及正式发布打包脚本（`scripts/release.ps1`）。
+- 真实 PostgreSQL 集成测试（`internal/mods/hc_budget/repo_pg_test.go`，含 `TestPGIsUserAdminReadsTUserAll`，已通过编译检查，但当前环境未配置 `DASH_GO_TEST_PG` 临时库，执行时跳过）。
+- Python `read_mqpd_hc_data` 监听 `MQPDHeadCount.log` 刷新缓存的实测、Dash `IE.py` 菜单交接链接跳转 `/dash_go/hc_budget/` 及正式发布打包脚本（`scripts/release.ps1`）。
 - 使用者对中文界面文案与使用手册措辞的审阅。

@@ -131,5 +131,6 @@
   "hb.err.save_failed": "Saving to the database failed. Nothing was written. Please contact an administrator.",
   "hb.err.internal": "The server could not {step}. Try again; if it keeps failing, contact the administrator.",
 
-  "hb.step.read_rows": "read the HC budget table"
+  "hb.step.read_rows": "read the HC budget table",
+  "hb.step.check_admin_role": "verify your administrator role in T_USER_ALL"
 }

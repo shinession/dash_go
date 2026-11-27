@@ -88,30 +88,35 @@ const (
 	maxCategoryLen = 80
 )
 
-// Me returns the signed-in user, permitted processes (in HC_PROCESS_LIST order), and admin flag.
+// Me returns the signed-in user, permitted processes (in HC_PROCESS_LIST order), and admin flag from T_USER_ALL.
 func (s *Service) Me(ctx context.Context, u auth.User) (MeView, error) {
-	acc, err := s.Perms.Access(ctx, u, false)
+	procs, err := s.Perms.Processes(ctx, u, false)
 	if err != nil {
 		s.Log.Error("hc_budget: permission check failed", "user", u.EE, "error", err)
 		return MeView{}, newError(http.StatusBadGateway, "permission_check_failed")
 	}
+	isAdmin, err := s.Repo.IsUserAdmin(ctx, u.EE)
+	if err != nil {
+		s.Log.Error("hc_budget: T_USER_ALL admin check failed", "user", u.EE, "error", err)
+		return MeView{}, s.internal("check admin role")
+	}
 	return MeView{
 		User:      UserView{EE: u.EE, Name: u.Name},
-		Processes: hc.OrderProcesses(acc.Processes, s.Processes),
-		IsAdmin:   acc.IsAdmin,
+		Processes: hc.OrderProcesses(procs, s.Processes),
+		IsAdmin:   isAdmin,
 		Version:   version.Version,
 	}, nil
 }
 
 // Table loads the budget rows and process metadata for one process.
-// Hidden rows are included only when includeHidden is true AND the user is an admin.
+// Hidden rows are included only when includeHidden is true AND the user has Type = admin in T_USER_ALL.
 func (s *Service) Table(ctx context.Context, u auth.User, process string, includeHidden bool) (TableView, error) {
 	process = strings.TrimSpace(process)
-	acc, err := s.requireProcess(ctx, u, process, false)
+	isAdmin, err := s.requireProcess(ctx, u, process, false)
 	if err != nil {
 		return TableView{}, err
 	}
-	if !acc.IsAdmin {
+	if !isAdmin {
 		includeHidden = false
 	}
 	allRows, err := s.Repo.ProcessRows(ctx, process)
@@ -142,7 +147,7 @@ func (s *Service) Table(ctx context.Context, u auth.User, process string, includ
 	}
 	return TableView{
 		Process:       process,
-		IsAdmin:       acc.IsAdmin,
+		IsAdmin:       isAdmin,
 		IncludeHidden: includeHidden,
 		Rows:          shown,
 		Defaults:      buildDefaults(allRows),
@@ -153,11 +158,11 @@ func (s *Service) Table(ctx context.Context, u auth.User, process string, includ
 // Save validates and commits staged inserts, updates, hidden toggles, and display_seq reorders in one transaction.
 func (s *Service) Save(ctx context.Context, u auth.User, req SaveRequest) (SaveResult, error) {
 	process := strings.TrimSpace(req.Process)
-	acc, err := s.requireProcess(ctx, u, process, true)
+	isAdmin, err := s.requireProcess(ctx, u, process, true)
 	if err != nil {
 		return SaveResult{}, err
 	}
-	if !acc.IsAdmin && (len(req.Creates) > 0 || len(req.Order) > 0) {
+	if !isAdmin && (len(req.Creates) > 0 || len(req.Order) > 0) {
 		return SaveResult{}, newError(http.StatusForbidden, "forbidden_admin")
 	}
 
@@ -229,10 +234,10 @@ func (s *Service) Save(ctx context.Context, u auth.User, req SaveRequest) (SaveR
 			if !ok {
 				return nil, nil, newError(http.StatusNotFound, "unknown_row", i18n.P{"id": id})
 			}
-			if !acc.IsAdmin && cur.Hidden {
+			if !isAdmin && cur.Hidden {
 				return nil, nil, newError(http.StatusForbidden, "forbidden_admin")
 			}
-			if up.Hidden != nil && *up.Hidden != cur.Hidden && !acc.IsAdmin {
+			if up.Hidden != nil && *up.Hidden != cur.Hidden && !isAdmin {
 				return nil, nil, newError(http.StatusForbidden, "forbidden_admin")
 			}
 			// Require Routine / Non-routine when Type changes (allow legacy value if unchanged).
@@ -337,21 +342,25 @@ func (s *Service) Save(ctx context.Context, u auth.User, req SaveRequest) (SaveR
 	return res, nil
 }
 
-func (s *Service) requireProcess(ctx context.Context, u auth.User, process string, fresh bool) (hc.Access, error) {
+func (s *Service) requireProcess(ctx context.Context, u auth.User, process string, fresh bool) (bool, error) {
 	if process == "" || !hc.ContainsProcess(s.Processes, process) {
-		return hc.Access{}, newError(http.StatusBadRequest, "unknown_process", i18n.P{"process": process})
+		return false, newError(http.StatusBadRequest, "unknown_process", i18n.P{"process": process})
 	}
-	acc, err := s.Perms.Access(ctx, u, fresh)
+	procs, err := s.Perms.Processes(ctx, u, fresh)
 	if err != nil {
 		s.Log.Error("hc_budget: permission check failed", "user", u.EE, "process", process, "error", err)
-		return hc.Access{}, newError(http.StatusBadGateway, "permission_check_failed")
+		return false, newError(http.StatusBadGateway, "permission_check_failed")
 	}
-	ordered := hc.OrderProcesses(acc.Processes, s.Processes)
+	ordered := hc.OrderProcesses(procs, s.Processes)
 	if !hc.ContainsProcess(ordered, process) {
-		return hc.Access{}, newError(http.StatusForbidden, "no_process_permission", i18n.P{"process": process})
+		return false, newError(http.StatusForbidden, "no_process_permission", i18n.P{"process": process})
 	}
-	acc.Processes = ordered
-	return acc, nil
+	isAdmin, err := s.Repo.IsUserAdmin(ctx, u.EE)
+	if err != nil {
+		s.Log.Error("hc_budget: T_USER_ALL admin check failed", "user", u.EE, "process", process, "error", err)
+		return false, s.internal("check admin role")
+	}
+	return isAdmin, nil
 }
 
 func (s *Service) internal(step string) *Error {
