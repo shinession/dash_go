@@ -101,7 +101,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := s.ClientIP(r)
-	att, throttle := s.limits.begin(ip, user)
+	att, throttle, err := s.limits.Begin(r.Context(), ip, user)
+	if err != nil {
+		s.set.Log.Warn("login failed: rate limit store unavailable", "method", "password", "ip", ip, "error", err)
+		s.apiError(w, r, http.StatusServiceUnavailable, "unavailable", "login.unavailable")
+		return
+	}
 	if throttle != nil {
 		reason := "throttled"
 		if throttle.ByAccount {
@@ -116,12 +121,12 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 	id, err := s.set.Directory.Login(r.Context(), user, req.Password)
 	switch {
 	case errors.Is(err, ErrUnavailable):
-		att.unavailable() // not the fault of the account
+		att.Unavailable(r.Context()) // not the fault of the account
 		s.set.Log.Warn("login failed: the user directory cannot be reached", "method", "password", "ip", ip, "error", err)
 		s.apiError(w, r, http.StatusServiceUnavailable, "unavailable", "login.unavailable")
 		return
 	case errors.Is(err, ErrNoEmployeeCode):
-		att.succeeded() // the password was right
+		att.Succeeded(r.Context()) // the password was right
 		s.set.Log.Warn("login refused: the account has no employee code", "method", "password", "ip", ip, "acct", acctRef(user))
 		s.apiError(w, r, http.StatusForbidden, "no_employee_code", "login.no_employee_code")
 		return
@@ -130,9 +135,9 @@ func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.apiError(w, r, http.StatusUnauthorized, "invalid", "login.invalid")
 		return
 	}
-	att.succeeded()
+	att.Succeeded(r.Context())
 	if err := s.startSession(w, r, id); err != nil {
-		s.set.Log.Error("session signing failed", "error", err)
+		s.set.Log.Error("session creation failed", "error", err)
 		s.apiError(w, r, http.StatusInternalServerError, "internal", "err.internal")
 		return
 	}

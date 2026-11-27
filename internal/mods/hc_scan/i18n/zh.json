@@ -124,6 +124,7 @@
   "hc.err.internal": "服务器无法{step}。请重试；如果一直失败，请联系管理员。",
   "hc.err.needs_ack": "有些行带有警告，必须先确认。",
 
+  "hc.step.lock_session": "锁定本次会话",
   "hc.step.read_draft": "读取草稿",
   "hc.step.read_scan_log": "读取扫描记录",
   "hc.step.load_session_data": "加载本次数据",

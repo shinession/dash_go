@@ -433,6 +433,10 @@ func TestLogoutEndsTheSessionOfDashGoOnly(t *testing.T) {
 	if !cleared {
 		t.Error("the session cookie must be cleared")
 	}
+	// server-side revocation: reusing the old cookie value must fail immediately
+	if got := r.me(c); !strings.HasPrefix(got, "401 ") {
+		t.Errorf("a logged-out session must be revoked server-side, got %q", got)
+	}
 	getReq := httptest.NewRequest(http.MethodGet, "/dash_go/auth/logout", nil)
 	get := httptest.NewRecorder()
 	r.mux.ServeHTTP(get, getReq)
@@ -451,15 +455,34 @@ func TestSessionAndLoginPath(t *testing.T) {
 	if _, ok := r.svc.Session(req); ok {
 		t.Error("a damaged cookie is no session")
 	}
-	good := mustSign(t, r.svc.signer, Claims{K: KindSession, EE: "AB12C34", Name: "N", Iat: r.now.Unix(), Exp: r.now.Add(time.Hour).Unix()})
+	// legacy dot-separated signed cookie must be rejected
+	reqLegacy := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqLegacy.AddCookie(&http.Cookie{Name: "dash_go_session", Value: pythonToken})
+	if _, ok := r.svc.Session(reqLegacy); ok {
+		t.Error("a legacy signed cookie must not be accepted as a session")
+	}
+	good, err := r.svc.IssueSession(context.Background(), User{EE: "AB12C34", Name: "N"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "dash_go_session", Value: good})
 	if u, ok := r.svc.Session(req); !ok || u.EE != "AB12C34" || u.Name != "N" {
 		t.Errorf("%+v %v", u, ok)
 	}
-	r.now = r.now.Add(2 * time.Hour)
+	// sliding expiration: activity at 20h refreshes the 24h TTL so it is still valid at 40h
+	r.now = r.now.Add(20 * time.Hour)
+	if u, ok := r.svc.Session(req); !ok || u.EE != "AB12C34" {
+		t.Errorf("session should still be valid before 24h and slide: %+v %v", u, ok)
+	}
+	r.now = r.now.Add(20 * time.Hour)
+	if u, ok := r.svc.Session(req); !ok || u.EE != "AB12C34" {
+		t.Errorf("sliding session should stay alive across 20h+20h active gaps: %+v %v", u, ok)
+	}
+	// idle for >= 24h expires
+	r.now = r.now.Add(25 * time.Hour)
 	if _, ok := r.svc.Session(req); ok {
-		t.Error("an expired session is no session")
+		t.Error("an idle session past 24h must expire")
 	}
 	if got := r.svc.LoginPath("/dash_go/hc_scan/?a=1"); got != "/dash_go/login?next=%2Fdash_go%2Fhc_scan%2F%3Fa%3D1" {
 		t.Errorf("%s", got)

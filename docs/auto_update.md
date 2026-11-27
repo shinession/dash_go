@@ -1,6 +1,6 @@
 # English
 
-**Updated:** 2026-11-23 (dash_go version 0.1.6). This describes the current code of `internal/core/update`, `internal/core/server/gate.go`, `PendingSignIns` in `internal/core/auth/ssoflow.go`, the settings `update_*` in `internal/core/config/config.go`, the wiring in `cmd/dash_go/main.go` and `cmd/dash_go/update.go`, and `scripts/release.ps1`. Version 0.1.6 made the `-check` that the updater runs on a new program also test the connections of the service (section 3); the updater itself is unchanged. Section 10 says what was verified and what was not.
+**Updated:** 2026-11-28 (dash_go version 0.2.4). This describes the current code of `internal/core/update`, `internal/core/server/gate.go`, `PendingSignIns` in `internal/core/auth/ssoflow.go`, the settings `update_*` in `internal/core/config/config.go`, the wiring in `cmd/dash_go/main.go` and `cmd/dash_go/update.go`, and `scripts/release.ps1`. Version 0.1.6 made the `-check` that the updater runs on a new program also test the connections of the service (section 3). Version 0.2.4 moved sessions and Windows SSO flows into shared Redis, so Redis-backed pending Windows sign-ins survive restarts and no longer hold back an update (`PendingSignIns()` returns 0 when Redis is configured; section 3). Section 10 says what was verified and what was not.
 
 ## 1. Overview
 
@@ -43,14 +43,14 @@ Rules:
 2. **Download and check.** When the version differs the program is downloaded to `dash_go.new.exe.part` (a download that receives nothing for 2 minutes is given up), checked against the size and the sha256 of the manifest and renamed to `dash_go.new.exe`. Then it is run twice (30 seconds at most each): `dash_go.new.exe -version` must say the version of the manifest, and `dash_go.new.exe <the flags of this program> -check` must succeed. `-check` loads the configuration and the modules and starts no server; it gets the same flags as the running program (for example `-config-dir`), so it reads the same configuration. Since 0.1.6 it also tests the connections from this server (PostgreSQL, Redis and the Dash API, all at the same time, 20 seconds at most): a connection that does not work keeps the new program out until the next look, so a server is only updated while it can reach what it depends on. The update to 0.1.6 itself is checked this way too, because the running program runs the `-check` of the new one. Any failure is written to the log and tried again at the next look. The running program is not touched.
 3. **Ready.** The log says `the new version is ready`. The service goes on as usual. Every 2 seconds it asks whether somebody works with it. The service is **busy** when:
    - a request that changes something (every method but GET, HEAD and OPTIONS: scan, assign, remove, reset, confirm, sign in, sign out) is being served, or ended less than **10 seconds** ago; or
-   - a Windows sign-in was started and is not done yet (it is only in memory and a restart would lose it).
+   - a Windows sign-in was started and is held only in this process's memory (when Redis is configured, since 0.2.4, Windows sign-in flows live in Redis and survive restarts, so `PendingSignIns()` is 0 and does not hold an update back).
 
    Requests that only read do not count: opening a page and the poll of the board every 3 seconds do not hold an update back. The reason for waiting is logged (`waits for a quiet moment`, again after 5 minutes at the earliest).
 4. **Quiet moment.** The service stops taking requests that change something: they get **503** with `{"error": "...", "code": "updating"}` and `Retry-After: 5`, the message is in the language of the request ("dash_go is being updated. Try again in a few seconds."), and the page shows it like any other error. The requests that were already running are waited for, at most 1 minute: if one does not end, the requests are taken again, the log says so, and the update waits for the next quiet moment.
 5. **Put in place.** `dash_go.exe` is renamed to `dash_go.old-<version>.exe` (Windows lets a running program be renamed but not overwritten) and `dash_go.new.exe` takes the name `dash_go.exe`. When that fails the old program gets its name back, the requests are taken again, and this release is not tried again until the manifest changes. The newest 3 old programs are kept. A marker, `dash_go.exe.update.json`, is written.
 6. **Stop and start.** The service shuts down (the requests that read get up to 10 seconds to end) and the new program is started (section 4). The new program reads and removes the marker and logs `the program was updated` with the old and the new version and how long the release waited.
 
-Between the stop and the start the service does not answer for a second or two (the nginx in front of it answers 502); the pages that poll try again by themselves. People stay signed in (the session is a signed cookie and the secret does not change). The drafts of `hc_scan` are kept in Redis (`draft_store` `redis`, the default) and survive; with `draft_store` `memory` they are lost at every restart (the module logs a warning at the start).
+Between the stop and the start the service does not answer for a second or two (the nginx in front of it answers 502, or routes to the other instance when both s2 and s3 run); the pages that poll try again by themselves. People stay signed in across restarts (since 0.2.4 sessions live in Redis with 24-hour sliding TTL; upgrading from 0.2.3 to 0.2.4 requires one sign-in because legacy signed cookies are retired). The drafts of `hc_scan` are kept in Redis (`draft_store` `redis`, the default) and survive; with `draft_store` `memory` they are lost at every restart (the module logs a warning at the start).
 
 ## 4. How the new program is started (`update_restart`)
 
@@ -169,7 +169,7 @@ Not verified:
 
 # 中文
 
-**更新日期：** 2026-11-23（dash_go 版本 0.1.6）。本文描述 `internal/core/update`、`internal/core/server/gate.go`、`internal/core/auth/ssoflow.go` 中的 `PendingSignIns`、`internal/core/config/config.go` 中的 `update_*` 设置、`cmd/dash_go/main.go` 和 `cmd/dash_go/update.go` 中的接线，以及 `scripts/release.ps1` 的当前代码。0.1.6 版让更新程序对新程序运行的 `-check` 也测试服务的连接（第 3 节）；更新程序本身没有改动。第 10 节说明哪些内容已验证、哪些没有验证。
+**更新日期：** 2026-11-28（dash_go 版本 0.2.4）。本文描述 `internal/core/update`、`internal/core/server/gate.go`、`internal/core/auth/ssoflow.go` 中的 `PendingSignIns`、`internal/core/config/config.go` 中的 `update_*` 设置、`cmd/dash_go/main.go` 和 `cmd/dash_go/update.go` 中的接线，以及 `scripts/release.ps1` 的当前代码。0.1.6 版让更新程序对新程序运行的 `-check` 也测试服务的连接（第 3 节）。0.2.4 版将会话与 Windows SSO 流程迁入共享 Redis，存储在 Redis 中的等待登录在重启后不丢失，不再阻塞更新（配置 Redis 时 `PendingSignIns()` 返回 0；第 3 节）。第 10 节说明哪些内容已验证、哪些没有验证。
 
 ## 1. 概述
 
@@ -212,14 +212,14 @@ Not verified:
 2. **下载并检查。** 版本不同时，把程序下载到 `dash_go.new.exe.part`（2 分钟收不到任何数据就放弃），按清单的大小和 sha256 检查，然后改名为 `dash_go.new.exe`。接着运行它两次（每次最多 30 秒）：`dash_go.new.exe -version` 必须报告清单中的版本，`dash_go.new.exe <本程序的参数> -check` 必须成功。`-check` 加载配置和模块，不启动服务器；它会得到与正在运行的程序相同的参数（例如 `-config-dir`），所以读取的是同一份配置。自 0.1.6 起，它还会从这台服务器测试连接（PostgreSQL、Redis 和 Dash API，同时进行，最多 20 秒）：有连接不通时，新程序会被挡在外面，直到下一次查看，所以服务器只有在能连上它所依赖的服务时才会更新。更新到 0.1.6 本身也是这样检查的，因为正在运行的程序运行的是新程序的 `-check`。任何失败都会写进日志，并在下一次查看时重试。正在运行的程序不会被改动。
 3. **就绪。** 日志写 `the new version is ready`。服务照常运行。每隔 2 秒它询问是否有人正在使用。服务在以下情况**忙**：
    - 有改变数据的请求（除 GET、HEAD、OPTIONS 以外的所有方法：扫描、分派、移除、重置、确认、登录、退出登录）正在处理，或结束不到 **10 秒**；或
-   - 有 Windows 登录已开始但尚未完成（它只在内存里，重启会丢失）。
+   - 有仅保存在本进程内存中的 Windows 登录尚未完成（自 0.2.4 起，配置 Redis 时 Windows 登录流程保存在 Redis 中，重启不会丢失，`PendingSignIns()` 返回 0，不会拖住更新）。
 
    只读取数据的请求不算：打开页面和看板每 3 秒一次的轮询，都不会拖住更新。等待的原因会写进日志（`waits for a quiet moment`，之后最早每 5 分钟再写一次）。
 4. **安静时刻。** 服务不再接受改变数据的请求：它们会得到 **503** 以及 `{"error": "...", "code": "updating"}` 和 `Retry-After: 5`，消息使用请求的语言（“dash_go 正在更新，请几秒钟后再试。”），页面像显示其他错误一样显示它。已经在运行的请求会被等待，最多 1 分钟：如果有请求不结束，就重新接受请求，日志会说明，更新等待下一个安静时刻。
 5. **就位。** `dash_go.exe` 改名为 `dash_go.old-<version>.exe`（Windows 允许给正在运行的程序改名，但不允许覆盖），`dash_go.new.exe` 改名为 `dash_go.exe`。如果失败，旧程序恢复原名，重新接受请求，并且在清单变化之前不再尝试这个版本。保留最新的 3 个旧程序。写入一个标记文件 `dash_go.exe.update.json`。
 6. **停止并启动。** 服务关闭（读取数据的请求最多有 10 秒结束），然后启动新程序（第 4 节）。新程序读取并删除标记，并在日志中写 `the program was updated`，包括旧版本、新版本以及这次发布等了多久。
 
-从停止到启动的一两秒内服务没有应答（前面的 nginx 回答 502）；做轮询的页面会自己重试。人们保持登录状态（会话是签名的 cookie，密钥没有变）。`hc_scan` 的草稿保存在 Redis（`draft_store` 为 `redis`，默认值），不会丢失；`draft_store` 为 `memory` 时，每次重启都会丢失（模块在启动时会写警告）。
+从停止到启动的一两秒内本实例没有应答（前面的 nginx 回答 502，或在 s2/s3 双实例部署下自动路由到另一台）；做轮询的页面会自己重试。人们在重启后保持登录状态（自 0.2.4 起会话保存在 Redis 中并按 24 小时滑动续期；从 0.2.3 升级到 0.2.4 时因旧签名 cookie 不再兼容，需重新登录一次）。`hc_scan` 的草稿保存在 Redis（`draft_store` 为 `redis`，默认值），不会丢失；`draft_store` 为 `memory` 时，每次重启都会丢失（模块在启动时会写警告）。
 
 ## 4. 新程序如何启动（`update_restart`）
 

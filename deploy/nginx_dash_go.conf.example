@@ -1,17 +1,22 @@
-# dash_go behind nginx: the front server (s1, prod_eng) only forwards to s2, which runs dash_go.
+# dash_go behind nginx: the front server (s1, prod_eng) load-balances /dash_go/ across s2 and s3.
 #
-# 1. On the server that runs dash_go (s2). Add the location below inside the server { } block that already serves
-#    /ie and /api. The service serves everything below /dash_go/ itself, so the prefix is passed through and must
-#    not be stripped: proxy_pass has no URI part on purpose. The port is the "listen" setting of dash_go.json.
+# Since version 0.2.4, sessions (24h sliding TTL), one-time Dash handover nonces, Windows SSO login flows,
+# password rate limits, hc_scan drafts and hc_scan session locks are all stored in shared Redis (s2's Redis).
+# Standard weighted round-robin works across s2 and s3 without ip_hash, as long as both servers point to the
+# exact same Redis host and DB.
+#
+# 1. On each server that runs dash_go (s2 and s3). Add the location below inside the server { } block that already
+#    serves /ie and /api. The service serves everything below /dash_go/ itself, so the prefix is passed through and
+#    must not be stripped: proxy_pass has no URI part on purpose. The port is the "listen" setting of dash_go.json.
 #
 #    X-Forwarded-For must be $proxy_add_x_forwarded_for. Do not pass the header through ($http_x_forwarded_for):
 #    dash_go believes only the right-most address that nginx itself added, and a request that reaches this nginx
 #    without the front server would bring its own address list, so a forged address would pass the address check
 #    of the Windows sign-in (tested: docs/hc_scan_page.md, section 12).
 #
-#    This nginx must believe the address the front server forwards, and only from that address, in the http { }
-#    block (or list the front server in "trusted_proxies" of dash_go.json instead; docs/shell_and_login.md,
-#    section 9). Without it every Windows sign-in is refused (address_mismatch):
+#    Both s2 and s3 nginx must believe the address the front server forwards, and only from that address, in the
+#    http { } block (or list the front server in "trusted_proxies" of dash_go.json instead; docs/shell_and_login.md,
+#    section 9). Without it every Windows sign-in routed to that server is refused (address_mismatch):
 #
 #        set_real_ip_from <address of the front server>;
 #        real_ip_header X-Forwarded-For;
@@ -19,10 +24,11 @@
 #
 #    Behind a front server X-Forwarded-Proto may be $http_x_forwarded_proto, so that https at the front is kept.
 #
-# 2. On the front server (s1). dash_go runs on s2 only, so there is no local backup. In the http { } block:
+# 2. On the front server (s1). dash_go runs on s2 and s3 (no local backup on s1). In the http { } block:
 #
 #        upstream dash_go_backend {
-#            server <address of s2>:80;
+#            server <address of s2>:80 weight=1;
+#            server <address of s3>:80 weight=2;
 #            keepalive 32;
 #        }
 #
@@ -45,8 +51,9 @@
 #            proxy_read_timeout 60s;
 #        }
 #
-# Deploy in this order: dash_go on s2, the nginx of s2, then the nginx of s1 (a route without a running backend
-# answers 502). Test http://<s2>/dash_go/ before the front server is used.
+# Deploy in this order: dash_go 0.2.4 on s2 and s3 (both pointing at s2's shared Redis and data folder), the nginx
+# of s2 and s3, then the nginx of s1 (a route without a running backend answers 502). Test http://<s2>/dash_go/ and
+# http://<s3>/dash_go/ before updating the front server.
 #
 # Reload nginx after each change: nginx -s reload
 

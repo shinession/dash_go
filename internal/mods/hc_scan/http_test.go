@@ -1,6 +1,7 @@
 package hcscan
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 	if err := env.svc.Routes(mux, httpPrefix, authSvc.Require, sh); err != nil {
 		t.Fatal(err)
 	}
-	session, err := signer.Sign(auth.Claims{K: auth.KindSession, EE: testUser.EE, Name: testUser.Name, Iat: testNow.Unix(), Exp: testNow.Add(time.Hour).Unix()})
+	session, err := authSvc.IssueSession(context.Background(), testUser)
 	if err != nil {
 		t.Fatal(err)
 	}

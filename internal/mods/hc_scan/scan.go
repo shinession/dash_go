@@ -29,7 +29,10 @@ func (s *Service) ScanTo(ctx context.Context, u auth.User, k Key, input, targetM
 	if !ok {
 		return nil, newError(400, "invalid_id", i18n.P{"input": clip(strings.TrimSpace(input), 40)})
 	}
-	unlock := s.locks.lock(k.id())
+	unlock, err := s.Locker.Lock(ctx, k.id())
+	if err != nil {
+		return nil, s.internal("lock session", err)
+	}
 	defer unlock()
 
 	pending, err := s.Drafts.Entries(ctx, k)
@@ -348,7 +351,10 @@ func (s *Service) AssignMany(ctx context.Context, u auth.User, k Key, ee string,
 		return nil, err
 	}
 	ee = strings.ToUpper(strings.TrimSpace(ee))
-	unlock := s.locks.lock(k.id())
+	unlock, err := s.Locker.Lock(ctx, k.id())
+	if err != nil {
+		return nil, s.internal("lock session", err)
+	}
 	defer unlock()
 	pending, err := s.Drafts.Entries(ctx, k)
 	if err != nil {
@@ -436,7 +442,10 @@ func (s *Service) Remove(ctx context.Context, u auth.User, k Key, ee string) err
 		return err
 	}
 	ee = strings.ToUpper(strings.TrimSpace(ee))
-	unlock := s.locks.lock(k.id())
+	unlock, err := s.Locker.Lock(ctx, k.id())
+	if err != nil {
+		return s.internal("lock session", err)
+	}
 	defer unlock()
 	if err := s.Drafts.DeleteEntries(ctx, k, ee); err != nil {
 		return s.internal("delete draft line", err)
@@ -456,7 +465,10 @@ func (s *Service) Reset(ctx context.Context, u auth.User, k Key) error {
 	if err := s.check(ctx, u, k, false); err != nil {
 		return err
 	}
-	unlock := s.locks.lock(k.id())
+	unlock, err := s.Locker.Lock(ctx, k.id())
+	if err != nil {
+		return s.internal("lock session", err)
+	}
 	defer unlock()
 	pending, err := s.Drafts.Entries(ctx, k)
 	if err != nil {

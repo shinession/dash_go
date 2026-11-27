@@ -278,7 +278,7 @@ func TestUpdateSettingsErrors(t *testing.T) {
 func TestSessionHours(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := Load(Options{ConfigDir: dir, Host: "x", Getenv: noEnv})
-	if err != nil || cfg.SessionHours != 12 {
+	if err != nil || cfg.SessionHours != 24 {
 		t.Fatalf("default: %+v %v", cfg, err)
 	}
 	write(t, dir, "dash_go.json", `{"session_hours": 8}`)

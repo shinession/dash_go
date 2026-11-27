@@ -124,6 +124,7 @@
   "hc.err.internal": "The server could not {step}. Try again; if it keeps failing, contact the administrator.",
   "hc.err.needs_ack": "Some lines have warnings that must be acknowledged.",
 
+  "hc.step.lock_session": "lock the session",
   "hc.step.read_draft": "read the draft",
   "hc.step.read_scan_log": "read the scan log",
   "hc.step.load_session_data": "load the session data",

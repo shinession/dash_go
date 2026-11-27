@@ -65,7 +65,7 @@ func TestParseRejections(t *testing.T) {
 		want  error
 	}{
 		{"expired", good, KindSSO, tokenNow.Add(2 * time.Minute), ErrExpired},
-		{"wrong kind", good, KindSession, tokenNow, ErrInvalid},
+		{"wrong kind", good, "session", tokenNow, ErrInvalid},
 		{"other secret", mustSign(t, other, Claims{K: KindSSO, EE: "AB12C34", Iat: tokenNow.Unix(), Exp: tokenNow.Add(time.Minute).Unix()}), KindSSO, tokenNow, ErrInvalid},
 		{"tampered body", "X" + body + "." + sig, KindSSO, tokenNow, ErrInvalid},
 		{"tampered signature", body + "." + sig[:len(sig)-2] + "AA", KindSSO, tokenNow, ErrInvalid},
@@ -79,10 +79,8 @@ func TestParseRejections(t *testing.T) {
 			t.Errorf("%s: err = %v, want %v", c.name, err, c.want)
 		}
 	}
-	// a session token must not be accepted as an sso token and the other way round
-	sess := mustSign(t, s, Claims{K: KindSession, EE: "AB12C34", Iat: tokenNow.Unix(), Exp: tokenNow.Add(time.Hour).Unix()})
-	if _, err := s.Parse(sess, KindSSO, tokenNow); err != ErrInvalid {
-		t.Errorf("a session token is no sso token: %v", err)
+	if _, err := s.Sign(Claims{K: "session", EE: "AB12C34", Iat: tokenNow.Unix(), Exp: tokenNow.Add(time.Hour).Unix()}); err == nil {
+		t.Errorf("Sign must only sign sso hand-over tokens")
 	}
 }
 
@@ -194,7 +192,10 @@ func TestRequireGuardsTheAPI(t *testing.T) {
 			t.Fatalf("no cookie: %d %s", rec.Code, rec.Body.String())
 		}
 	}
-	session := mustSign(t, svc.signer, Claims{K: KindSession, EE: "AB12C34", Name: "N", Iat: tokenNow.Unix(), Exp: tokenNow.Add(time.Hour).Unix()})
+	session, err := svc.IssueSession(context.Background(), User{EE: "AB12C34", Name: "N"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cookie := &http.Cookie{Name: "dash_go_session", Value: session}
 
 	post := func(mutate func(*http.Request)) int {

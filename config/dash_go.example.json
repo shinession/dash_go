@@ -5,7 +5,7 @@
   "dash_home": "/ie/",
   "dash_config_dir": "C:\\path\\to\\dash\\config",
   "dash_data_dir": "C:\\path\\to\\dash\\data",
-  "session_hours": 12,
+  "session_hours": 24,
   "photo_url_template": "/api/static/hr/{ee_code}.webp",
   "login_password": true,
   "sso_require_same_ip": true,

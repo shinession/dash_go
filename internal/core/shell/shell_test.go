@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"dash_go/internal/core/auth"
 	"dash_go/internal/core/i18n"
@@ -40,6 +39,7 @@ type fixture struct {
 	t      *testing.T
 	sh     *Shell
 	mux    http.Handler
+	auth   *auth.Service
 	signer *auth.Signer
 }
 
@@ -67,16 +67,15 @@ func newFixture(t *testing.T, password, sso bool) *fixture {
 	}
 	mux := http.NewServeMux()
 	sh.Mount(mux)
-	return &fixture{t: t, sh: sh, mux: i18n.Middleware(mux), signer: signer}
+	return &fixture{t: t, sh: sh, mux: i18n.Middleware(mux), auth: svc, signer: signer}
 }
 
 func (f *fixture) cookie(ee, name string) *http.Cookie {
-	now := time.Now()
-	tok, err := f.signer.Sign(auth.Claims{K: auth.KindSession, EE: ee, Name: name, Iat: now.Unix(), Exp: now.Add(time.Hour).Unix()})
+	sid, err := f.auth.IssueSession(context.Background(), auth.User{EE: ee, Name: name})
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return &http.Cookie{Name: "dash_go_session", Value: tok}
+	return &http.Cookie{Name: "dash_go_session", Value: sid}
 }
 
 func (f *fixture) get(path string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
@@ -352,7 +351,20 @@ func TestModulePagesBringTheirOwnContentStylesAndScripts(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/dash_go/login?next=%2Fdash_go%2Fdemo%2F" {
 		t.Fatalf("%d %q", rec.Code, rec.Header().Get("Location"))
 	}
-	body := f.get("/dash_go/demo/", f.cookie("AB12C34", "Yan Shi")).Body.String()
+	res := f.get("/dash_go/demo/", f.cookie("AB12C34", "Yan Shi"))
+	body := res.Body.String()
+	var sessionCookies int
+	for _, ck := range res.Result().Cookies() {
+		if ck.Name == "dash_go_session" {
+			sessionCookies++
+			if ck.MaxAge != 24*3600 {
+				t.Errorf("expected refreshed 24h session cookie, got MaxAge=%d", ck.MaxAge)
+			}
+		}
+	}
+	if sessionCookies != 1 {
+		t.Errorf("expected exactly 1 refreshed session cookie per page render, got %d", sessionCookies)
+	}
 	for _, want := range []string{
 		`<main id="mine">Sign in payload /dash_go</main>`, `<span class="dg-app"><svg class="dg-icon"`, `/dash_go/_shell/icons.svg#scanner`, `Sign out</span>`, `<title>dash_go · CIM EDGE</title>`,
 		`href="/dash_go/demo/static/app.css?v=9.9.9"`, `src="/dash_go/demo/static/app.js?v=9.9.9"`,

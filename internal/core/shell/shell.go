@@ -135,9 +135,11 @@ type notice struct {
 func (s *Shell) handleLogin(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	next := s.opts.Auth.SafeNext(q.Get("next"))
-	if _, ok := s.opts.Auth.Session(r); ok && q.Get("signed_out") == "" {
-		http.Redirect(w, r, next, http.StatusSeeOther)
-		return
+	if q.Get("signed_out") == "" {
+		if _, ok := s.opts.Auth.Authenticate(w, r); ok {
+			http.Redirect(w, r, next, http.StatusSeeOther)
+			return
+		}
 	}
 	data := loginData{Password: s.opts.Auth.PasswordEnabled(), SSO: s.opts.Auth.SSOEnabled(), Next: next, DashHome: s.opts.DashHome}
 	lang := i18n.LangOf(r.Context())
@@ -246,10 +248,12 @@ func (s *Shell) NewPage(spec PageSpec, fsys fs.FS, files ...string) (*Page, erro
 func (p *Page) Handler(dataFn func(*http.Request) any) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.spec.RequireLogin {
-			if _, ok := p.sh.opts.Auth.Session(r); !ok {
+			u, ok := p.sh.opts.Auth.Authenticate(w, r)
+			if !ok {
 				http.Redirect(w, r, p.sh.opts.Auth.LoginPath(r.URL.Path), http.StatusSeeOther)
 				return
 			}
+			r = r.WithContext(auth.WithUser(r.Context(), u))
 		}
 		var data any
 		if dataFn != nil {
@@ -261,7 +265,7 @@ func (p *Page) Handler(dataFn func(*http.Request) any) http.Handler {
 
 // Render writes the page. The answer is never cached: it shows who is signed in.
 func (p *Page) Render(w http.ResponseWriter, r *http.Request, status int, data any) {
-	v := p.sh.newView(r, p.spec, data)
+	v := p.sh.newView(w, r, p.spec, data)
 	var buf bytes.Buffer
 	if err := p.tmpl.ExecuteTemplate(&buf, "layout", v); err != nil {
 		p.sh.opts.Log.Error("render a page", "path", r.URL.Path, "error", err)
@@ -307,7 +311,7 @@ type iconRef struct {
 	Base, Name string
 }
 
-func (s *Shell) newView(r *http.Request, spec PageSpec, data any) *view {
+func (s *Shell) newView(w http.ResponseWriter, r *http.Request, spec PageSpec, data any) *view {
 	lang := i18n.LangOf(r.Context())
 	std := i18n.Std()
 	v := &view{
@@ -322,10 +326,16 @@ func (s *Shell) newView(r *http.Request, spec PageSpec, data any) *view {
 		v.App = std.T(lang, spec.AppKey, nil)
 		v.AppIcon = spec.AppIcon
 	}
-	if u, ok := s.opts.Auth.Session(r); ok {
+	onLogin := strings.HasSuffix(r.URL.Path, "/login")
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		v.User = &userView{EE: u.EE, Name: u.Name, Initials: initials(u.Name)}
+	} else if !onLogin {
+		if u, ok := s.opts.Auth.Authenticate(w, r); ok {
+			v.User = &userView{EE: u.EE, Name: u.Name, Initials: initials(u.Name)}
+		}
+	} else if u, ok := s.opts.Auth.Session(r); ok {
 		v.User = &userView{EE: u.EE, Name: u.Name, Initials: initials(u.Name)}
 	}
-	onLogin := strings.HasSuffix(r.URL.Path, "/login")
 	v.ShowSignIn = !onLogin
 	v.LoginHref = s.opts.Auth.LoginPath(s.opts.Auth.SafeNext(r.URL.Path))
 	return v

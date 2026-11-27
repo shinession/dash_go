@@ -72,16 +72,19 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 	}
 
 	var drafts DraftStore
+	var locker SessionLocker
 	switch set.DraftStore {
 	case "memory":
-		env.Log.Warn("hc_scan: drafts are kept in the process memory and are lost at a restart (draft_store=memory)")
+		env.Log.Warn("hc_scan: drafts and session locks are kept in the process memory and are lost at a restart (draft_store=memory)")
 		drafts = NewMemoryDrafts()
+		locker = NewMemoryLocker()
 	case "redis", "":
 		rdb, err := env.Redis()
 		if err != nil {
 			return fmt.Errorf("%s: %w", Name, err)
 		}
 		drafts = NewRedisDrafts(rdb, time.Duration(set.DraftTTLHours)*time.Hour)
+		locker = NewRedisLocker(rdb, 0, 0)
 	default:
 		return fmt.Errorf("%s: draft_store must be redis or memory, not %q", Name, set.DraftStore)
 	}
@@ -101,6 +104,7 @@ func (m *Module) Mount(env *module.Env, mux *http.ServeMux) error {
 	svc, err := NewService(Deps{
 		Repo:      NewPGRepository(pool),
 		Drafts:    drafts,
+		Locker:    locker,
 		ChangeLog: NewFileChangeLog(set.DashDataDir, env.Cfg.Dash.CDNDataFolder),
 		Perms:     perms,
 		Settings:  set,

@@ -83,6 +83,7 @@ type Permissions interface {
 type Deps struct {
 	Repo      Repository
 	Drafts    DraftStore
+	Locker    SessionLocker
 	ChangeLog ChangeLog
 	Perms     Permissions
 	Settings  Settings
@@ -96,7 +97,6 @@ type Deps struct {
 type Service struct {
 	Deps
 	ids       *IDParser
-	locks     keyedMutex
 	machinesC *ttlCache[[]Machine]
 	mtrC      *ttlCache[MTRData]
 	calC      *ttlCache[map[string]string]
@@ -108,6 +108,9 @@ type Service struct {
 func NewService(d Deps) (*Service, error) {
 	if d.Repo == nil || d.Drafts == nil || d.Perms == nil {
 		return nil, fmt.Errorf("hc_scan: repository, draft store and permissions are required")
+	}
+	if d.Locker == nil {
+		d.Locker = NewMemoryLocker()
 	}
 	if d.Now == nil {
 		d.Now = time.Now
@@ -172,41 +175,6 @@ func (c *ttlCache[V]) get(key string, load func() (V, error)) (V, error) {
 	c.items[key] = cacheItem[V]{v: v, at: c.now()}
 	c.mu.Unlock()
 	return v, nil
-}
-
-type keyedMutex struct {
-	mu sync.Mutex
-	m  map[string]*refMutex
-}
-
-type refMutex struct {
-	sync.Mutex
-	refs int
-}
-
-// lock serialises the operations of one scanning session, so two terminals cannot take the last vacancy twice.
-func (k *keyedMutex) lock(key string) func() {
-	k.mu.Lock()
-	if k.m == nil {
-		k.m = map[string]*refMutex{}
-	}
-	rm := k.m[key]
-	if rm == nil {
-		rm = &refMutex{}
-		k.m[key] = rm
-	}
-	rm.refs++
-	k.mu.Unlock()
-	rm.Lock()
-	return func() {
-		rm.Unlock()
-		k.mu.Lock()
-		rm.refs--
-		if rm.refs == 0 {
-			delete(k.m, key)
-		}
-		k.mu.Unlock()
-	}
 }
 
 // dayData is everything one request needs to know about a session. Reference data comes from short lived

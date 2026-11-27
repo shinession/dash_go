@@ -110,7 +110,7 @@ type Config struct {
 	BasePath string // URL prefix the service is mounted on, without trailing slash, e.g. /dash_go
 	LogDir   string
 	DashHome string // URL of the Dash application, shown when a page is opened without a login
-	// SessionHours is how long a login stays valid (the session cookie of the sso hand-over).
+	// SessionHours is how long an idle login stays valid (sliding TTL refreshed on activity, default 24).
 	SessionHours int
 	// PhotoURLTemplate is where the employee pictures are; {ee_code} stands for the employee code.
 	PhotoURLTemplate string
@@ -171,7 +171,7 @@ func Load(opts Options) (*Config, error) {
 		LogDir:           firstNonEmpty(rawString(merged["log_dir"]), "logs"),
 		DashHome:         firstNonEmpty(rawString(merged["dash_home"]), "/ie/"),
 		DashDataDir:      strings.TrimSpace(rawString(merged["dash_data_dir"])),
-		SessionHours:     12,
+		SessionHours:     24,
 		PhotoURLTemplate: firstNonEmpty(rawString(merged["photo_url_template"]), DefaultPhotoURLTemplate),
 		Login:            Login{Password: true, SSORequireSameIP: true},
 		Update:           Update{Interval: 10 * time.Minute, Restart: "supervise"},

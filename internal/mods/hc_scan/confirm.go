@@ -25,7 +25,10 @@ func (s *Service) Confirm(ctx context.Context, u auth.User, k Key, ack bool) (*C
 	if MonthLocked(k.Date, today) {
 		return nil, newError(409, "month_locked")
 	}
-	unlock := s.locks.lock(k.id())
+	unlock, err := s.Locker.Lock(ctx, k.id())
+	if err != nil {
+		return nil, s.internal("lock session", err)
+	}
 	defer unlock()
 
 	pending, err := s.Drafts.Entries(ctx, k)

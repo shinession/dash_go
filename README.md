@@ -4,7 +4,7 @@
 
 `dash_go` is the Go side of the Python `dash` application. Features are migrated one module at a time. Every module can be built into the executable or left out, so a package contains exactly the modules that were chosen.
 
-Current version: **0.2.3** (see `VERSION`).
+Current version: **0.2.4** (see `VERSION`).
 
 | Module | What it does | Document |
 |---|---|---|
@@ -89,7 +89,7 @@ The PostgreSQL tests are skipped unless `DASH_GO_TEST_PG` names a **scratch** Po
 
 `dash_go` 是 Python `dash` 应用在 Go 一侧的实现。功能按模块逐个迁移。每个模块都可以编进可执行文件，也可以不编进去，所以一个发布包里只包含所选的模块。
 
-当前版本：**0.2.3**（见 `VERSION`）。
+当前版本：**0.2.4**（见 `VERSION`）。
 
 | 模块 | 功能 | 文档 |
 |---|---|---|

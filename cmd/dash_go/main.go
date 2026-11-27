@@ -84,16 +84,24 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 	}
 	env := module.NewEnv(cfg, log, nil)
 	defer env.Close()
-	var nonces auth.NonceStore = auth.NewMemoryNonces()
-	if cfg.Dash.Redis.Host != "" {
-		if rdb, err := env.Redis(); err == nil {
-			nonces = auth.NewRedisNonces(rdb)
-		}
-	}
 	authSet, err := authSettings(cfg, log)
 	if err != nil {
 		log.Error("cannot start", "error", err)
 		return 2, nil
+	}
+	var nonces auth.NonceStore = auth.NewMemoryNonces()
+	sessionStore := "memory"
+	if cfg.Dash.Redis.Host != "" {
+		if rdb, err := env.Redis(); err == nil {
+			nonces = auth.NewRedisNonces(rdb)
+			authSet.Sessions = auth.NewRedisSessions(rdb)
+			authSet.SSOFlows = auth.NewRedisSSOFlows(rdb)
+			authSet.Throttles = auth.NewRedisThrottles(rdb)
+			sessionStore = "redis"
+		}
+	}
+	if sessionStore == "memory" {
+		log.Warn("redis is not configured: sessions, login limits and Windows sign-ins stay in process memory (single instance only)")
 	}
 	env.Auth = auth.NewService(signer, nonces, authSet)
 
@@ -138,8 +146,8 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 	server.MountCommon(mux, cfg.BasePath)
 
 	if checkOnly {
-		fmt.Printf("configuration ok: %d module(s) ready (%s), base path %q, password login %t, windows login %t, automatic update %s\n",
-			len(mods), strings.Join(names, ", "), cfg.BasePath, env.Auth.PasswordEnabled(), env.Auth.SSOEnabled(), describeUpdate(cfg.Update))
+		fmt.Printf("configuration ok: %d module(s) ready (%s), base path %q, session store %s (sliding %dh), password login %t, windows login %t, automatic update %s\n",
+			len(mods), strings.Join(names, ", "), cfg.BasePath, sessionStore, cfg.SessionHours, env.Auth.PasswordEnabled(), env.Auth.SSOEnabled(), describeUpdate(cfg.Update))
 		return checkConnections(cfg, log, env, mods), nil
 	}
 	if m, ok := update.TakeMarker(exe); ok {
@@ -179,6 +187,7 @@ func serve(cfg *config.Config, log *slog.Logger, checkOnly bool, exe string, exe
 		})
 	}
 	log.Info("dash_go started", "version", version.Version, "listen", cfg.Listen, "base_path", cfg.BasePath, "modules", strings.Join(names, ","), "config_files", len(cfg.Sources),
+		"session_store", sessionStore, "session_hours", cfg.SessionHours,
 		"password_login", env.Auth.PasswordEnabled(), "windows_login", env.Auth.SSOEnabled(), "automatic_update", describeUpdate(cfg.Update))
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("server stopped", "error", err)

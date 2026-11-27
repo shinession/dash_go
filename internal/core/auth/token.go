@@ -1,17 +1,17 @@
-// Package auth is the sign-in of dash_go. There are three ways in, and all of them end in the same signed session
-// cookie:
+// Package auth is the sign-in of dash_go. There are three ways in, and all of them end in the same server-side
+// session (stored in Redis when configured, or process memory for local tests) referenced by an opaque session cookie
+// with a sliding TTL (default 24 hours):
 //
 //   - The link of the Dash application. Dash (IE.py) knows who is logged in, the Go service does not. Dash therefore
 //     opens {base}/auth/sso?t=<token> with an "sso" token signed with the shared api.salt_3 secret. The service
-//     verifies the signature, consumes the one-time nonce and answers with its own signed "session" cookie
-//     (service.go).
+//     verifies the signature, consumes the one-time nonce and creates a session in the session store (service.go).
 //   - An account and a password, which the Python backend checks (login.go, directory.go).
 //   - The Windows single sign-on, a flow with a token that this server issues and a result that the sign-on service
 //     records (ssoflow.go).
 //
-// Token format: base64url(JSON claims) + "." + base64url(HMAC-SHA256(key, base64url(JSON claims))), where
+// Hand-over token format: base64url(JSON claims) + "." + base64url(HMAC-SHA256(key, base64url(JSON claims))), where
 // key = HMAC-SHA256(secret, "dash_go/<kind>/v1"). The Python side (LocalListV3.build_dash_go_sso_url) produces the
-// same format, which a cross-language test vector in token_test.go pins down.
+// same format, which a cross-language test vector in auth_test.go pins down.
 package auth
 
 import (
@@ -26,8 +26,7 @@ import (
 
 // Token kinds.
 const (
-	KindSSO     = "sso"
-	KindSession = "session"
+	KindSSO = "sso"
 
 	tokenVersion = 1
 	clockSkew    = 60 * time.Second
@@ -79,7 +78,7 @@ func (s *Signer) mac(kind, body string) []byte {
 
 // Sign returns the token for the claims. V is always set to the current token version.
 func (s *Signer) Sign(c Claims) (string, error) {
-	if c.K != KindSSO && c.K != KindSession {
+	if c.K != KindSSO {
 		return "", errors.New("unknown token kind")
 	}
 	c.V = tokenVersion

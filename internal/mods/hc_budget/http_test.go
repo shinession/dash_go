@@ -1,6 +1,7 @@
 package hcbudget
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -44,11 +45,11 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 		t.Fatal(err)
 	}
 	sign := func(u auth.User) *http.Cookie {
-		tok, err := signer.Sign(auth.Claims{K: auth.KindSession, EE: u.EE, Name: u.Name, Iat: testNow.Unix(), Exp: testNow.Add(time.Hour).Unix()})
+		sid, err := authSvc.IssueSession(context.Background(), u)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return &http.Cookie{Name: "dash_go_session", Value: tok}
+		return &http.Cookie{Name: "dash_go_session", Value: sid}
 	}
 	return &httpEnv{
 		testEnv:     env,

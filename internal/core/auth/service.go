@@ -97,25 +97,33 @@ type Settings struct {
 	// It is only asked for a Windows sign-in that started from a loopback address (see sameBrowser), and exists so
 	// that tests do not depend on the computer they run on.
 	LocalAddrs func() []netip.Addr
+
+	// Sessions persists authenticated sessions (default: in-memory; pass NewRedisSessions for multi-instance).
+	Sessions SessionStore
+	// SSOFlows persists pending Windows sign-ins (default: in-memory; pass NewRedisSSOFlows for multi-instance).
+	SSOFlows SSOFlowStore
+	// Throttles tracks failed password logins (default: in-memory; pass NewRedisThrottles for multi-instance).
+	Throttles ThrottleStore
 }
 
-// Service handles the sign-in (the hand-over from Dash, the password and the Windows sign-in), the session cookie
+// Service handles the sign-in (the hand-over from Dash, the password and the Windows sign-in), the session store
 // and the request guard.
 type Service struct {
-	signer *Signer
-	nonces NonceStore
-	set    Settings
-	limits *throttles
-	flows  ssoFlows
+	signer   *Signer
+	nonces   NonceStore
+	sessions SessionStore
+	set      Settings
+	limits   ThrottleStore
+	flows    SSOFlowStore
 }
 
-// NewService returns a Service. Defaults: cookie dash_go_session, 12 hour sessions.
+// NewService returns a Service. Defaults: cookie dash_go_session, 24 hour sliding sessions, in-memory stores.
 func NewService(signer *Signer, nonces NonceStore, set Settings) *Service {
 	if set.CookieName == "" {
 		set.CookieName = "dash_go_session"
 	}
 	if set.SessionTTL <= 0 {
-		set.SessionTTL = 12 * time.Hour
+		set.SessionTTL = 24 * time.Hour
 	}
 	if set.Log == nil {
 		set.Log = slog.Default()
@@ -123,7 +131,19 @@ func NewService(signer *Signer, nonces NonceStore, set Settings) *Service {
 	if set.Now == nil {
 		set.Now = time.Now
 	}
-	return &Service{signer: signer, nonces: nonces, set: set, limits: newThrottles(set.Now)}
+	sessions := set.Sessions
+	if sessions == nil {
+		sessions = NewMemorySessions(set.Now)
+	}
+	flows := set.SSOFlows
+	if flows == nil {
+		flows = NewMemorySSOFlows()
+	}
+	limits := set.Throttles
+	if limits == nil {
+		limits = NewMemoryThrottles(set.Now)
+	}
+	return &Service{signer: signer, nonces: nonces, sessions: sessions, set: set, limits: limits, flows: flows}
 }
 
 // Mount registers the sign-in routes below {base}/auth.
@@ -189,7 +209,7 @@ func (s *Service) handleHandover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.startSession(w, r, Identity{EE: claims.EE, Name: claims.Name}); err != nil {
-		s.set.Log.Error("session signing failed", "error", err)
+		s.set.Log.Error("session creation failed", "error", err)
 		refuse("unavailable")
 		return
 	}
@@ -197,58 +217,93 @@ func (s *Service) handleHandover(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
-// startSession sets a fresh session cookie for the person.
+// IssueSession creates a session in the session store and returns its cookie value (used by tests across packages).
+func (s *Service) IssueSession(ctx context.Context, u User) (string, error) {
+	return s.sessions.Create(ctx, u, s.set.SessionTTL)
+}
+
+// startSession stores a fresh session in the session store and sets the session cookie.
 func (s *Service) startSession(w http.ResponseWriter, r *http.Request, id Identity) error {
-	now := s.set.Now()
-	token, err := s.signer.Sign(Claims{K: KindSession, EE: id.EE, Name: id.Name, Iat: now.Unix(), Exp: now.Add(s.set.SessionTTL).Unix()})
+	sid, err := s.sessions.Create(r.Context(), User{EE: id.EE, Name: id.Name}, s.set.SessionTTL)
 	if err != nil {
 		return err
 	}
+	s.setSessionCookie(w, r, sid)
+	return nil
+}
+
+func (s *Service) setSessionCookie(w http.ResponseWriter, r *http.Request, sid string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.set.CookieName,
-		Value:    token,
+		Value:    sid,
 		Path:     s.cookiePath(),
 		MaxAge:   int(s.set.SessionTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-	return nil
 }
 
-// handleLogout ends the session of dash_go only: the login of the Dash application in the browser is a different
-// thing and stays as it is.
+// handleLogout ends the session of dash_go only: it removes the session from the session store and clears the
+// browser cookie; the login of the Dash application in the browser is a different thing and stays as it is.
 func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: s.set.CookieName, Value: "", Path: s.cookiePath(), MaxAge: -1, HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode})
-	if u, ok := s.Session(r); ok {
-		s.set.Log.Info("logout", "ee", u.EE)
+	if cookie, err := r.Cookie(s.set.CookieName); err == nil && cookie.Value != "" {
+		u, ok, delErr := s.sessions.Delete(r.Context(), cookie.Value)
+		if delErr != nil {
+			s.set.Log.Warn("session delete failed on logout", "error", delErr)
+		} else if ok {
+			s.set.Log.Info("logout", "ee", u.EE)
+		}
 	}
+	http.SetCookie(w, &http.Cookie{Name: s.set.CookieName, Value: "", Path: s.cookiePath(), MaxAge: -1, HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode})
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Session returns the person of the session cookie of the request, if the cookie is valid. It checks nothing else;
-// the pages use it to show who is signed in, Require guards the API.
-func (s *Service) Session(r *http.Request) (User, bool) {
+func (s *Service) sessionWithID(r *http.Request) (User, string, bool) {
 	cookie, err := r.Cookie(s.set.CookieName)
-	if err != nil {
-		return User{}, false
+	if err != nil || cookie.Value == "" {
+		return User{}, "", false
 	}
-	claims, err := s.signer.Parse(cookie.Value, KindSession, s.set.Now())
+	u, ok, err := s.sessions.GetAndRefresh(r.Context(), cookie.Value, s.set.SessionTTL)
 	if err != nil {
-		return User{}, false
+		s.set.Log.Warn("session store lookup failed", "error", err)
+		return User{}, "", false
 	}
-	return User{EE: claims.EE, Name: claims.Name}, true
+	if !ok {
+		return User{}, "", false
+	}
+	return u, cookie.Value, true
 }
 
-// Require rejects requests without a valid session and stores the user in the request context. Unsafe methods
-// must also carry the X-Requested-With header (browsers do not add it to cross-site form posts) and must not be
-// marked cross-site by the browser.
+// Session returns the person of the session cookie of the request, refreshing the server-side sliding TTL when
+// valid. If the session store cannot be reached, it logs the error and reports unauthenticated.
+func (s *Service) Session(r *http.Request) (User, bool) {
+	u, _, ok := s.sessionWithID(r)
+	return u, ok
+}
+
+// Authenticate validates the session, refreshes its sliding TTL in the session store, and refreshes the browser
+// cookie's MaxAge so client expiry stays in sync with server-side sliding expiration.
+func (s *Service) Authenticate(w http.ResponseWriter, r *http.Request) (User, bool) {
+	u, sid, ok := s.sessionWithID(r)
+	if !ok {
+		return User{}, false
+	}
+	if w != nil {
+		s.setSessionCookie(w, r, sid)
+	}
+	return u, true
+}
+
+// Require rejects requests without a valid session, refreshes the sliding session TTL and cookie, and stores the
+// user in the request context. Unsafe methods must also carry the X-Requested-With header (browsers do not add it to
+// cross-site form posts) and must not be marked cross-site by the browser.
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, ok := s.Session(r)
+		u, sid, ok := s.sessionWithID(r)
 		if !ok {
 			s.apiError(w, r, http.StatusUnauthorized, "login_required", "err.login_required")
 			return
@@ -261,6 +316,7 @@ func (s *Service) Require(next http.Handler) http.Handler {
 				return
 			}
 		}
+		s.setSessionCookie(w, r, sid)
 		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
 	})
 }
