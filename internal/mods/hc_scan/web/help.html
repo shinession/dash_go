@@ -71,7 +71,7 @@
       <ul>
         <li><strong>Other shift (AM / PM):</strong> unassigned roster members scheduled in the opposite shift today.</li>
         <li><strong>Off / Rest day:</strong> unassigned roster members whose calendar day type today is a rest or holiday code (such as <code>O</code>, <code>R</code>, <code>PHO</code>, <code>PHR</code>, <code>PH</code>). Anyone who already worked all 6 previous consecutive days in <code>t_daily_attn_data</code> is shown greyed out and disabled (cannot work a 7th consecutive day).</li>
-        <li><strong>Other process (MTR):</strong> unassigned Direct / Shift Leader employees from other processes who are scheduled for today's current shift and hold an MTR record (Lv1+) on this process, sorted by process first and then MTR level (Lv3 → Lv2 → Lv1).</li>
+        <li><strong>Other process (MTR):</strong> unassigned Direct / Shift Leader employees from other processes (excluding <code>Others</code>) who are scheduled for today's current shift and hold an MTR record (Lv1+) on this process, sorted by process first and then MTR level (Lv3 → Lv2 → Lv1).</li>
       </ul>
       <p>Clicking an available person inside any popup scans them into the current shift (with the applicable yellow shift-mismatch or not-on-roster warning), removes them from the list and updates the count while keeping the popup open so you can select multiple people. Close with the top-right <strong>×</strong> button or <kbd>Esc</kbd>.</p>
 
@@ -229,7 +229,7 @@
       <ul>
         <li><strong>其他班次（AM / PM）：</strong>当天排在另一班次且尚未分派机台的名册人员。</li>
         <li><strong>休息 / 公休日：</strong>当天排班为 <code>O</code>、<code>R</code>、<code>PHO</code>、<code>PHR</code>、<code>PH</code> 等休息/公休日且尚未分派的人员。此前已连续工作 6 天的员工会灰显标注并禁止选择（避免连续工作第 7 天）。</li>
-        <li><strong>其他工序（有 MTR）：</strong>当天本班次排班且尚未分派工作的其他工序人员，并且在本工序持有 MTR（Lv1 及以上）记录；列表先按工序排序，再按 MTR 等级从高到低排序（Lv3 → Lv2 → Lv1）。</li>
+        <li><strong>其他工序（有 MTR）：</strong>当天本班次排班且尚未分派工作的其他工序人员（排除 <code>Others</code> 工序），并且在本工序持有 MTR（Lv1 及以上）记录；列表先按工序排序，再按 MTR 等级从高到低排序（Lv3 → Lv2 → Lv1）。</li>
       </ul>
       <p>在任意弹窗中点击可安排人员即可直接扫码分派到本班次（带相应的班次不匹配或不在名册黄色警告），人员会即时从列表移除并更新人数，同时弹窗保持打开以便连续点选；点击右上角 <strong>×</strong> 或按 <kbd>Esc</kbd> 关闭。</p>
 

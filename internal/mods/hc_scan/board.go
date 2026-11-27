@@ -373,7 +373,7 @@ func (s *Service) otherProcessCandidates(ctx context.Context, d *dayData, pendin
 			continue
 		}
 		proc := strings.TrimSpace(p.Process)
-		if proc == "" || inProcesses(here, proc) {
+		if proc == "" || strings.EqualFold(proc, "Others") || inProcesses(here, proc) {
 			continue
 		}
 		var rec *DayRecord

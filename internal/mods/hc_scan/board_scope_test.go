@@ -613,6 +613,10 @@ func TestBoardOtherProcessMTRCandidates(t *testing.T) {
 		MESRow{EE: "AB12C51", Name: "Slit Resigned", CostCenter: "2081", Shift: "PA", ResignDate: &resigned, EffectiveMth: d(2026, 11, 1)}, // resigned -> excluded
 		MESRow{EE: "AB12C52", Name: "Slit Indirect", CostCenter: "2081", Shift: "PA", DirectType: "Indirect", EffectiveMth: d(2026, 11, 1)}, // Indirect -> excluded
 		MESRow{EE: "AB12C53", Name: "Slit HomeDraft", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},         // placed in Slitter AM draft -> excluded
+		MESRow{EE: "AB12C54", Name: "Moved Others", CostCenter: "2081", Shift: "PA", EffectiveMth: d(2026, 11, 1)},           // moved to "Others" via member table -> excluded
+	)
+	env.repo.members = append(env.repo.members,
+		MemberRow{EE: "AB12C54", Name: "Moved Others", Process: "Others", Direct: "Direct", Shift: "PA", Effective: d(2026, 11, 1), End: d(2099, 12, 31)},
 	)
 	env.repo.mtr.Levels["AB12C41"] = map[string]int{"C515": 3}
 	env.repo.mtr.Levels["AB12C42"] = map[string]int{"C520": 1}
@@ -626,6 +630,7 @@ func TestBoardOtherProcessMTRCandidates(t *testing.T) {
 	env.repo.mtr.Levels["AB12C51"] = map[string]int{"C515": 3}
 	env.repo.mtr.Levels["AB12C52"] = map[string]int{"C515": 3}
 	env.repo.mtr.Levels["AB12C53"] = map[string]int{"C515": 3}
+	env.repo.mtr.Levels["AB12C54"] = map[string]int{"C515": 3}
 
 	env.addRecord("AB12C45", "AM", "W", HCEntry{Process: "LSL", Machine: "ANL - Annual Leave", HC: 0.5})
 	env.addRecord("AB12C46", "AM", "W", HCEntry{Process: "Slitter", Machine: "Slitter_105", HC: 1})
