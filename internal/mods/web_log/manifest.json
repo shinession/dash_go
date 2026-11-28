@@ -1,0 +1,21 @@
+{
+  "name": "web_log",
+  "title": "Web Log",
+  "description": "Analyze application and server web log traffic by day, week, or month with Redis caching and an admin live Redis log stream.",
+  "docs": [
+    "docs/web_log_page.md"
+  ],
+  "reads": [
+    "Log.t_log_daily",
+    "Auth.T_USER_ALL",
+    "Redis:web_log"
+  ],
+  "writes": [],
+  "settings_example": {
+    "recent_cache_minutes": 10,
+    "history_cache_minutes": 360,
+    "meta_cache_minutes": 15,
+    "max_series": 15,
+    "live_log_max": 1000
+  }
+}

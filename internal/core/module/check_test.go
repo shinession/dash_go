@@ -223,3 +223,42 @@ func TestPostgresProbeFailsWithoutAServerAndLeavesThePoolSettingsAlone(t *testin
 		t.Errorf("the password is in the error: %v", c.Err)
 	}
 }
+
+func TestProbesOrderAuthBeforeAdditionalDatabases(t *testing.T) {
+	port := closedPort(t)
+	pc := config.Postgres{Host: "127.0.0.1", Port: port, Username: "mes", Password: "pw"}
+	authCfg, err := pgxpool.ParseConfig(pgDSN(pc, "Auth"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logCfg, err := pgxpool.ParseConfig(pgDSN(pc, "Log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	authPool, err := pgxpool.NewWithConfig(ctx, authCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPool, err := pgxpool.NewWithConfig(ctx, logCfg)
+	if err != nil {
+		authPool.Close()
+		t.Fatal(err)
+	}
+	env := NewEnv(&config.Config{}, nil, nil)
+	env.SetPGDB("Log", logPool)
+	env.SetPG(authPool)
+	t.Cleanup(env.Close)
+
+	probes := env.Probes()
+	if len(probes) != 2 {
+		t.Fatalf("got %d probes, want 2", len(probes))
+	}
+	if probes[0].Name != "PostgreSQL" || probes[0].Target != fmt.Sprintf("127.0.0.1:%d database Auth", port) {
+		t.Errorf("probe[0] = %+v", probes[0])
+	}
+	if probes[1].Name != "PostgreSQL (Log)" || probes[1].Target != fmt.Sprintf("127.0.0.1:%d database Log", port) {
+		t.Errorf("probe[1] = %+v", probes[1])
+	}
+}

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"dash_go/internal/core/config"
@@ -95,8 +97,34 @@ func oneLine(s string) string {
 // nothing asked for is left out, so a binary whose modules need neither is not held to them.
 func (e *Env) Probes() []Probe {
 	var probes []Probe
-	if e.pg != nil {
-		probes = append(probes, e.postgresProbe())
+	e.pgMu.Lock()
+	dbNames := make([]string, 0, len(e.pgPools))
+	for name, pool := range e.pgPools {
+		if pool != nil {
+			dbNames = append(dbNames, name)
+		}
+	}
+	sort.Slice(dbNames, func(i, j int) bool {
+		if dbNames[i] == "Auth" {
+			return true
+		}
+		if dbNames[j] == "Auth" {
+			return false
+		}
+		return dbNames[i] < dbNames[j]
+	})
+	pools := make([]*pgxpool.Pool, len(dbNames))
+	for i, name := range dbNames {
+		pools[i] = e.pgPools[name]
+	}
+	e.pgMu.Unlock()
+
+	for i, name := range dbNames {
+		probeName := "PostgreSQL"
+		if name != "Auth" {
+			probeName = fmt.Sprintf("PostgreSQL (%s)", name)
+		}
+		probes = append(probes, postgresProbe(probeName, pools[i]))
 	}
 	if e.rd != nil {
 		probes = append(probes, e.redisProbe())
@@ -107,14 +135,14 @@ func (e *Env) Probes() []Probe {
 // postgresProbe opens a new connection with the settings of the pool, not a connection of the pool: the time is what
 // the first request after a restart pays, and the address is the server that really answered, which is not
 // necessarily the one the settings name (AGENTS.md, 14.5).
-func (e *Env) postgresProbe() Probe {
-	cc := e.pg.Config().ConnConfig // a copy
+func postgresProbe(probeName string, pool *pgxpool.Pool) Probe {
+	cc := pool.Config().ConnConfig // a copy
 	if cc.RuntimeParams == nil {
 		cc.RuntimeParams = map[string]string{}
 	}
 	cc.RuntimeParams["application_name"] = "dash_go_check" // tells the check from the service in the server's own views
 	return Probe{
-		Name:   "PostgreSQL",
+		Name:   probeName,
 		Target: fmt.Sprintf("%s:%d database %s", cc.Host, cc.Port, cc.Database),
 		Run: func(ctx context.Context) (string, error) {
 			conn, err := pgx.ConnectConfig(ctx, cc)

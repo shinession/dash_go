@@ -1,0 +1,139 @@
+{{define "content"}}
+{{if not .IsZh}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="Contents"{{.Tour "tour.help_toc"}}>
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">What Web Log is</a></li>
+      <li><a href="#filters">Date range, calendar views, and filters</a></li>
+      <li><a href="#chart">Reading and interacting with the chart</a></li>
+      <li><a href="#caching">Redis caching and refresh</a></li>
+      <li><a href="#live">Live Redis Web Log (Admin only)</a></li>
+      <li><a href="#interface">Header and Page Guide</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} Web Log — User guide</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>What Web Log is</h2>
+      <p><a href="{{.Data}}/"><strong>Web Log</strong></a> analyzes daily aggregated traffic stored in the PostgreSQL <code>Log</code> database (<code>t_log_daily</code>), showing both <strong>Action Count</strong> and <strong>Unique Visitors (IP)</strong> across applications, tools, and servers.</p>
+      <ul>
+        <li><strong>Public trend analytics:</strong> anyone on the network can open the trend chart and filter by date range, app, tools, and server without signing in.</li>
+        <li><strong>Admin real-time stream:</strong> signed-in system administrators (<code>T_USER_ALL.Type = admin</code>) additionally see the live Redis <code>web_log</code> panel at the bottom of the page.</li>
+      </ul>
+    </section>
+
+    <section id="filters" class="dg-doc-section">
+      <h2>Date range, calendar views, and filters</h2>
+      <ul>
+        <li><strong>Date range:</strong> choose any start and end date or use quick presets (<strong>7D</strong>, <strong>30D</strong>, <strong>90D</strong>, <strong>12M</strong>). Daily queries allow up to 366 days; weekly and monthly views allow up to 5 years.</li>
+        <li><strong>Standard calendar grouping:</strong> <strong>By Day</strong> uses calendar dates (<code>YYYY-MM-DD</code>), <strong>By Week</strong> uses ISO-8601 weeks (Monday–Sunday, <code>YYYY-Www</code>), and <strong>By Month</strong> uses calendar months (<code>YYYY-MM</code>).</li>
+        <li><strong>Visitor count:</strong> every period on the line chart — and the headline KPI — counts <strong>distinct IP addresses</strong> within that period, deduplicated across apps, tools, and servers.</li>
+        <li><strong>App &amp; Tools filters:</strong> pick <strong>All Apps</strong> or any individual app (<code>IE</code>, <code>QDB</code>, <code>MER</code>, <code>QAQC</code>, <code>API</code>, <code>DataBridge</code>, <code>Gitea</code>, <code>TimeVault</code>, <code>SSO</code>, etc.), narrow to specific tools/categories, or check <strong>Exclude idle</strong> to remove background polling and static assets.</li>
+        <li><strong>Server filter &amp; By Server view:</strong> filter by one or more hosts (<code>prod_eng</code>, <code>sgmescimai</code>, <code>sgmescimemg</code>, ...). Historical rows with an empty or <code>NULL</code> host are normalized to <code>prod_eng</code>. Switch <strong>Stack By</strong> to <strong>By Server</strong> to compare server traffic side-by-side in stacked bars.</li>
+      </ul>
+    </section>
+
+    <section id="chart" class="dg-doc-section">
+      <h2>Reading and interacting with the chart</h2>
+      <ul>
+        <li><strong>Dual axes:</strong> stacked bars map to <strong>Action Count</strong> (left axis) with total labels on top; the orange line maps to <strong>Unique Visitors</strong> (right axis).</li>
+        <li><strong>Click to drill down:</strong> in <strong>All Apps</strong> view, clicking an app bar drills into that app's tools; in <strong>By Server</strong> view, clicking a server bar filters to that host. Clicking any row in the breakdown table below also applies that filter.</li>
+        <li><strong>Top-15 chart folding:</strong> when more than 15 series match, the chart groups the long tail into <strong>Others (N)</strong> for clarity while the <strong>Breakdown</strong> table below lists every single item.</li>
+        <li><strong>Toolbox:</strong> use the chart toolbar to zoom a sub-range, toggle bar/line style, restore the view, or save a PNG image.</li>
+      </ul>
+    </section>
+
+    <section id="caching" class="dg-doc-section">
+      <h2>Redis caching and refresh</h2>
+      <p>Aggregated query results and filter options are cached in shared Redis so repeated views load immediately across all <code>dash_go</code> instances. Ranges touching yesterday or today refresh automatically within 10 minutes (matching hourly <code>t_log_daily</code> updates); purely historical ranges stay cached for 6 hours. Click <strong>Refresh</strong> in the top bar to re-query PostgreSQL directly.</p>
+    </section>
+
+    <section id="live" class="dg-doc-section">
+      <h2>Live Redis Web Log (Admin only)</h2>
+      <p>When signed in as an active administrator (<code>T_USER_ALL.Type = admin</code>), the <strong>Live Redis Web Log</strong> panel appears below the breakdown table:</p>
+      <ul>
+        <li>Reads the newest 200, 500, or 1,000 entries directly from the Redis <code>web_log</code> list (newest first).</li>
+        <li>Supports instant client-side filtering by keyword, server, and log level (<code>error</code>, <code>warning</code>, <code>info</code>, <code>debug</code>).</li>
+        <li>Optional <strong>Auto (5s)</strong> switch polls automatically and pauses while the browser tab is hidden.</li>
+      </ul>
+      <p class="dg-doc-note"><strong>Security:</strong> standard users and anonymous visitors cannot access this panel or its API endpoint (the server responds with HTTP 401/403).</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>Header and Page Guide</h2>
+      <p>Use the header controls to switch light/dark theme (the chart adapts automatically), toggle English / 中文, open this guide, sign in, or launch the interactive page tour. See the <a href="{{.Base}}/help">dash_go user guide</a> for general help.</p>
+    </section>
+  </article>
+</div>
+{{else}}
+<div class="dg-doc">
+  <nav class="dg-doc-toc" aria-label="目录"{{.Tour "tour.help_toc"}}>
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#overview">Web 日志是什么</a></li>
+      <li><a href="#filters">日期范围、日历分组与筛选</a></li>
+      <li><a href="#chart">趋势图阅读与交互</a></li>
+      <li><a href="#caching">Redis 缓存与刷新</a></li>
+      <li><a href="#live">Redis 实时日志（仅管理员）</a></li>
+      <li><a href="#interface">页眉与页面导览</a></li>
+    </ol>
+  </nav>
+  <article class="dg-doc-body"{{.Tour "tour.help_body"}}>
+    <h1 class="dg-doc-title">{{template "icon" (.Icon "book")}} Web 日志 — 使用手册</h1>
+
+    <section id="overview" class="dg-doc-section">
+      <h2>Web 日志是什么</h2>
+      <p><a href="{{.Data}}/"><strong>Web 日志</strong></a>用于分析 PostgreSQL <code>Log</code> 数据库（<code>t_log_daily</code> 表）中按日汇总的访问日志，同时展示各应用、工具及服务器的<strong>操作数（Action Count）</strong>与<strong>去重访客数（IP）</strong>。</p>
+      <ul>
+        <li><strong>趋势分析公开访问：</strong>无需登录即可打开趋势图，按日期、应用、工具与服务器进行筛选分析。</li>
+        <li><strong>管理员实时日志流：</strong>已登录且在 <code>T_USER_ALL</code> 中 <code>Type = admin</code> 的系统管理员，会在页面底部额外看到 Redis 实时 <code>web_log</code> 面板。</li>
+      </ul>
+    </section>
+
+    <section id="filters" class="dg-doc-section">
+      <h2>日期范围、日历分组与筛选</h2>
+      <ul>
+        <li><strong>日期范围：</strong>自由选择起止日期，或点击快捷预设（<strong>7天</strong>、<strong>30天</strong>、<strong>90天</strong>、<strong>12个月</strong>）。按天视图最多支持 366 天，按周和按月最多支持 5 年。</li>
+        <li><strong>标准自然日历分组：</strong><strong>按天</strong>采用自然日（<code>YYYY-MM-DD</code>），<strong>按周</strong>采用 ISO-8601 标准周（周一至周日，<code>YYYY-Www</code>），<strong>按月</strong>采用自然月（<code>YYYY-MM</code>）。</li>
+        <li><strong>访客数口径：</strong>趋势折线上的每个点以及顶部 KPI 卡片，均按对应时间周期内的<strong>去重 IP 数</strong>统计（跨应用、工具和服务器自动去重）。</li>
+        <li><strong>应用与工具筛选：</strong>支持选择<strong>全部应用</strong>或任意单个应用（<code>IE</code>、<code>QDB</code>、<code>MER</code>、<code>QAQC</code>、<code>API</code>、<code>DataBridge</code>、<code>Gitea</code>、<code>TimeVault</code>、<code>SSO</code> 等），并可进一步勾选特定工具/类别，或勾选<strong>排除 idle</strong> 过滤掉后台轮询与静态资源流量。</li>
+        <li><strong>服务器筛选与按服务器拆分：</strong>支持选择单台或多台服务器（<code>prod_eng</code>、<code>sgmescimai</code>、<code>sgmescimemg</code> 等）；历史记录中 <code>host</code> 为空或 <code>NULL</code> 的数据统一归入 <code>prod_eng</code>。将<strong>堆叠维度</strong>切换为<strong>按服务器</strong>即可直接在堆叠柱中对比各服务器流量。</li>
+      </ul>
+    </section>
+
+    <section id="chart" class="dg-doc-section">
+      <h2>趋势图阅读与交互</h2>
+      <ul>
+        <li><strong>双 Y 轴展示：</strong>堆叠柱对应左轴<strong>操作数</strong>并在顶部标注总计；橙色折线对应右轴<strong>周期去重访客数</strong>。</li>
+        <li><strong>点击下钻：</strong>在<strong>全部应用</strong>模式下点击某个应用的柱子，会直接下钻查看该应用下的各工具趋势；在<strong>按服务器</strong>模式下点击某台服务器的柱子，会筛选到该服务器。点击下方明细汇总表中的任意一行同样可联动筛选。</li>
+        <li><strong>Top 15 折叠：</strong>当匹配分组超过 15 项时，图表保留操作数前 15 项并将长尾归入<strong>其他 (N)</strong> 保持画面清晰；下方的<strong>汇总表</strong>始终列出全部明细。</li>
+        <li><strong>图表工具栏：</strong>支持框选缩放、切换折线/柱状图、重置视图与一键导出 PNG 图片。</li>
+      </ul>
+    </section>
+
+    <section id="caching" class="dg-doc-section">
+      <h2>Redis 缓存与刷新</h2>
+      <p>聚合查询结果与筛选项元数据会缓存在共享 Redis 中，多实例共享并显著加快访问速度。覆盖昨天或今天的查询缓存 10 分钟（匹配 <code>t_log_daily</code> 每小时汇总节奏），纯历史范围缓存 6 小时。点击顶部栏的<strong>刷新</strong>按钮可强制重新查询数据库并刷新缓存。</p>
+    </section>
+
+    <section id="live" class="dg-doc-section">
+      <h2>Redis 实时日志（仅管理员）</h2>
+      <p>使用活跃的系统管理员账号（<code>T_USER_ALL.Type = admin</code>）登录后，汇总表下方会显示<strong>Redis 实时日志</strong>面板：</p>
+      <ul>
+        <li>直接读取 Redis <code>web_log</code> 列表最新 200 / 500 / 1,000 条记录（最新置顶）。</li>
+        <li>支持按关键字、服务器与日志级别（<code>error</code>、<code>warning</code>、<code>info</code>、<code>debug</code>）即时过滤。</li>
+        <li>可选开启<strong>自动刷新 (5秒)</strong>，切换至后台标签页时会自动暂停轮询。</li>
+      </ul>
+      <p class="dg-doc-note"><strong>安全说明：</strong>普通用户与未登录访客完全隐藏此面板，且后端接口会强制返回 HTTP 401/403。</p>
+    </section>
+
+    <section id="interface" class="dg-doc-section">
+      <h2>页眉与页面导览</h2>
+      <p>可通过页眉按钮切换浅色/深色主题（图表配色自动同步）、切换中英文、打开使用手册、登录账号或启动交互式页面导览。通用说明见 <a href="{{.Base}}/help">dash_go 使用手册</a>。</p>
+    </section>
+  </article>
+</div>
+{{end}}
+{{end}}

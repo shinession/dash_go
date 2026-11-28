@@ -94,9 +94,9 @@ type Env struct {
 	Shell *shell.Shell // the frame of the pages: a module gives it the content of its page
 	Base  string       // URL prefix without trailing slash, for example /dash_go
 
-	pgOnce sync.Once
-	pg     *pgxpool.Pool
-	pgErr  error
+	pgMu    sync.Mutex
+	pgPools map[string]*pgxpool.Pool
+	pgErrs  map[string]error
 
 	rdOnce sync.Once
 	rd     *redis.Client
@@ -110,35 +110,74 @@ func NewEnv(cfg *config.Config, log *slog.Logger, a *auth.Service) *Env {
 
 // PG returns the pool of the Auth database.
 func (e *Env) PG(ctx context.Context) (*pgxpool.Pool, error) {
-	e.pgOnce.Do(func() {
-		pc := e.Cfg.Dash.Postgres
-		if pc.Host == "" || pc.Username == "" {
-			e.pgErr = errors.New("postgresql is not configured (config key postgresql)")
-			return
-		}
-		// the whole target goes into one connection string: setting Host and Port on a parsed empty configuration would
-		// leave the fallback entries (localhost:5432, used when the first attempt fails) in place, and the service
-		// could silently talk to another database
-		pcfg, err := pgxpool.ParseConfig(pgDSN(pc, "Auth"))
-		if err != nil {
-			e.pgErr = fmt.Errorf("postgresql settings are not valid: %w", err)
-			return
-		}
-		pcfg.MaxConns = 8
-		pool, err := pgxpool.NewWithConfig(ctx, pcfg)
-		if err != nil {
-			e.pgErr = fmt.Errorf("open postgresql pool: %w", err)
-			return
-		}
-		e.pg = pool
-	})
-	return e.pg, e.pgErr
+	return e.PGDB(ctx, "Auth")
 }
 
-// SetPG lets tests inject a pool.
+// PGDB returns the shared pool of one PostgreSQL database on the configured server (for example "Auth" or "Log").
+// Connections are opened lazily and cached per database name.
+func (e *Env) PGDB(ctx context.Context, database string) (*pgxpool.Pool, error) {
+	database = strings.TrimSpace(database)
+	if database == "" {
+		return nil, errors.New("postgresql database name is required")
+	}
+	e.pgMu.Lock()
+	defer e.pgMu.Unlock()
+	if p, ok := e.pgPools[database]; ok {
+		return p, nil
+	}
+	if err, ok := e.pgErrs[database]; ok {
+		return nil, err
+	}
+	if e.pgPools == nil {
+		e.pgPools = map[string]*pgxpool.Pool{}
+	}
+	if e.pgErrs == nil {
+		e.pgErrs = map[string]error{}
+	}
+	pc := e.Cfg.Dash.Postgres
+	if pc.Host == "" || pc.Username == "" {
+		err := errors.New("postgresql is not configured (config key postgresql)")
+		e.pgErrs[database] = err
+		return nil, err
+	}
+	// the whole target goes into one connection string: setting Host and Port on a parsed empty configuration would
+	// leave the fallback entries (localhost:5432, used when the first attempt fails) in place, and the service
+	// could silently talk to another database
+	pcfg, err := pgxpool.ParseConfig(pgDSN(pc, database))
+	if err != nil {
+		err = fmt.Errorf("postgresql settings are not valid: %w", err)
+		e.pgErrs[database] = err
+		return nil, err
+	}
+	pcfg.MaxConns = 8
+	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
+	if err != nil {
+		err = fmt.Errorf("open postgresql pool (%s): %w", database, err)
+		e.pgErrs[database] = err
+		return nil, err
+	}
+	e.pgPools[database] = pool
+	return pool, nil
+}
+
+// SetPG lets tests inject a pool for the Auth database.
 func (e *Env) SetPG(p *pgxpool.Pool) {
-	e.pgOnce.Do(func() {})
-	e.pg, e.pgErr = p, nil
+	e.SetPGDB("Auth", p)
+}
+
+// SetPGDB lets tests inject a pool for a named PostgreSQL database.
+func (e *Env) SetPGDB(database string, p *pgxpool.Pool) {
+	e.pgMu.Lock()
+	defer e.pgMu.Unlock()
+	if e.pgPools == nil {
+		e.pgPools = map[string]*pgxpool.Pool{}
+	}
+	delete(e.pgErrs, database)
+	if p == nil {
+		delete(e.pgPools, database)
+		return
+	}
+	e.pgPools[database] = p
 }
 
 // Redis returns the Redis client.
@@ -163,8 +202,14 @@ func redisOptions(rc config.Redis) *redis.Options {
 
 // Close releases the shared connections.
 func (e *Env) Close() {
-	if e.pg != nil {
-		e.pg.Close()
+	e.pgMu.Lock()
+	pools := e.pgPools
+	e.pgPools = nil
+	e.pgMu.Unlock()
+	for _, p := range pools {
+		if p != nil {
+			p.Close()
+		}
 	}
 	if e.rd != nil {
 		_ = e.rd.Close()

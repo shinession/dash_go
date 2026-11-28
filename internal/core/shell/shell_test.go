@@ -449,7 +449,7 @@ func TestStaticFilesOfTheShell(t *testing.T) {
 		t.Error("only the files of web/assets are served")
 	}
 	icons := f.get("/dash_go/_shell/icons.svg").Body.String()
-	for _, sym := range []string{`id="scanner"`, `id="budget"`} {
+	for _, sym := range []string{`id="scanner"`, `id="budget"`, `id="weblog"`} {
 		if !strings.Contains(icons, sym) {
 			t.Errorf("icons.svg lacks %s", sym)
 		}

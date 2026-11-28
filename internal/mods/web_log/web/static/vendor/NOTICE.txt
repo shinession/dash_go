@@ -1,0 +1,7 @@
+Apache ECharts 5.6.0 (dist/echarts.common.min.js)
+Source: https://echarts.apache.org/
+License: Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+
+Bundled locally inside internal/mods/web_log/web/static/vendor/ so the
+dash_go web_log module runs completely offline on the internal network
+without external CDN requests.

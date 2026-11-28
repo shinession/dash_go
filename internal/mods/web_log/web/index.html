@@ -1,0 +1,211 @@
+{{define "content"}}
+<div id="screen-app" data-tour-screen="web_log.main">
+  <div class="pagebar" id="pagebar" data-tour-sticky>
+    <div class="pagebar-row">
+      <div class="control-group" id="group-dates"{{.Tour "wl.tour.dates"}}>
+        <label class="inline-field">
+          <span class="field-label">{{.T "wl.ui.date_from"}}</span>
+          <input id="date-from" type="date" class="ctrl-input">
+        </label>
+        <span class="range-sep" aria-hidden="true">~</span>
+        <label class="inline-field">
+          <span class="field-label">{{.T "wl.ui.date_to"}}</span>
+          <input id="date-to" type="date" class="ctrl-input">
+        </label>
+        <div class="preset-group" role="group" aria-label="{{.T "wl.ui.date_from"}}">
+          <button type="button" class="pill-btn" data-preset="7d">{{.T "wl.ui.preset_7d"}}</button>
+          <button type="button" class="pill-btn" data-preset="30d">{{.T "wl.ui.preset_30d"}}</button>
+          <button type="button" class="pill-btn" data-preset="90d">{{.T "wl.ui.preset_90d"}}</button>
+          <button type="button" class="pill-btn" data-preset="12m">{{.T "wl.ui.preset_12m"}}</button>
+        </div>
+      </div>
+
+      <div class="control-group" id="group-mode"{{.Tour "wl.tour.mode"}}>
+        <span class="field-label">{{.T "wl.ui.mode_label"}}</span>
+        <div class="seg" role="group" aria-label="{{.T "wl.ui.mode_label"}}">
+          <button type="button" class="seg-btn is-active" data-mode="day">{{.T "wl.ui.mode_day"}}</button>
+          <button type="button" class="seg-btn" data-mode="week">{{.T "wl.ui.mode_week"}}</button>
+          <button type="button" class="seg-btn" data-mode="month">{{.T "wl.ui.mode_month"}}</button>
+        </div>
+      </div>
+
+      <div class="control-group" id="group-groupby"{{.Tour "wl.tour.groupby"}}>
+        <span class="field-label">{{.T "wl.ui.groupby_label"}}</span>
+        <div class="seg" role="group" aria-label="{{.T "wl.ui.groupby_label"}}">
+          <button type="button" class="seg-btn is-active" data-groupby="auto">{{.T "wl.ui.groupby_auto"}}</button>
+          <button type="button" class="seg-btn" data-groupby="host">{{.T "wl.ui.groupby_host"}}</button>
+        </div>
+      </div>
+
+      <div class="status-actions">
+        <span id="cache-badge" class="cache-badge hidden"></span>
+        <button id="btn-refresh" type="button" class="dg-btn dg-btn-small">{{.T "wl.ui.refresh"}}</button>
+      </div>
+    </div>
+
+    <div class="pagebar-row pagebar-filters" id="group-filters"{{.Tour "wl.tour.filters"}}>
+      <label class="inline-field">
+        <span class="field-label">{{.T "wl.ui.app_label"}}</span>
+        <select id="app-select" class="ctrl-select">
+          <option value="">{{.T "wl.ui.all_apps"}}</option>
+        </select>
+      </label>
+
+      <div class="multi-wrap" id="host-multi">
+        <span class="field-label">{{.T "wl.ui.host_label"}}</span>
+        <button type="button" id="host-trigger" class="multi-trigger" aria-expanded="false" aria-haspopup="listbox">
+          <span id="host-trigger-text">{{.T "wl.ui.host_all"}}</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="host-popover" class="multi-popover hidden" role="listbox" aria-multiselectable="true">
+          <div class="multi-head">
+            <input type="search" id="host-search" class="multi-search" autocomplete="off" placeholder="{{.T "wl.ui.filter_search"}}">
+            <button type="button" class="link-btn" id="host-select-all">{{.T "wl.ui.select_all"}}</button>
+            <button type="button" class="link-btn" id="host-clear">{{.T "wl.ui.clear"}}</button>
+          </div>
+          <div id="host-options" class="multi-list"></div>
+        </div>
+      </div>
+
+      <div class="multi-wrap" id="cat-multi">
+        <span class="field-label">{{.T "wl.ui.category_label"}}</span>
+        <button type="button" id="cat-trigger" class="multi-trigger" aria-expanded="false" aria-haspopup="listbox">
+          <span id="cat-trigger-text">{{.T "wl.ui.category_all"}}</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="cat-popover" class="multi-popover hidden" role="listbox" aria-multiselectable="true">
+          <div class="multi-head">
+            <input type="search" id="cat-search" class="multi-search" autocomplete="off" placeholder="{{.T "wl.ui.filter_search"}}">
+            <button type="button" class="link-btn" id="cat-select-all">{{.T "wl.ui.select_all"}}</button>
+            <button type="button" class="link-btn" id="cat-clear">{{.T "wl.ui.clear"}}</button>
+          </div>
+          <div id="cat-options" class="multi-list"></div>
+        </div>
+      </div>
+
+      <label class="toggle-check">
+        <input id="exclude-idle" type="checkbox">
+        <span>{{.T "wl.ui.exclude_idle"}}</span>
+      </label>
+
+      <button id="btn-reset" type="button" class="btn ghost btn-compact hidden">{{.T "wl.ui.reset_filters"}}</button>
+      <span id="data-span" class="muted small data-span"></span>
+    </div>
+  </div>
+
+  <main class="wl-main">
+    <section class="kpi-grid" id="kpi-grid"{{.Tour "wl.tour.kpis"}}>
+      <div class="kpi-card">
+        <span class="kpi-label">{{.T "wl.ui.kpi_actions"}}</span>
+        <strong class="kpi-value" id="kpi-actions">—</strong>
+        <span class="kpi-sub muted small" id="kpi-actions-sub"></span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">{{.T "wl.ui.kpi_visitors"}}</span>
+        <strong class="kpi-value" id="kpi-visitors">—</strong>
+        <span class="kpi-sub muted small" id="kpi-visitors-sub"></span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">{{.T "wl.ui.kpi_peak"}}</span>
+        <strong class="kpi-value" id="kpi-peak">—</strong>
+        <span class="kpi-sub muted small" id="kpi-peak-sub"></span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">{{.T "wl.ui.kpi_scope"}}</span>
+        <strong class="kpi-value" id="kpi-scope">—</strong>
+        <span class="kpi-sub muted small" id="kpi-scope-sub"></span>
+      </div>
+    </section>
+
+    <section class="wl-card chart-card"{{.Tour "wl.tour.chart"}}>
+      <div class="card-head">
+        <div class="card-title-wrap">
+          <h2 id="chart-title"></h2>
+          <button id="btn-back-apps" type="button" class="chip-btn hidden">{{.T "wl.ui.back_all_apps"}}</button>
+          <button id="btn-clear-host" type="button" class="chip-btn hidden">{{.T "wl.ui.clear_host_filter"}}</button>
+        </div>
+        <span id="drill-hint" class="muted small"></span>
+      </div>
+      <div class="chart-stage">
+        <div id="trend-chart" class="trend-chart"></div>
+        <div id="chart-overlay" class="chart-overlay hidden"></div>
+      </div>
+    </section>
+
+    <section class="wl-card breakdown-card"{{.Tour "wl.tour.breakdown"}}>
+      <div class="card-head">
+        <div class="card-title-wrap">
+          <h2 id="breakdown-title"></h2>
+          <span id="breakdown-count" class="muted small"></span>
+        </div>
+        <input id="breakdown-search" type="search" class="search-input" autocomplete="off" placeholder="{{.T "wl.ui.breakdown_search"}}">
+      </div>
+      <div class="table-wrap">
+        <table class="wl-table" id="breakdown-table">
+          <thead>
+            <tr>
+              <th class="col-rank">{{.T "wl.ui.col_rank"}}</th>
+              <th class="col-name" id="col-name-head">{{.T "wl.ui.col_name_app"}}</th>
+              <th class="col-num">{{.T "wl.ui.col_actions"}}</th>
+              <th class="col-share">{{.T "wl.ui.col_share"}}</th>
+              <th class="col-num">{{.T "wl.ui.col_visitors"}}</th>
+            </tr>
+          </thead>
+          <tbody id="breakdown-body"></tbody>
+        </table>
+      </div>
+      <div id="breakdown-empty" class="empty-state hidden">{{.T "wl.ui.breakdown_empty"}}</div>
+    </section>
+
+    <section id="live-section" class="wl-card live-card hidden"{{.Tour "wl.tour.live"}}>
+      <div class="card-head live-head">
+        <div class="card-title-wrap">
+          <h2>{{.T "wl.ui.live_title"}}</h2>
+          <span class="role-badge">{{.T "wl.ui.role_admin"}}</span>
+          <span id="live-meta" class="muted small"></span>
+        </div>
+        <div class="live-controls">
+          <input id="live-search" type="search" class="search-input" autocomplete="off" placeholder="{{.T "wl.ui.live_search"}}">
+          <select id="live-host" class="ctrl-select">
+            <option value="">{{.T "wl.ui.live_host_all"}}</option>
+          </select>
+          <select id="live-level" class="ctrl-select">
+            <option value="">{{.T "wl.ui.live_level_all"}}</option>
+            <option value="error">error</option>
+            <option value="critical">critical</option>
+            <option value="warning">warning</option>
+            <option value="info">info</option>
+            <option value="debug">debug</option>
+          </select>
+          <select id="live-limit" class="ctrl-select">
+            <option value="200">200</option>
+            <option value="500" selected>500</option>
+            <option value="1000">1000</option>
+          </select>
+          <label class="toggle-check">
+            <input id="live-auto" type="checkbox">
+            <span>{{.T "wl.ui.live_auto"}}</span>
+          </label>
+          <button id="live-refresh" type="button" class="dg-btn dg-btn-small">{{.T "wl.ui.refresh"}}</button>
+        </div>
+      </div>
+      <div class="live-table-wrap">
+        <table class="wl-table live-table">
+          <thead>
+            <tr>
+              <th class="col-live-time">{{.T "wl.ui.live_col_time"}}</th>
+              <th class="col-live-host">{{.T "wl.ui.live_col_host"}}</th>
+              <th class="col-live-ip">{{.T "wl.ui.live_col_ip"}}</th>
+              <th class="col-live-level">{{.T "wl.ui.live_col_level"}}</th>
+              <th class="col-live-status">{{.T "wl.ui.live_col_status"}}</th>
+              <th class="col-live-msg">{{.T "wl.ui.live_col_message"}}</th>
+            </tr>
+          </thead>
+          <tbody id="live-body"></tbody>
+        </table>
+      </div>
+      <div id="live-empty" class="empty-state hidden">{{.T "wl.ui.live_empty"}}</div>
+    </section>
+  </main>
+</div>
+{{end}}

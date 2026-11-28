@@ -20,6 +20,13 @@
       "recent_days": 7,
       "leader_by_history": true
     },
-    "hc_budget": {}
+    "hc_budget": {},
+    "web_log": {
+      "recent_cache_minutes": 10,
+      "history_cache_minutes": 360,
+      "meta_cache_minutes": 15,
+      "max_series": 15,
+      "live_log_max": 1000
+    }
   }
 }
